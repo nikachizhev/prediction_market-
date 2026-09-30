@@ -1,0 +1,2 @@
+<span class="badge">{{ question.get_source_type_display }}</span>
+<span class="badge b-{{ question.status }}">{{ question.get_status_display }}{% if question.outcome %}: {{ question.get_outcome_display }}{% endif %}</span>

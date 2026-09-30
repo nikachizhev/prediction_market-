@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Рынок прогнозов{% endblock %}</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--text:#1c2024;--muted:#6b7280;--line:#e5e7eb;--accent:#2563eb;--yes:#15803d;--yes-bg:#dcfce7;--no:#b91c1c;--no-bg:#fee2e2;--warn:#b45309;--warn-bg:#fef3c7}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+nav{background:#111827;color:#fff;padding:0 16px}
+nav .in{max-width:1000px;margin:0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:4px 18px;min-height:52px}
+nav a{color:#d1d5db;padding:6px 0}nav a:hover{color:#fff;text-decoration:none}
+nav .brand{font-weight:700;color:#fff;margin-right:8px}
+nav .user{margin-left:auto;color:#9ca3af;font-size:14px}
+main{max-width:1000px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:24px;margin:0 0 16px}h2{font-size:17px;margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+.grid{display:grid;gap:16px;grid-template-columns:2fr 1fr}
+@media(max-width:800px){.grid{grid-template-columns:1fr}}
+.muted{color:var(--muted)}.small{font-size:13px}
+.qrow{display:flex;gap:14px;align-items:center;color:inherit}
+.qrow:hover{text-decoration:none}
+.qrow .t{font-weight:600;color:var(--text)}
+.qrow .meta{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;font-size:13px;color:var(--muted);align-items:center}
+.prob{min-width:68px;text-align:center;font-weight:700;font-size:20px;border-radius:10px;padding:8px 6px;color:#fff}
+.prob small{display:block;font-size:11px;font-weight:500;opacity:.85}
+.badge{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;background:#eef2ff;color:#3730a3}
+.b-open{background:var(--yes-bg);color:var(--yes)}.b-closed{background:var(--warn-bg);color:var(--warn)}
+.b-resolved{background:#e0e7ff;color:#3730a3}.b-annulled{background:#e5e7eb;color:#374151}
+.bigprob{font-size:56px;font-weight:800;line-height:1}
+.btn{display:inline-block;border:0;border-radius:8px;padding:9px 16px;font:inherit;font-weight:600;cursor:pointer;background:var(--accent);color:#fff}
+.btn:hover{filter:brightness(1.08);text-decoration:none}
+.btn.yes{background:var(--yes)}.btn.no{background:var(--no)}.btn.ghost{background:#e5e7eb;color:var(--text)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+input[type=text],input[type=number],select{font:inherit;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;width:100%;background:#fff}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+.msg{padding:10px 14px;border-radius:8px;margin-bottom:10px;border:1px solid var(--line);background:#fff}
+.msg.error{background:var(--no-bg);color:var(--no);border-color:#fecaca}
+.msg.success{background:var(--yes-bg);color:var(--yes);border-color:#bbf7d0}
+.msg.warning{background:var(--warn-bg);color:var(--warn)}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+th{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.pos{color:var(--yes)}.neg{color:var(--no)}
+.sides{display:flex;gap:8px}.sides label{flex:1;margin:0;color:var(--text);font-size:15px}
+.sides input{display:none}
+.sides span{display:block;text-align:center;padding:9px;border:2px solid #d1d5db;border-radius:8px;font-weight:700;cursor:pointer}
+.sides input[value=yes]:checked+span{border-color:var(--yes);background:var(--yes-bg);color:var(--yes)}
+.sides input[value=no]:checked+span{border-color:var(--no);background:var(--no-bg);color:var(--no)}
+#preview{margin:10px 0;min-height:44px;font-size:14px}
+.feed li{padding:6px 0;border-bottom:1px solid var(--line);list-style:none}.feed{padding:0;margin:0}
+.head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+</style>
+{% block head %}{% endblock %}
+</head>
+<body>
+<nav><div class="in">
+  <a class="brand" href="{% url 'market:index' %}">Рынок прогнозов</a>
+  <a href="{% url 'market:index' %}">Рынки</a>
+  <a href="{% url 'market:leaderboard' %}">Лидерборд</a>
+  <a href="{% url 'market:me' %}">Мои ставки</a>
+  <a href="{% url 'abmock:index' %}">Платформа экспериментов</a>
+  <a href="{% url 'sources:github' %}">GitHub</a>
+  <span class="user">
+    {% if current_trader %}{{ current_trader.name }} &middot; {{ current_trader.balance }} монет{% else %}не выбран пользователь{% endif %}
+    &middot; <a href="{% url 'market:switch_user' %}">сменить</a>
+  </span>
+</div></nav>
+<main>
+  {% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}
+  {% block content %}{% endblock %}
+</main>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Рынки{% endblock %}
+{% block content %}
+<div class="head">
+  <h1 style="margin:0">Рынки</h1>
+  <form method="post" action="{% url 'sources:sync' %}">{% csrf_token %}
+    <button class="btn" type="submit">Обновить источники</button>
+  </form>
+</div>
+{% for question in questions %}
+<div class="card">
+  <a class="qrow" href="{% url 'market:question' question.pk %}">
+    <div class="prob" style="background:{% if question.status == 'annulled' %}#9ca3af{% elif question.outcome == 'yes' %}#15803d{% elif question.outcome == 'no' %}#b91c1c{% else %}#2563eb{% endif %}">{{ question.pct }}%<small>ДА</small></div>
+    <div>
+      <div class="t">{{ question.title }}</div>
+      <div class="meta">
+        {% include "market/_badges.html" %}
+        {% if question.deadline %}<span>до {{ question.deadline|date:"d.m.Y H:i" }}</span>{% endif %}
+        <span>участников: {{ question.n_traders }}</span>
+      </div>
+    </div>
+  </a>
+</div>
+{% empty %}
+<div class="card muted">Вопросов пока нет. Создайте эксперимент в платформе экспериментов или нажмите «Обновить источники».</div>
+{% endfor %}
+{% endblock %}

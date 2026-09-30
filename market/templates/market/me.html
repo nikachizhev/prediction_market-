@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Мои ставки{% endblock %}
+{% block content %}
+<h1>{{ trader.name }}</h1>
+<div class="grid">
+<div>
+  <div class="card" style="display:flex;gap:28px;flex-wrap:wrap">
+    <div><b>{{ trader.balance }}</b><div class="muted small">баланс</div></div>
+    <div><b>{{ portfolio }}</b><div class="muted small">позиции по текущей цене</div></div>
+    <div><b class="{% if profit >= 0 %}pos{% else %}neg{% endif %}">{{ profit }}</b><div class="muted small">прибыль</div></div>
+  </div>
+  <div class="card"><h2>Позиции</h2>
+  <table>
+    <tr><th>Вопрос</th><th class="num">ДА</th><th class="num">НЕТ</th><th class="num">Потрачено</th><th class="num">Стоимость</th></tr>
+    {% for p in positions %}
+    <tr><td><a href="{% url 'market:question' p.question.pk %}">{{ p.question.title }}</a>
+        <div class="small">{% with question=p.question %}{% include "market/_badges.html" %}{% endwith %}</div></td>
+      <td class="num">{{ p.pos.yes_shares|floatformat:2 }}</td><td class="num">{{ p.pos.no_shares|floatformat:2 }}</td>
+      <td class="num">{{ p.pos.spent }}</td>
+      <td class="num">{% if p.value is not None %}{{ p.value|floatformat:2 }}{% else %}&mdash;{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="5" class="muted">Позиций пока нет.</td></tr>{% endfor %}
+  </table></div>
+</div>
+<div class="card"><h2>Настройки</h2>
+  <form method="post">{% csrf_token %}
+    <label><input type="checkbox" name="show_real_name" {% if trader.show_real_name %}checked{% endif %}> показывать имя вместо псевдонима</label>
+    <label for="pseudonym">Псевдоним</label>
+    <input type="text" id="pseudonym" name="pseudonym" value="{{ trader.pseudonym }}">
+    <label for="gh">Логин GitHub</label>
+    <input type="text" id="gh" name="github_login" value="{{ trader.github_login|default:'' }}" placeholder="нужен для учёта конфликта интересов">
+    <p><button class="btn" type="submit">Сохранить</button></p>
+  </form>
+</div>
+</div>
+{% endblock %}

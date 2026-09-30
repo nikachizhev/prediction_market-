@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Лидерборд{% endblock %}
+{% block content %}
+<h1>Лидерборд</h1>
+<div class="card">
+<p class="muted small" style="margin-top:0">Прибыль = баланс + позиции по текущей цене − стартовый капитал. Имя или псевдоним — по настройке участника.</p>
+<table>
+<tr><th>#</th><th>Участник</th><th class="num">Прибыль</th></tr>
+{% for r in rows %}
+<tr{% if me and r.trader.pk == me.pk %} style="background:#eff6ff"{% endif %}><td>{{ r.rank }}</td><td>{{ r.trader.display_name }}</td>
+  <td class="num {% if r.profit >= 0 %}pos{% else %}neg{% endif %}">{{ r.profit }}</td></tr>
+{% empty %}<tr><td colspan="3" class="muted">Участников пока нет.</td></tr>{% endfor %}
+{% if my_row %}
+<tr><td colspan="3" class="muted small">&hellip;</td></tr>
+<tr style="background:#eff6ff"><td>{{ my_row.rank }}</td><td>{{ my_row.trader.display_name }} (вы)</td>
+  <td class="num {% if my_row.profit >= 0 %}pos{% else %}neg{% endif %}">{{ my_row.profit }}</td></tr>
+{% endif %}
+</table></div>
+{% endblock %}

@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}{{ question.title }}{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="muted small">{% include "market/_badges.html" %}
+    {% if question.deadline %} &middot; дедлайн {{ question.deadline|date:"d.m.Y H:i" }}{% endif %}</div>
+  <h1 style="margin:8px 0 12px">{{ question.title }}</h1>
+  <div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-end">
+    <div><div class="bigprob">{{ pct }}%</div><div class="muted small">вероятность ДА</div></div>
+    <div><b>{{ volume }}</b><div class="muted small">объём, монет</div></div>
+    <div><b>{{ participants }}</b><div class="muted small">участников</div></div>
+    <div><b>{{ question.trades.count }}</b><div class="muted small">сделок</div></div>
+  </div>
+</div>
+<div class="grid">
+  <div>
+    <div class="card"><h2>Вероятность во времени</h2><div style="height:260px"><canvas id="chart"></canvas></div></div>
+    <div class="card"><h2>Критерий разрешения</h2><div>{{ question.resolution_criteria|linebreaksbr }}</div></div>
+    <div class="card"><h2>Лента сделок</h2>
+      <ul class="feed">
+      {% for f in feed %}
+        <li>кто-то {{ f.verb }} <b class="{% if f.side == 'ДА' %}pos{% else %}neg{% endif %}">{{ f.side }}</b> на {{ f.amount }}, {{ f.before }}% &rarr; {{ f.after }}%
+          <span class="muted small">&middot; {{ f.at|date:"d.m H:i" }}</span></li>
+      {% empty %}<li class="muted">Сделок пока нет.</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div>
+    {% if question.status == 'resolved' %}
+      <div class="card"><h2>Итог</h2>Рынок разрешён: <b>{{ question.get_outcome_display }}</b>.</div>
+    {% elif question.status == 'annulled' %}
+      <div class="card"><h2>Итог</h2>Рынок аннулирован, ставки возвращены.</div>
+    {% elif question.status == 'closed' %}
+      <div class="card"><h2>Ставки закрыты</h2>Ожидается разрешение.</div>
+    {% endif %}
+
+    {% if not current_trader %}
+      <div class="card">Чтобы ставить, <a href="{% url 'market:switch_user' %}?next={{ request.path }}">выберите пользователя</a>.</div>
+    {% elif conflicted %}
+      <div class="card"><div class="msg warning" style="margin:0">Вы не можете ставить: конфликт интересов.</div></div>
+    {% elif can_bet %}
+      <div class="card">
+        <h2>Сделать ставку</h2>
+        <form method="post" action="{% url 'market:buy' question.pk %}" id="betform">{% csrf_token %}
+          <div class="sides">
+            <label><input type="radio" name="side" value="yes" checked><span>ДА</span></label>
+            <label><input type="radio" name="side" value="no"><span>НЕТ</span></label>
+          </div>
+          <label for="amount">Сумма, монет (макс. {{ max_bet }})</label>
+          <input type="number" id="amount" name="amount" min="1" max="{{ max_bet }}" step="0.01" value="100" required>
+          <div id="preview" class="muted">&nbsp;</div>
+          <button class="btn" type="submit">Поставить</button>
+        </form>
+      </div>
+    {% endif %}
+
+    {% if position %}
+      <div class="card">
+        <h2>Ваша позиция</h2>
+        <table>
+          <tr><td>Акции ДА</td><td class="num">{{ position.pos.yes_shares|floatformat:2 }}</td></tr>
+          <tr><td>Акции НЕТ</td><td class="num">{{ position.pos.no_shares|floatformat:2 }}</td></tr>
+          <tr><td>Потрачено</td><td class="num">{{ position.pos.spent }}</td></tr>
+          <tr><td>Текущая стоимость</td><td class="num">{{ position.value|floatformat:2 }}</td></tr>
+          <tr><td>Выплата, если ДА</td><td class="num pos">{{ position.win_yes }}</td></tr>
+          <tr><td>Выплата, если НЕТ</td><td class="num pos">{{ position.win_no }}</td></tr>
+        </table>
+        {% if question.status == 'open' %}
+        <h2 style="margin-top:14px">Продать</h2>
+        {% if position.pos.yes_shares > 0 %}
+        <form method="post" action="{% url 'market:sell' question.pk %}" style="display:flex;gap:6px;margin-bottom:6px">{% csrf_token %}
+          <input type="hidden" name="side" value="yes">
+          <input type="text" name="shares" value="{{ position.pos.yes_shares|floatformat:2 }}" aria-label="акций ДА">
+          <button class="btn ghost" type="submit">ДА</button></form>
+        {% endif %}
+        {% if position.pos.no_shares > 0 %}
+        <form method="post" action="{% url 'market:sell' question.pk %}" style="display:flex;gap:6px">{% csrf_token %}
+          <input type="hidden" name="side" value="no">
+          <input type="text" name="shares" value="{{ position.pos.no_shares|floatformat:2 }}" aria-label="акций НЕТ">
+          <button class="btn ghost" type="submit">НЕТ</button></form>
+        {% endif %}
+        <div class="muted small" style="margin-top:6px">Укажите число акций (по умолчанию все).</div>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+{{ chart_labels|json_script:"chart-labels" }}
+{{ chart_points|json_script:"chart-points" }}
+{% endblock %}
+{% block scripts %}
+<script>
+(function(){
+  var labels=JSON.parse(document.getElementById('chart-labels').textContent);
+  var pts=JSON.parse(document.getElementById('chart-points').textContent);
+  if(window.Chart){
+    new Chart(document.getElementById('chart'),{type:'line',
+      data:{labels:labels,datasets:[{label:'ДА, %',data:pts,borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.1)',fill:true,stepped:true,pointRadius:2}]},
+      options:{maintainAspectRatio:false,scales:{y:{min:0,max:100,ticks:{callback:function(v){return v+'%'}}}},plugins:{legend:{display:false}}}});
+  }
+  var form=document.getElementById('betform'); if(!form) return;
+  var box=document.getElementById('preview'), amount=document.getElementById('amount'), timer=null;
+  function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+  function update(){
+    var side=form.querySelector('input[name=side]:checked').value;
+    var url='{% url "market:quote" question.pk %}?side='+side+'&amount='+encodeURIComponent(amount.value);
+    fetch(url).then(function(r){return r.json().then(function(j){return [r.ok,j]})}).then(function(x){
+      if(!x[0]){box.innerHTML='<span class="neg">'+esc(x[1].error)+'</span>';return;}
+      var j=x[1];
+      box.innerHTML='Акций: <b>'+j.shares.toFixed(2)+'</b> за '+j.cost.toFixed(2)+'. Вероятность ДА: '+
+        Math.round(j.prob_before*100)+'% &rarr; <b>'+Math.round(j.new_prob*100)+'%</b>.<br>Выплата при выигрыше: <b>'+j.payout_if_win.toFixed(2)+'</b>';
+    }).catch(function(){box.textContent='';});
+  }
+  function later(){clearTimeout(timer);timer=setTimeout(update,150);}
+  amount.addEventListener('input',later);
+  form.querySelectorAll('input[name=side]').forEach(function(e){e.addEventListener('change',update)});
+  update();
+})();
+</script>
+{% endblock %}

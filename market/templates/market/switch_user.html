@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Выбор пользователя{% endblock %}
+{% block content %}
+<h1>Кто вы?</h1>
+<div class="card">
+{% for t in traders %}
+<form method="post" style="margin:0 0 8px">{% csrf_token %}
+  <input type="hidden" name="trader_id" value="{{ t.pk }}"><input type="hidden" name="next" value="{{ next }}">
+  <button class="btn {% if current_trader and current_trader.pk == t.pk %}{% else %}ghost{% endif %}" style="width:100%;text-align:left" type="submit">
+    {{ t.name }} <span class="small" style="font-weight:400">&middot; {{ t.balance }} монет</span></button>
+</form>
+{% empty %}<div class="muted">Участников нет. Выполните <code>python manage.py seed_demo</code> или создайте их в /admin/.</div>{% endfor %}
+</div>
+{% endblock %}
