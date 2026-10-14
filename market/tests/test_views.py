@@ -36,6 +36,32 @@ def test_list_and_detail_readable_anonymously(client, q):
     assert r.status_code == 200
 
 
+def test_market_list_filters_and_explicit_route(client, q, db):
+    services.create_question(title="Другой вопрос", resolution_criteria="Иной критерий")
+    r = client.get(reverse("market:markets"), {"q": "релиз", "status": "open"})
+    page = r.content.decode()
+    assert r.status_code == 200
+    assert "Будет ли релиз?" in page and "Другой вопрос" not in page
+
+
+def test_markets_api_returns_frontend_summary(client, q, anya):
+    services.buy(anya, q, "yes", 10)
+    r = client.get(reverse("market:markets_api"), {"status": "open"})
+    body = r.json()
+    assert r.status_code == 200 and body["count"] == 1
+    assert body["results"][0]["id"] == q.pk
+    assert body["results"][0]["participants"] == 1
+    assert body["results"][0]["trades"] == 1
+
+
+def test_personal_rating_is_empty_and_requires_trader(client, anya):
+    r = client.get(reverse("market:personal_rating"))
+    assert r.status_code == 302 and reverse("market:switch_user") in r["Location"]
+    login(client, anya)
+    page = client.get(reverse("market:personal_rating")).content.decode()
+    assert "Мой рейтинг" in page and "Раздел готовится" in page
+
+
 def test_me_redirects_without_trader(client, db):
     r = client.get(reverse("market:me"))
     assert r.status_code == 302 and reverse("market:switch_user") in r["Location"]

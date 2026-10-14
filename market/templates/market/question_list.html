@@ -7,6 +7,13 @@
     <button class="btn" type="submit">Обновить источники</button>
   </form>
 </div>
+<form class="card filters" method="get">
+  <div><label for="q">Поиск</label><input type="text" id="q" name="q" value="{{ filters.search }}" placeholder="Название или критерий разрешения"></div>
+  <div><label for="status">Статус</label><select id="status" name="status"><option value="">Все статусы</option>{% for value, label in statuses %}<option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div><label for="source">Источник</label><select id="source" name="source"><option value="">Все источники</option>{% for value, label in sources %}<option value="{{ value }}" {% if filters.source == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div><label for="sort">Сортировка</label><select id="sort" name="sort">{% for value, label in sorts %}<option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div class="filter-actions"><button class="btn" type="submit">Показать</button><a href="{% url 'market:markets' %}">Сбросить</a></div>
+</form>
 {% for question in questions %}
 <div class="card">
   <a class="qrow" href="{% url 'market:question' question.pk %}">
@@ -17,11 +24,13 @@
         {% include "market/_badges.html" %}
         {% if question.deadline %}<span>до {{ question.deadline|date:"d.m.Y H:i" }}</span>{% endif %}
         <span>участников: {{ question.n_traders }}</span>
+        <span>сделок: {{ question.n_trades }}</span>
+        <span>объём: {{ question.volume|floatformat:2 }}</span>
       </div>
     </div>
   </a>
 </div>
 {% empty %}
-<div class="card muted">Вопросов пока нет. Создайте эксперимент в платформе экспериментов или нажмите «Обновить источники».</div>
+<div class="card muted">Подходящих рынков пока нет. Измените фильтры или обновите источники.</div>
 {% endfor %}
 {% endblock %}

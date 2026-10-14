@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.contrib import messages
-from django.db.models import Count, Sum
+from django.db.models import Sum
 from django.db.models.functions import Abs
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -15,6 +15,7 @@ from django.views.decorators.http import require_POST
 
 from . import services
 from .models import Position, Question, Trade, Trader
+from .selectors import MARKET_SORTS, market_list
 from .services import MarketError
 
 
@@ -36,12 +37,63 @@ def _dec(raw: str | None) -> Decimal:
 
 
 def question_list(request: HttpRequest) -> HttpResponse:
-    questions = list(
-        Question.objects.annotate(n_traders=Count("trades__trader", distinct=True))
-    )
+    filters = {
+        "search": request.GET.get("q", "").strip()[:200],
+        "status": request.GET.get("status", ""),
+        "source": request.GET.get("source", ""),
+        "sort": request.GET.get("sort", "new"),
+    }
+    questions = list(market_list(**filters))
     for q in questions:
         q.pct = round(q.prob * 100)
-    return render(request, "market/question_list.html", {"questions": questions})
+        q.volume = q.volume or Decimal(0)
+    return render(
+        request,
+        "market/question_list.html",
+        {
+            "questions": questions,
+            "filters": filters,
+            "statuses": Question.Status.choices,
+            "sources": Question.Source.choices,
+            "sorts": (("new", "Сначала новые"), ("deadline", "По дедлайну"), ("activity", "По активности")),
+        },
+    )
+
+
+def markets_api(request: HttpRequest) -> JsonResponse:
+    """Read-only endpoint for the frontend and future integrations."""
+    filters = {
+        "search": request.GET.get("q", "").strip()[:200],
+        "status": request.GET.get("status", ""),
+        "source": request.GET.get("source", ""),
+        "sort": request.GET.get("sort", "new"),
+    }
+    if filters["sort"] not in MARKET_SORTS:
+        filters["sort"] = "new"
+    rows = []
+    for q in market_list(**filters)[:100]:
+        rows.append(
+            {
+                "id": q.pk,
+                "title": q.title,
+                "status": q.status,
+                "source": q.source_type,
+                "probability_yes": round(q.prob, 6),
+                "participants": q.n_traders,
+                "trades": q.n_trades,
+                "volume": float(q.volume or 0),
+                "deadline": q.deadline.isoformat() if q.deadline else None,
+                "url": reverse("market:question", args=[q.pk]),
+            }
+        )
+    return JsonResponse({"results": rows, "count": len(rows)})
+
+
+def personal_rating(request: HttpRequest) -> HttpResponse:
+    trader = _trader(request)
+    if not trader:
+        return _need_trader(request)
+    return render(request, "market/personal_rating.html", {"trader": trader})
 
 
 def question_detail(request: HttpRequest, pk: int) -> HttpResponse:
