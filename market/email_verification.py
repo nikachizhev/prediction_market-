@@ -85,5 +85,6 @@ def verify(request, token):
             return redirect("market:login")
     response = render(request, "market/verify_email.html", {"valid": valid})
     response["Cache-Control"] = "no-store"
-    response["Referrer-Policy"] = "no-referrer"
+    # Preserve the origin for same-site form POSTs without leaking the token externally.
+    response["Referrer-Policy"] = "same-origin"
     return response

@@ -14,10 +14,11 @@ def connection(request):
     if not trader:
         return redirect("market:login")
     action = request.POST.get("action")
+    destination = "market:profile" if request.POST.get("return_to") == "profile" else "market:me"
     if action == "disconnect":
         if trader.user and not trader.user.has_usable_password():
             messages.error(request, "Telegram — ваш единственный способ входа. Сначала настройте пароль аккаунта.")
-            return redirect("market:me")
+            return redirect(destination)
         TelegramSiteLink.objects.filter(trader=trader).delete()
         trader.telegram_chat_id = None
         trader.save(update_fields=["telegram_chat_id"])
@@ -35,4 +36,4 @@ def connection(request):
             messages.error(request, "Telegram-бот ещё не настроен администратором.")
         else:
             request.session["telegram_link"] = create_link(trader)
-    return redirect("market:me")
+    return redirect(destination)

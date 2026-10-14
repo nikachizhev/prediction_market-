@@ -4,10 +4,32 @@ from unittest.mock import patch
 from smtplib import SMTPException
 import pytest
 from django.contrib.auth.models import User
+from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 from market.models import EmailVerification
 from market.email_verification import send_verification, mark_pending
+
+
+@pytest.mark.django_db
+def test_confirmation_preserves_same_origin_and_requires_csrf(mailoutbox):
+    user = User.objects.create_user(username="csrf_pending", email="csrf@example.com", is_active=False)
+    mark_pending(user)
+    assert send_verification(user)
+    token = re.search(r'/email/verify/([^/]+)/', mailoutbox[0].body).group(1)
+    url = reverse("market:verify_email", args=[token])
+    browser = Client(enforce_csrf_checks=True)
+    page = browser.get(url)
+    assert page["Referrer-Policy"] == "same-origin"
+    assert browser.post(url, HTTP_ORIGIN="http://testserver").status_code == 403
+    csrf = browser.cookies["csrftoken"].value
+    assert browser.post(url, {"csrfmiddlewaretoken": csrf}, HTTP_ORIGIN="null").status_code == 403
+    user.refresh_from_db()
+    assert not user.is_active
+    response = browser.post(url, {"csrfmiddlewaretoken": csrf}, HTTP_ORIGIN="http://testserver")
+    assert response.status_code == 302
+    user.refresh_from_db()
+    assert user.is_active
 
 
 @pytest.mark.django_db

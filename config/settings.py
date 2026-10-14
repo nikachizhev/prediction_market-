@@ -29,6 +29,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "market.middleware.DailyRewardMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -72,6 +73,7 @@ AUTH_PASSWORD_VALIDATORS = [
 LOGIN_URL = "market:login"
 LOGIN_REDIRECT_URL = "market:welcome"
 LOGOUT_REDIRECT_URL = "market:markets"
+PASSWORD_RESET_TIMEOUT = 3600
 
 LANGUAGE_CODE = "ru"
 TIME_ZONE = "Europe/Moscow"

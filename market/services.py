@@ -272,4 +272,20 @@ def portfolio_value(trader: Trader) -> Decimal:
 
 def profit(trader: Trader) -> Decimal:
     trader.refresh_from_db(fields=["balance"])
-    return trader.balance + portfolio_value(trader) - Decimal(settings.START_BALANCE)
+    from django.db.models import Sum
+    bonuses = trader.daily_rewards.aggregate(total=Sum("coins"))["total"] or Decimal(0)
+    return trader.balance + portfolio_value(trader) - Decimal(settings.START_BALANCE) - bonuses
+
+
+@transaction.atomic
+def claim_daily_reward(trader):
+    from zoneinfo import ZoneInfo
+    from django.utils import timezone
+    from .models import DailyReward
+    trader = Trader.objects.select_for_update().get(pk=trader.pk)
+    day = timezone.localdate(timezone=ZoneInfo("Europe/Moscow"))
+    reward, created = DailyReward.objects.get_or_create(trader=trader, day=day)
+    if created:
+        trader.balance += reward.coins
+        trader.save(update_fields=["balance"])
+    return reward if created else None

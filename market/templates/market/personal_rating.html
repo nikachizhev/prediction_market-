@@ -1,17 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Мой рейтинг{% endblock %}
 {% block content %}
-<h1>Мой рейтинг</h1>
+<div class="page-intro"><span class="eyebrow">КАЖДЫЙ ПРОГНОЗ — НОВЫЙ ОПЫТ</span><h1>Ваш путь прогнозиста</h1><p class="muted">Следите за точностью, результатами и маленькими шагами к следующему уровню.</p></div>
+<div class="rating-metrics">
+<div class="card"><span class="eyebrow">МЕСТО ПО ПРОГНОЗАМ</span><strong>#{{ stats.rank|default:'—' }}</strong><span class="muted">среди участников</span></div>
+<div class="card"><span class="eyebrow">ТОРГОВАЯ ПРИБЫЛЬ</span><strong class="{% if stats.profit >= 0 %}pos{% else %}neg{% endif %}">{{ stats.profit|floatformat:2 }}</strong><span class="muted">без ежедневных подарков</span></div>
+<div class="card"><span class="eyebrow">ТОЧНОСТЬ</span><strong>{% if stats.accuracy != None %}{{ stats.accuracy }}%{% else %}—{% endif %}</strong><span class="muted">{{ stats.evaluated }} завершённых прогнозов</span></div>
+<div class="card"><span class="eyebrow">ЕЖЕДНЕВНЫЙ ПОДАРОК</span><strong>+5 <small>монет</small></strong><span class="muted">и 2 XP за заход · раз в день по МСК</span></div>
+</div>
 <div class="card companion-panel companion-level-{{ companion.level }}">
 {% if companion.character %}<div class="companion-portrait"><div class="mascot-art mascot-{{ companion.character.key }}" role="img" aria-label="{{ companion.character.name }}"></div><div class="companion-stars" aria-hidden="true">{% for star in companion.stars %}✦ {% endfor %}</div></div>{% endif %}
 <div class="companion-info"><span class="eyebrow">ВАШ ПРОВОДНИК · УРОВЕНЬ {{ companion.level }}</span><h2>{% if companion.character %}{{ companion.character.name }} · {{ companion.title }}{% else %}Выберите своего проводника{% endif %}</h2>
-<p>{{ companion.xp }} XP · {{ companion.participations }} прогнозов · {{ stats.correct }} верных · {{ companion.money_xp }} XP за ставки</p>
+<p>{{ companion.xp }} XP · {{ companion.participations }} прогнозов · {{ stats.correct }} верных · {{ companion.daily_xp }} XP за посещения</p>
 <progress value="{{ companion.progress }}" max="100" aria-label="Опыт до следующего уровня"></progress>
 {% if companion.next_title %}<p class="small muted">До уровня «{{ companion.next_title }}»: ещё {{ companion.missing_xp }} XP и {{ companion.missing_correct }} верных прогнозов.</p>{% else %}<p>Вы достигли уровня Оракула ✧</p>{% endif %}
 <a href="{% url 'market:mascot' %}">{% if companion.character %}Сменить проводника{% else %}Выбрать проводника{% endif %} →</a>
 <p class="small muted">10 XP за каждый отдельный вопрос, 20 XP за верный прогноз. Бонус за общий объём покупок: √монет, максимум 50 XP. Повторные сделки не добавляют участия. Опросы и аннулированные вопросы не дают опыт прогнозов.</p>
 </div></div>
-<div class="card">
+<div class="rating-charts"><section class="card"><h2>Ритм за 30 дней</h2><p class="small muted">Сделки и ответы по дням. Повторные сделки учитываются в активности.</p><div class="chart-box"><canvas id="activity-chart" aria-label="Количество операций по дням" role="img"></canvas></div></section>
+<section class="card"><h2>Как сбываются прогнозы</h2>{% if stats.evaluated %}<div class="chart-box"><canvas id="accuracy-chart" aria-label="Верные и неверные прогнозы" role="img"></canvas></div><p class="small muted">{{ stats.correct }} верных · {{ stats.wrong }} неверных</p>{% else %}<div class="chart-empty">✧<p>История только начинается</p><small>После завершения первых вопросов здесь появится точность.</small></div>{% endif %}</section></div>
+<section class="card"><h2>Результат по рынкам</h2><p class="small muted">Последние 10 завершённых торговых рынков: выплаты и продажи минус покупки. Это итог по каждому рынку, а не история стоимости портфеля.</p>{% if charts.results %}<div class="chart-box"><canvas id="results-chart" aria-label="Прибыль или убыток по завершённым рынкам" role="img"></canvas></div>{% else %}<p class="muted">Завершите первый торговый рынок, чтобы увидеть результат.</p>{% endif %}</section>
+<details class="card"><summary>Финансовые подробности и правила рейтинга</summary>
   <h2>{{ trader.display_name }} · Место {{ stats.rank|default:'—' }}</h2>
   <p>Участие в вопросах: {{ stats.markets }} · Сделок: {{ stats.trades }}</p>
   <p>Потрачено на покупки: {{ stats.spent }} · Получено от продаж: {{ stats.received }} · Выплаты: {{ stats.payouts }}</p>
@@ -19,8 +28,23 @@
   <p>Нейтральных позиций: {{ stats.neutral }} · Средняя ошибка числа: {{ stats.mean_error|default_if_none:'—' }}</p>
   <p>Прибыль с оценкой открытых позиций: {{ stats.profit }}</p>
   <p class="muted">Верный торговый прогноз — преобладающая оставшаяся позиция. Равные позиции исключены. Для нескольких вариантов требуется точное совпадение, для числа — попадание в допуск. Опросы и аннулированные вопросы не влияют на точность.</p>
-</div>
+</details>
 <div class="card"><h2>Участники</h2><table><tr><th>Место</th><th>Участник</th><th>Вопросов</th><th>Верно</th><th>Неверно</th><th>Покупки</th></tr>
 {% for row in ratings %}<tr><td>{{ row.rank }}</td><td>{{ row.trader.display_name }}</td><td>{{ row.markets }}</td><td>{{ row.correct }}</td><td>{{ row.wrong }}</td><td>{{ row.spent }}</td></tr>{% endfor %}
 </table><p class="muted">Порядок: число верных, меньше ошибок, прибыль.</p></div>
+{% endblock %}
+{% block scripts %}
+{{ charts|json_script:"rating-chart-data" }}
+{{ stats.correct|json_script:"correct-count" }}{{ stats.wrong|json_script:"wrong-count" }}
+<script>
+if (typeof Chart !== 'undefined') {
+const data=JSON.parse(document.getElementById('rating-chart-data').textContent);
+const base={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{grid:{display:false}}}};
+new Chart(document.getElementById('activity-chart'),{type:'bar',data:{labels:data.activity_labels,datasets:[{label:'Операций',data:data.activity,backgroundColor:'#7b9b74',borderRadius:5}]},options:base});
+const accuracy=document.getElementById('accuracy-chart');
+if(accuracy)new Chart(accuracy,{type:'doughnut',data:{labels:['Верные','Неверные'],datasets:[{data:[JSON.parse(document.getElementById('correct-count').textContent),JSON.parse(document.getElementById('wrong-count').textContent)],backgroundColor:['#698f67','#d7a08e'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:'75%',plugins:{legend:{position:'bottom'}}}});
+const results=document.getElementById('results-chart');
+if(results)new Chart(results,{type:'bar',data:{labels:data.result_labels,datasets:[{label:'Монеты',data:data.results,backgroundColor:data.results.map(v=>v>=0?'#698f67':'#c98777'),borderRadius:6}]},options:{...base,scales:{y:{beginAtZero:true},x:{ticks:{callback:function(value){const text=this.getLabelForValue(value);return text.length>22?text.slice(0,22)+'…':text;}},grid:{display:false}}}}});
+}
+</script>
 {% endblock %}

@@ -10,7 +10,8 @@
   </form>
   <p>{% if register %}<a href="{% url 'market:login' %}">Уже есть аккаунт? Войти</a>{% else %}<a href="{% url 'market:register' %}">Создать аккаунт</a>{% endif %}</p>
   <div class="divider">или</div>
-  <p><a href="{% url 'market:email_pending' %}">Отправить подтверждение почты повторно</a></p>
+  {% if register %}<p><a href="{% url 'market:email_pending' %}">Отправить подтверждение почты повторно</a></p>
+  {% else %}<p><a href="{% url 'market:password_reset' %}">Не помню пароль</a></p>{% endif %}
   <form method="post" action="{% url 'market:telegram_start' %}">{% csrf_token %}<button class="btn telegram-btn" type="submit">Продолжить через Telegram ↗</button></form>
 </div></div>
 {% endblock %}

@@ -27,7 +27,17 @@ def market_list(*, search: str = "", status: str = "", source: str = "", sort: s
     if search:
         qs = qs.filter(Q(title__icontains=search) | Q(resolution_criteria__icontains=search))
     if status in Question.Status.values:
-        qs = qs.filter(status=status)
+        from django.utils import timezone
+        open_now = Q(status="open") & (Q(deadline__isnull=True) | Q(deadline__gt=timezone.now()))
+        closed_poll = Q(kind="poll", status="closed")
+        if status == "open":
+            qs = qs.filter(open_now)
+        elif status == "closed":
+            qs = qs.filter(Q(status="closed") | Q(status="open", deadline__lte=timezone.now())).exclude(closed_poll)
+        elif status == "resolved":
+            qs = qs.filter(Q(status="resolved") | closed_poll)
+        else:
+            qs = qs.filter(status=status)
     if source in Question.Source.values:
         qs = qs.filter(source_type=source)
     return qs.order_by(MARKET_SORTS.get(sort, MARKET_SORTS["new"]), "-id")

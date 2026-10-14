@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Друзья{% endblock %}
+{% block content %}
+<h1>Друзья</h1><div class="profile-column">
+<section class="card"><h2>Добавить друга</h2><p class="muted">Найдите человека по логину сайта. Личные данные и почта не публикуются.</p>
+<form method="get"><label for="friend-search">Логин</label><input id="friend-search" name="q" value="{{ query }}" type="text" minlength="2"><p><button class="btn">Найти</button></p></form>
+{% for person in results %}<form method="post" class="friend-row">{% csrf_token %}<span>{{ person.display_name }} · @{{ person.user.username }}</span><input type="hidden" name="username" value="{{ person.user.username }}"><button class="btn ghost" name="action" value="request">Добавить</button></form>{% empty %}{% if query %}<p class="muted">Ничего не найдено. Введите хотя бы два символа логина.</p>{% endif %}{% endfor %}</section>
+<section class="card"><h2>Друзья и заявки</h2>
+{% for row in rows %}<div class="friend-row"><div>{{ row.person.display_name }}{% if row.person.user %} · @{{ row.person.user.username }}{% endif %}<div class="small muted">{% if row.pair.accepted %}В друзьях{% elif row.incoming %}Входящая заявка{% else %}Заявка отправлена{% endif %}</div></div>
+<form method="post">{% csrf_token %}<input type="hidden" name="pair_id" value="{{ row.pair.pk }}">{% if not row.pair.accepted and row.incoming %}<button class="btn" name="action" value="accept">Принять</button>{% endif %}<button class="btn ghost" name="action" value="remove">{% if row.pair.accepted %}Удалить{% elif row.incoming %}Отклонить{% else %}Отменить{% endif %}</button></form></div>{% empty %}<p class="muted">Пока нет друзей или заявок.</p>{% endfor %}</section>
+<section class="card"><h2>Приглашения в вопросы</h2>{% for invitation in invitations %}<div class="friend-row"><div><a href="{% url 'market:question' invitation.question_id %}">{{ invitation.question.title }}</a><div class="small muted">От {{ invitation.sender.display_name }} · {{ invitation.question.get_status_display }}</div></div></div>{% empty %}<p class="muted">Друзья пока не приглашали вас в вопросы.</p>{% endfor %}</section>
+</div>{% endblock %}

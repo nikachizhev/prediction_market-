@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Мои ставки{% endblock %}
 {% block content %}
-<h1>{{ trader.name }}</h1>
+<div class="head"><h1>Мои ставки</h1><a class="btn ghost" href="{% url 'market:profile' %}">Настройки профиля</a></div>
 <div class="grid">
 <div>
   <div class="card" style="display:flex;gap:28px;flex-wrap:wrap">
@@ -21,28 +21,6 @@
     {% empty %}<tr><td colspan="5" class="muted">Позиций пока нет.</td></tr>{% endfor %}
   </table></div>
 </div>
-<div class="card"><h2>Настройки</h2>
-  <form method="post">{% csrf_token %}
-    <label><input type="checkbox" name="show_real_name" {% if trader.show_real_name %}checked{% endif %}> показывать имя вместо псевдонима</label>
-    <label for="pseudonym">Псевдоним</label>
-    <input type="text" id="pseudonym" name="pseudonym" value="{{ trader.pseudonym }}">
-    <label for="gh">Логин GitHub</label>
-    <input type="text" id="gh" name="github_login" value="{{ trader.github_login|default:'' }}" placeholder="нужен для учёта конфликта интересов">
-    <p><button class="btn" type="submit">Сохранить</button></p>
-  </form>
-</div>
-</div>
-<div class="card">
-  <h2>Telegram</h2>
-  <form method="post" action="{% url 'market:telegram' %}">{% csrf_token %}
-    {% if trader.telegram_chat_id %}
-      <p>Аккаунт подключён. Команды бота: /balance, /markets.</p>
-      <button class="btn" name="action" value="test">Проверить связь</button>
-      <button class="btn ghost" name="action" value="disconnect">Отключить</button>
-    {% else %}
-      <button class="btn" name="action" value="connect">Подключить Telegram</button>
-      {% if request.session.telegram_link %}<p><a href="{{ request.session.telegram_link }}" target="_blank" rel="noopener noreferrer">Открыть бота и нажать Start</a>. Ссылка действует 10 минут.</p>{% endif %}
-    {% endif %}
-  </form>
+<div class="card"><h2>Ваш аккаунт</h2><p class="muted">Личные данные, Telegram и GitHub теперь собраны в настройках профиля.</p><a href="{% url 'market:profile' %}">Открыть настройки →</a></div>
 </div>
 {% endblock %}

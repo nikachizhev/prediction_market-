@@ -1,13 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ question.title }}</h1><div class="card">
-<p>{{ question.get_kind_display }} · {{ question.get_status_display }} · Ответов: {{ participants }}</p>
-{{ question.resolution_criteria|linebreaks }}
+<div class="market-breadcrumb"><a href="{% url 'market:markets' %}">← Все рынки</a>{% if request.user.is_authenticated %}<a href="{% url 'market:invite_friend' question.pk %}">Предложить друзьям ↗</a>{% endif %}</div>
+<div class="card market-hero hero-{{ question.display_state }}">{% include "market/_badges.html" %}<h1>{{ question.title }}</h1><p class="muted">{{ question.get_kind_display }} · {{ participants }} участников</p>{% if question.result_label %}<div class="hero-result">{{ question.result_label }}</div>{% endif %}</div>
+<div class="card participation-card"><h2>Ваш прогноз</h2>
+<div class="market-rules">{{ question.resolution_criteria|linebreaks }}</div>
 {% if question.deadline %}<p>Ответы до {{ question.deadline }}</p>{% endif %}
 {% if question.kind == 'poll' %}<p class="muted">Имена и индивидуальные ответы не публикуются. Для защиты от повторного голосования связь с аккаунтом хранится в базе и доступна администратору.</p>{% endif %}
-{% if response %}<p>Ваш ответ принят.</p>{% elif not current_trader %}<a href="{% url 'market:login' %}">Войти для участия</a>{% elif is_creator %}<p>Автор не участвует в собственном вопросе.</p>{% elif question.status == 'open' %}
+{% if response %}<div class="answer-success">✓ Ваш ответ принят. Следите за результатом здесь.</div>{% elif not current_trader %}<a class="btn" href="{% url 'market:login' %}">Войти для участия</a>{% elif is_creator %}<p>Автор не участвует в собственном вопросе.</p>{% elif question.accepting_entries %}
 <form method="post" action="{% url 'market:respond' question.pk %}">{% csrf_token %}{{ response_form.as_p }}<button class="btn">Отправить ответ</button></form>
-{% endif %}</div>
+{% else %}<div class="answer-success">Приём ответов завершён.</div>{% endif %}</div>
 {% if question.kind == 'poll' and question.status == 'closed' or question.status == 'resolved' %}
 <div class="card"><h2>Результаты</h2>
 {% for row in counts %}<p>{{ row.label }}: {{ row.count }}{% if row.correct %} — правильный вариант{% endif %}</p>{% endfor %}

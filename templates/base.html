@@ -69,13 +69,13 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <a href="{% url 'market:personal_rating' %}">Мой рейтинг</a>
   <a href="{% url 'market:leaderboard' %}">Лидерборд</a>
   <a href="{% url 'market:me' %}">Мои ставки</a>
-  <a href="{% url 'market:mascot' %}">Проводник ✧</a>
-  <a href="{% url 'abmock:index' %}">Платформа экспериментов</a>
   <a href="{% url 'sources:github' %}">GitHub</a>
   {% if request.user.is_staff %}<a href="{% url 'admin:index' %}">Админка</a>{% endif %}
   <span class="user">
-    {% if current_trader %}{{ current_trader.display_name }} &middot; {{ current_trader.balance }} монет{% endif %}
-    {% if request.user.is_authenticated %}<form method="post" action="{% url 'market:logout' %}" style="display:inline">{% csrf_token %}<button class="btn ghost" type="submit">Выйти</button></form>{% else %}<a href="{% url 'market:login' %}">Войти</a> &middot; <a href="{% url 'market:register' %}">Регистрация</a>{% endif %}
+    {% if request.user.is_authenticated %}
+    <details class="account-menu"><summary aria-label="Открыть меню профиля"><span class="account-avatar">{{ request.user.username|first|upper }}</span><span>{% if current_trader %}{{ current_trader.display_name }}<small>{{ current_trader.balance }} монет</small>{% else %}{{ request.user.username }}{% endif %}</span><span aria-hidden="true">⌄</span></summary>
+    <div class="account-dropdown"><a href="{% url 'market:profile' %}">Настройки профиля</a><a href="{% url 'market:friends' %}">Друзья{% if social_count %} · {{ social_count }} новых{% endif %}</a><a href="{% url 'market:me' %}">Мои ставки</a><a href="{% url 'market:personal_rating' %}">Моя статистика</a><a href="{% url 'market:mascot' %}">Выбор проводника ✧</a><form method="post" action="{% url 'market:logout' %}">{% csrf_token %}<button type="submit">Выйти из аккаунта</button></form></div></details>
+    {% else %}<a href="{% url 'market:login' %}">Войти</a> &middot; <a href="{% url 'market:register' %}">Регистрация</a>{% endif %}
   </span>
 </div></nav>
 <main>
@@ -83,7 +83,20 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   {% block content %}{% endblock %}
 </main>
 {% if floating_character %}{% include "market/floating_companion.html" %}{% endif %}
+{% if daily_reward %}{% include "market/daily_reward.html" %}{% endif %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+document.addEventListener('click', function(event) {
+  document.querySelectorAll('.account-menu[open]').forEach(function(menu) {
+    if (!menu.contains(event.target)) menu.removeAttribute('open');
+  });
+});
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') document.querySelectorAll('.account-menu[open]').forEach(function(menu) {
+    menu.removeAttribute('open'); menu.querySelector('summary').focus();
+  });
+});
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

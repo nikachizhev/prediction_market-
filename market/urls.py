@@ -1,11 +1,12 @@
-from django.urls import path
+from django.urls import path, reverse_lazy
 from django.contrib.auth import views as auth_views
-from .accounts import register
+from .accounts import register, profile, ProjectPasswordResetView
 from .telegram_views import connection
 from . import question_views
 from . import telegram_auth
 from . import email_verification
 from . import mascots
+from . import friends
 
 from . import views
 
@@ -26,6 +27,22 @@ urlpatterns = [
     path("me/telegram/", connection, name="telegram"),
     path("register/", register, name="register"),
     path("login/", auth_views.LoginView.as_view(template_name="market/auth.html"), name="login"),
+    path("password/reset/", ProjectPasswordResetView.as_view(
+        template_name="market/password_reset_form.html",
+        email_template_name="market/password_reset_email.txt",
+        subject_template_name="market/password_reset_subject.txt",
+        success_url=reverse_lazy("market:password_reset_done"),
+    ), name="password_reset"),
+    path("password/reset/sent/", auth_views.PasswordResetDoneView.as_view(
+        template_name="market/password_reset_done.html",
+    ), name="password_reset_done"),
+    path("password/reset/<uidb64>/<token>/", auth_views.PasswordResetConfirmView.as_view(
+        template_name="market/password_reset_confirm.html",
+        success_url=reverse_lazy("market:password_reset_complete"),
+    ), name="password_reset_confirm"),
+    path("password/changed/", auth_views.PasswordResetCompleteView.as_view(
+        template_name="market/password_reset_complete.html",
+    ), name="password_reset_complete"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("", views.question_list, name="index"),
     path("markets/", views.question_list, name="markets"),
@@ -37,5 +54,8 @@ urlpatterns = [
     path("leaderboard/", views.leaderboard, name="leaderboard"),
     path("rating/", views.personal_rating, name="personal_rating"),
     path("me/", views.me, name="me"),
+    path("profile/", profile, name="profile"),
+    path("friends/", friends.index, name="friends"),
+    path("q/<int:pk>/invite/", friends.invite, name="invite_friend"),
     path("switch-user/", views.switch_user, name="switch_user"),
 ]

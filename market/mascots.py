@@ -20,13 +20,15 @@ def progression(trader, stats):
     count = len(set(trades.values_list("question_id", flat=True)) | set(answers.values_list("question_id", flat=True)))
     spent = sum(trades.filter(cost__gt=0).values_list("cost", flat=True), Decimal(0))
     money_xp = min(50, math.isqrt(int(spent)))
-    xp = count*10 + stats["correct"]*20 + money_xp
+    from django.db.models import Sum
+    daily_xp = trader.daily_rewards.aggregate(total=Sum("xp"))["total"] or 0
+    xp = count*10 + stats["correct"]*20 + money_xp + daily_xp
     level = 0
     for i, (threshold, wins, _) in enumerate(LEVELS):
         if xp >= threshold and stats["correct"] >= wins:
             level = i
     result = {"character": next((c for c in CHARACTERS if c["key"] == trader.mascot), None),
-              "level": level+1, "title": LEVELS[level][2], "xp": xp,
+              "level": level+1, "title": LEVELS[level][2], "xp": xp, "daily_xp": daily_xp,
               "participations": count, "money_xp": money_xp, "stars": range(min(stats["correct"], 15))}
     if level < 3:
         threshold, wins, title = LEVELS[level+1]

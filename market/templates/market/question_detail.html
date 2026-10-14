@@ -1,50 +1,52 @@
 {% extends "base.html" %}
 {% block title %}{{ question.title }}{% endblock %}
 {% block content %}
+<div class="market-breadcrumb"><a href="{% url 'market:markets' %}">← Все рынки</a>{% if request.user.is_authenticated %}<a href="{% url 'market:invite_friend' question.pk %}">Предложить друзьям ↗</a>{% endif %}</div>
 {% if is_creator and question.status != 'resolved' and question.status != 'annulled' %}
 <div class="card"><h2>Указать результат</h2><form method="post" action="{% url 'market:finish' question.pk %}">{% csrf_token %}{{ result_form.as_p }}<button class="btn">Завершить и выплатить</button></form></div>
 {% endif %}
-<p>{{ question.get_kind_display }}{% if question.kind == 'ls_lmsr' %} · Вероятность нормализована; стоимость включает надбавку LS-LMSR.{% endif %}</p>
-<div class="card">
+<div class="card market-hero hero-{{ question.display_state }}">
   <div class="muted small">{% include "market/_badges.html" %}
     {% if question.deadline %} &middot; дедлайн {{ question.deadline|date:"d.m.Y H:i" }}{% endif %}</div>
-  <h1 style="margin:8px 0 12px">{{ question.title }}</h1>
-  <div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-end">
-    <div><div class="bigprob">{{ pct }}%</div><div class="muted small">вероятность ДА</div></div>
+  <h1>{{ question.title }}</h1>
+  {% if question.result_label %}<div class="hero-result">{{ question.result_label }}</div>{% endif %}
+  <div class="market-hero-metrics">
+    {% if question.display_state != 'resolved' and question.display_state != 'annulled' %}<div><div class="bigprob">{{ pct }}%</div><div class="muted small">вероятность ДА</div></div>{% endif %}
     <div><b>{{ volume }}</b><div class="muted small">объём, монет</div></div>
     <div><b>{{ participants }}</b><div class="muted small">участников</div></div>
     <div><b>{{ question.trades.count }}</b><div class="muted small">сделок</div></div>
   </div>
+  <p class="small muted">{% if question.display_state == 'open' %}Выберите ДА или НЕТ. Перед подтверждением увидите стоимость и возможную выплату.{% elif question.display_state == 'closed' %}Приём ставок завершён. Ждём подтверждения исхода.{% elif question.display_state == 'resolved' %}Исход зафиксирован. Выплаты по выигравшим акциям выполнены.{% else %}Этот рынок отменён. Участникам возвращена учтённая стоимость позиций.{% endif %}</p>
 </div>
-<div class="grid">
+<div class="grid market-detail-grid">
   <div>
     <div class="card"><h2>Вероятность во времени</h2><div style="height:260px"><canvas id="chart"></canvas></div></div>
-    <div class="card"><h2>Критерий разрешения</h2><div>{{ question.resolution_criteria|linebreaksbr }}</div></div>
-    <div class="card"><h2>Лента сделок</h2>
+    <div class="card market-rules"><h2>Как определяем результат</h2><div>{{ question.resolution_criteria|linebreaksbr }}</div><p class="small muted">Модель: {{ question.get_kind_display }}{% if question.kind == 'ls_lmsr' %}. Вероятность нормализована; стоимость включает надбавку LS-LMSR.{% endif %}</p></div>
+    <details class="card"><summary>Последние сделки · {{ question.trades.count }}</summary>
       <ul class="feed">
       {% for f in feed %}
         <li>кто-то {{ f.verb }} <b class="{% if f.side == 'ДА' %}pos{% else %}neg{% endif %}">{{ f.side }}</b> на {{ f.amount }}, {{ f.before }}% &rarr; {{ f.after }}%
           <span class="muted small">&middot; {{ f.at|date:"d.m H:i" }}</span></li>
       {% empty %}<li class="muted">Сделок пока нет.</li>{% endfor %}
       </ul>
-    </div>
+    </details>
   </div>
   <div>
     {% if question.status == 'resolved' %}
       <div class="card"><h2>Итог</h2>Рынок разрешён: <b>{{ question.get_outcome_display }}</b>.</div>
     {% elif question.status == 'annulled' %}
       <div class="card"><h2>Итог</h2>Рынок аннулирован, ставки возвращены.</div>
-    {% elif question.status == 'closed' %}
+    {% elif question.display_state == 'closed' %}
       <div class="card"><h2>Ставки закрыты</h2>Ожидается разрешение.</div>
     {% endif %}
 
     {% if not current_trader %}
-      <div class="card">Чтобы ставить, <a href="{% url 'market:switch_user' %}?next={{ request.path }}">выберите пользователя</a>.</div>
+      <div class="card">Чтобы ставить, <a href="{% url 'market:login' %}?next={{ request.path|urlencode }}">войдите в аккаунт</a>.</div>
     {% elif conflicted %}
       <div class="card"><div class="msg warning" style="margin:0">Вы не можете ставить: конфликт интересов.</div></div>
     {% elif can_bet %}
-      <div class="card">
-        <h2>Сделать ставку</h2>
+      <div class="card trade-ticket">
+        <span class="eyebrow">ВАШ ПРОГНОЗ</span><h2>Какой исход вы ожидаете?</h2><p class="small muted">Баланс: {{ current_trader.balance }} монет</p>
         <form method="post" action="{% url 'market:buy' question.pk %}" id="betform">{% csrf_token %}
           <div class="sides">
             <label><input type="radio" name="side" value="yes" checked><span>ДА</span></label>
@@ -52,8 +54,9 @@
           </div>
           <label for="amount">Сумма, монет (макс. {{ max_bet }})</label>
           <input type="number" id="amount" name="amount" min="1" max="{{ max_bet }}" step="0.01" value="100" required>
+          <div class="stake-presets">{% for amount in stake_presets %}<button type="button" data-stake="{{ amount }}">{{ amount }}</button>{% endfor %}</div>
           <div id="preview" class="muted">&nbsp;</div>
-          <button class="btn" type="submit">Поставить</button>
+          <button class="btn" type="submit">Подтвердить ставку →</button><p class="small muted">Выигравшая акция приносит 1 монету, проигравшая — 0.</p>
         </form>
       </div>
     {% endif %}
@@ -69,7 +72,7 @@
           <tr><td>Выплата, если ДА</td><td class="num pos">{{ position.win_yes }}</td></tr>
           <tr><td>Выплата, если НЕТ</td><td class="num pos">{{ position.win_no }}</td></tr>
         </table>
-        {% if question.status == 'open' %}
+        {% if question.accepting_entries %}
         <h2 style="margin-top:14px">Продать</h2>
         {% if position.pos.yes_shares > 0 %}
         <form method="post" action="{% url 'market:sell' question.pk %}" style="display:flex;gap:6px;margin-bottom:6px">{% csrf_token %}
@@ -99,7 +102,7 @@
   var pts=JSON.parse(document.getElementById('chart-points').textContent);
   if(window.Chart){
     new Chart(document.getElementById('chart'),{type:'line',
-      data:{labels:labels,datasets:[{label:'ДА, %',data:pts,borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.1)',fill:true,stepped:true,pointRadius:2}]},
+      data:{labels:labels,datasets:[{label:'ДА, %',data:pts,borderColor:'#60866a',backgroundColor:'rgba(96,134,106,.12)',fill:true,stepped:true,pointRadius:2}]},
       options:{maintainAspectRatio:false,scales:{y:{min:0,max:100,ticks:{callback:function(v){return v+'%'}}}},plugins:{legend:{display:false}}}});
   }
   var form=document.getElementById('betform'); if(!form) return;
@@ -117,6 +120,7 @@
   }
   function later(){clearTimeout(timer);timer=setTimeout(update,150);}
   amount.addEventListener('input',later);
+  document.querySelectorAll('[data-stake]').forEach(function(button){button.addEventListener('click',function(){amount.value=button.dataset.stake;update();});});
   form.querySelectorAll('input[name=side]').forEach(function(e){e.addEventListener('change',update)});
   update();
 })();

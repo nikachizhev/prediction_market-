@@ -108,7 +108,7 @@ def test_buy_errors_shown_as_message(client, q, anya):
     r = client.post(reverse("market:buy", args=[q.pk]), {"side": "yes", "amount": "99999"}, follow=True)
     assert "Максимальная ставка" in r.content.decode() or "Недостаточно" in r.content.decode()
     anya.refresh_from_db()
-    assert anya.balance == Decimal("1000")
+    assert anya.balance == Decimal("1000") + sum(anya.daily_rewards.values_list("coins", flat=True))
 
 
 def test_conflicted_trader_cannot_bet(client, q, anya):
@@ -118,7 +118,7 @@ def test_conflicted_trader_cannot_bet(client, q, anya):
     assert "конфликт интересов" in page and 'id="betform"' not in page
     client.post(reverse("market:buy", args=[q.pk]), {"side": "yes", "amount": "10"})
     anya.refresh_from_db()
-    assert anya.balance == Decimal("1000")
+    assert anya.balance == Decimal("1000") + sum(anya.daily_rewards.values_list("coins", flat=True))
 
 
 def test_sell_view(client, q, anya):

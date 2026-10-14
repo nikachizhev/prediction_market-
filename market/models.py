@@ -10,6 +10,11 @@ from . import lmsr
 
 
 class Trader(models.Model):
+    birth_date = models.DateField("Дата рождения", null=True, blank=True)
+    city = models.CharField("Город", max_length=100, blank=True)
+    workplace = models.CharField("Место работы", max_length=200, blank=True)
+    education = models.CharField("Место учёбы", max_length=200, blank=True)
+    bio = models.CharField("О себе", max_length=500, blank=True)
     show_companion = models.BooleanField(default=True)
     mascot = models.CharField(max_length=12, blank=True, default="", choices=[("vesta", "Веста"), ("klep", "Клёп"), ("fox", "Фокс")])
     telegram_chat_id = models.BigIntegerField(null=True, blank=True, unique=True)
@@ -32,6 +37,32 @@ class Trader(models.Model):
     @property
     def display_name(self) -> str:
         return self.name if self.show_real_name else self.pseudonym
+
+
+class Friendship(models.Model):
+    first = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="friendships_first")
+    second = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="friendships_second")
+    requested_by = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="friend_requests_sent")
+    accepted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["first", "second"], name="unique_friend_pair"),
+            models.CheckConstraint(condition=Q(first__lt=models.F("second")), name="ordered_friend_pair"),
+            models.CheckConstraint(condition=Q(requested_by=models.F("first")) | Q(requested_by=models.F("second")), name="friend_request_member"),
+        ]
+
+
+class MarketInvitation(models.Model):
+    sender = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="invitations_sent")
+    recipient = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="invitations_received")
+    question = models.ForeignKey("Question", on_delete=models.CASCADE, related_name="friend_invitations")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["sender", "recipient", "question"], name="unique_market_invitation")]
+        ordering = ["-created_at", "-pk"]
 
 
 class TelegramLink(models.Model):
@@ -92,6 +123,36 @@ class Question(models.Model):
     @property
     def is_trading(self):
         return self.kind in (self.Kind.LMSR, self.Kind.LS, self.Kind.CPMM)
+
+    @property
+    def accepting_entries(self):
+        from django.utils import timezone
+        return self.status == self.Status.OPEN and (not self.deadline or self.deadline > timezone.now())
+
+    @property
+    def display_state(self):
+        if self.status == self.Status.ANNULLED:
+            return "annulled"
+        if self.status == self.Status.RESOLVED or (self.kind == self.Kind.POLL and self.status == self.Status.CLOSED):
+            return "resolved"
+        return "open" if self.accepting_entries else "closed"
+
+    @property
+    def state_label(self):
+        return {"open": "Можно участвовать", "closed": "Ожидает результата",
+                "resolved": "Завершён", "annulled": "Отменён"}[self.display_state]
+
+    @property
+    def result_label(self):
+        if self.status == self.Status.ANNULLED:
+            return "Ставки возвращены" if self.is_trading else "Вопрос отменён"
+        if self.display_state != "resolved":
+            return ""
+        if self.is_trading:
+            return f"Итог: {self.get_outcome_display()}"
+        if self.kind == self.Kind.NUMBER:
+            return f"Ответ: {self.answer}"
+        return "Результаты опубликованы"
 
     class Source(models.TextChoices):
         MANUAL = "manual", "Вручную"
@@ -197,6 +258,16 @@ class Trade(models.Model):
         verbose_name = "сделка"
         verbose_name_plural = "сделки"
         ordering = ["created_at", "id"]
+
+
+class DailyReward(models.Model):
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="daily_rewards")
+    day = models.DateField()
+    coins = models.DecimalField(max_digits=8, decimal_places=2, default=5)
+    xp = models.PositiveSmallIntegerField(default=2)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["trader", "day"], name="unique_daily_reward")]
 
 
 class Payout(models.Model):

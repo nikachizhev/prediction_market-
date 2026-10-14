@@ -54,7 +54,7 @@ def question_list(request: HttpRequest) -> HttpResponse:
         {
             "questions": questions,
             "filters": filters,
-            "statuses": Question.Status.choices,
+            "statuses": (("open", "Можно участвовать"), ("closed", "Ожидают результата"), ("resolved", "Завершённые"), ("annulled", "Отменённые")),
             "sources": Question.Source.choices,
             "sorts": (("new", "Сначала новые"), ("deadline", "По дедлайну"), ("activity", "По активности")),
         },
@@ -99,7 +99,8 @@ def personal_rating(request: HttpRequest) -> HttpResponse:
     rows = ranking()
     own = next((r for r in rows if r["trader"].pk == trader.pk), None) or statistics(trader)
     from .mascots import progression
-    return render(request, "market/personal_rating.html", {"trader": trader, "stats": own, "ratings": rows, "companion": progression(trader, own)})
+    from .statistics import chart_data
+    return render(request, "market/personal_rating.html", {"trader": trader, "stats": own, "ratings": rows, "companion": progression(trader, own), "charts": chart_data(trader)})
 
 
 def question_detail(request: HttpRequest, pk: int) -> HttpResponse:
@@ -140,13 +141,14 @@ def question_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "volume": agg["volume"] or Decimal(0),
         "participants": question.trades.values("trader").distinct().count(),
         "max_bet": settings.MAX_BET,
+        "stake_presets": [value for value in (10, 50, 100) if value <= settings.MAX_BET],
         "position": None,
         "conflicted": False,
         "can_bet": False,
     }
     if trader:
         ctx["conflicted"] = question.conflicted_traders.filter(pk=trader.pk).exists()
-        ctx["can_bet"] = question.status == Question.Status.OPEN and not ctx["conflicted"]
+        ctx["can_bet"] = question.accepting_entries and not ctx["conflicted"]
         pos = Position.objects.filter(trader=trader, question=question).first()
         if pos and (pos.yes_shares > 0 or pos.no_shares > 0 or pos.spent > 0):
             p = question.prob
@@ -218,7 +220,8 @@ def leaderboard(request: HttpRequest) -> HttpResponse:
     my_row = None
     if me_ and all(r["trader"].pk != me_.pk for r in top):
         my_row = next((r for r in rows if r["trader"].pk == me_.pk), None)
-    return render(request, "market/leaderboard.html", {"rows": top, "my_row": my_row, "me": me_})
+    chart = {"labels": [r["trader"].display_name for r in top], "values": [float(r["profit"]) for r in top]}
+    return render(request, "market/leaderboard.html", {"rows": top, "podium": top[:3], "my_row": my_row, "me": me_, "chart": chart, "participants": len(rows)})
 
 
 def me(request: HttpRequest) -> HttpResponse:

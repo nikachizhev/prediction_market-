@@ -49,3 +49,27 @@ def ranking():
     for index, row in enumerate(rows, 1):
         row["rank"] = index
     return rows
+
+
+def chart_data(trader):
+    from datetime import timedelta
+    from django.utils import timezone
+    from django.db.models.functions import TruncDate
+    from django.db.models import Count
+    today = timezone.localdate()
+    start = today - timedelta(days=29)
+    activity = {}
+    for model in (Trade, Submission):
+        for row in model.objects.filter(trader=trader, created_at__date__gte=start).annotate(day=TruncDate("created_at")).values("day").annotate(count=Count("pk")):
+            activity[row["day"]] = activity.get(row["day"], 0) + row["count"]
+    days = [start + timedelta(days=i) for i in range(30)]
+    # Results by market, not a reconstructed historical portfolio valuation.
+    results = []
+    for position in trader.positions.filter(question__status="resolved").select_related("question").order_by("question__created_at"):
+        cost = Trade.objects.filter(trader=trader, question=position.question).aggregate(value=Sum("cost"))["value"] or Decimal(0)
+        payout = Payout.objects.filter(trader=trader, question=position.question).aggregate(value=Sum("amount"))["value"] or Decimal(0)
+        results.append((position.question.title, float(payout-cost)))
+    return {"activity_labels": [day.strftime("%d.%m") for day in days],
+            "activity": [activity.get(day, 0) for day in days],
+            "result_labels": [title for title, _ in results[-10:]],
+            "results": [value for _, value in results[-10:]]}
