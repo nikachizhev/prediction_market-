@@ -8,6 +8,8 @@ from django.utils import timezone
 
 from .identity import get_trader
 from .models import Friendship, MarketInvitation, Question, Trader
+from .notifications import notify
+from .access import visible_questions
 
 
 def friends_of(trader):
@@ -29,6 +31,8 @@ def index(request):
                 else:
                     first, second = sorted([trader.pk, target.pk])
                     pair, created = Friendship.objects.get_or_create(first_id=first, second_id=second, defaults={"requested_by": trader})
+                    if created:
+                        notify(target, f"{trader.display_name} хочет добавить вас в друзья.", kind="friend_request")
                     messages.info(request, "Заявка отправлена." if created else "Заявка уже существует или вы уже друзья.")
             elif action in ("accept", "remove"):
                 pair = get_object_or_404(Friendship.objects.select_for_update().filter(Q(first=trader) | Q(second=trader)), pk=request.POST.get("pair_id"))
@@ -38,6 +42,7 @@ def index(request):
                     else:
                         pair.accepted = True
                         pair.save(update_fields=["accepted"])
+                        notify(pair.requested_by, f"{trader.display_name} принял вашу заявку в друзья.", kind="friend_accepted")
                         messages.success(request, "Друг добавлен.")
                 else:
                     pair.delete()
@@ -52,22 +57,26 @@ def index(request):
         results = Trader.objects.filter(user__is_active=True, user__username__icontains=query).exclude(pk=trader.pk).select_related("user")[:20]
     return render(request, "market/friends.html", {
         "rows": rows, "results": results, "query": query,
-        "invitations": MarketInvitation.objects.filter(recipient=trader).select_related("sender", "question")[:30],
+        "invitations": MarketInvitation.objects.filter(recipient=trader, question__in=visible_questions(trader)).select_related("sender", "question")[:30],
     })
 
 
 @login_required
 def invite(request, pk):
     trader = get_trader(request)
-    question = get_object_or_404(Question, pk=pk)
+    question = get_object_or_404(visible_questions(trader), pk=pk)
     available = question.status == Question.Status.OPEN and (not question.deadline or question.deadline > timezone.now())
     friends = friends_of(trader)
+    if question.group_id:
+        friends = friends.filter(memberships__group_id=question.group_id, memberships__status="active")
     if request.method == "POST":
         if not available:
             messages.error(request, "Этот вопрос больше не принимает ответы.")
         else:
             recipient = get_object_or_404(friends, pk=request.POST.get("friend_id"))
             _, created = MarketInvitation.objects.get_or_create(sender=trader, recipient=recipient, question=question)
+            if created:
+                notify(recipient, f"{trader.display_name} приглашает вас: {question.title}", kind="market_invite", question=question)
             messages.success(request, "Приглашение появится у друга в разделе «Друзья»." if created else "Вы уже пригласили этого друга.")
         return redirect("market:invite_friend", pk=pk)
     return render(request, "market/invite_friend.html", {"question": question, "friends": friends, "available": available})

@@ -6,6 +6,7 @@
 <div class="card"><h2>Указать результат</h2><form method="post" action="{% url 'market:finish' question.pk %}">{% csrf_token %}{{ result_form.as_p }}<button class="btn">Завершить и выплатить</button></form></div>
 {% endif %}
 <div class="card market-hero hero-{{ question.display_state }}">
+  {% include 'market/subscription_button.html' %}
   <div class="muted small">{% include "market/_badges.html" %}
     {% if question.deadline %} &middot; дедлайн {{ question.deadline|date:"d.m.Y H:i" }}{% endif %}</div>
   <h1>{{ question.title }}</h1>
@@ -40,14 +41,15 @@
       <div class="card"><h2>Ставки закрыты</h2>Ожидается разрешение.</div>
     {% endif %}
 
-    {% if not current_trader %}
+    {% if not current_trader and question.accepting_entries %}
       <div class="card">Чтобы ставить, <a href="{% url 'market:login' %}?next={{ request.path|urlencode }}">войдите в аккаунт</a>.</div>
-    {% elif conflicted %}
+    {% elif conflicted and question.accepting_entries %}
       <div class="card"><div class="msg warning" style="margin:0">Вы не можете ставить: конфликт интересов.</div></div>
     {% elif can_bet %}
       <div class="card trade-ticket">
         <span class="eyebrow">ВАШ ПРОГНОЗ</span><h2>Какой исход вы ожидаете?</h2><p class="small muted">Баланс: {{ current_trader.balance }} монет</p>
         <form method="post" action="{% url 'market:buy' question.pk %}" id="betform">{% csrf_token %}
+          <input type="hidden" name="purchase_token" value="{{ purchase_token }}">
           <div class="sides">
             <label><input type="radio" name="side" value="yes" checked><span>ДА</span></label>
             <label><input type="radio" name="side" value="no"><span>НЕТ</span></label>
@@ -56,7 +58,8 @@
           <input type="number" id="amount" name="amount" min="1" max="{{ max_bet }}" step="0.01" value="100" required>
           <div class="stake-presets">{% for amount in stake_presets %}<button type="button" data-stake="{{ amount }}">{{ amount }}</button>{% endfor %}</div>
           <div id="preview" class="muted">&nbsp;</div>
-          <button class="btn" type="submit">Подтвердить ставку →</button><p class="small muted">Выигравшая акция приносит 1 монету, проигравшая — 0.</p>
+          <div class="purchase-actions"><button class="btn" type="submit" disabled>Купить акции</button><button type="button" id="purchase-help-open" class="purchase-help-trigger" aria-label="Объяснение покупки" aria-haspopup="dialog" aria-controls="purchase-help" disabled>?</button></div>
+          <p class="small muted">Покупка сразу по нажатию кнопки. Расчёт обновляется по текущей цене рынка.</p>
         </form>
       </div>
     {% endif %}
@@ -92,6 +95,22 @@
     {% endif %}
   </div>
 </div>
+{% if can_bet %}
+<dialog id="purchase-help" class="purchase-help" aria-labelledby="purchase-help-title">
+  <div class="purchase-help-heading"><div><span class="eyebrow">КАК РАБОТАЕТ ПОКУПКА</span><h2 id="purchase-help-title">Ваш прогноз: <span id="help-side">ДА</span></h2></div><button type="button" class="purchase-help-close" aria-label="Закрыть объяснение">×</button></div>
+  <p class="muted">Это только объяснение расчёта. Открытие окна не списывает монеты и не покупает акции.</p>
+  <div class="purchase-facts">
+    <div><span>Стоимость покупки</span><strong id="help-cost"></strong></div>
+    <div><span>Количество акций</span><strong id="help-shares"></strong></div>
+    <div class="purchase-win"><span>Выплата при верном прогнозе</span><strong id="help-payout"></strong></div>
+    <div><span>Прибыль при верном прогнозе</span><strong id="help-profit"></strong></div>
+    <div class="purchase-loss"><span>Максимальная потеря</span><strong id="help-loss"></strong></div>
+  </div>
+  <p class="small muted">Выплата включает потраченные монеты. Прибыль — выплата минус стоимость покупки. Если прогноз неверен, эти акции ничего не выплатят: вы потеряете только потраченную сумму. Количество акций здесь округлено для отображения, выплата округляется вниз до 0,01 монеты.</p>
+  <p class="small muted">Цена может измениться из-за других сделок. Окончательный расчёт выполняется при покупке.</p>
+  <button type="button" class="btn purchase-help-close">Понятно</button>
+</dialog>
+{% endif %}
 {{ chart_labels|json_script:"chart-labels" }}
 {{ chart_points|json_script:"chart-points" }}
 {% endblock %}
@@ -106,19 +125,40 @@
       options:{maintainAspectRatio:false,scales:{y:{min:0,max:100,ticks:{callback:function(v){return v+'%'}}}},plugins:{legend:{display:false}}}});
   }
   var form=document.getElementById('betform'); if(!form) return;
-  var box=document.getElementById('preview'), amount=document.getElementById('amount'), timer=null;
+  var box=document.getElementById('preview'), amount=document.getElementById('amount'), timer=null, sequence=0;
+  var submit=form.querySelector('button[type=submit]');
+  var help=document.getElementById('purchase-help'), helpOpen=document.getElementById('purchase-help-open');
+  helpOpen.addEventListener('click',function(){help.showModal();});
+  help.querySelectorAll('.purchase-help-close').forEach(function(button){button.addEventListener('click',function(){help.close();});});
+  help.addEventListener('click',function(event){if(event.target===help){var rect=help.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)help.close();}});
+  var purchasing=false;
+  form.addEventListener('submit',function(event){if(submit.disabled||purchasing){event.preventDefault();return;}purchasing=true;++sequence;clearTimeout(timer);submit.disabled=true;helpOpen.disabled=true;submit.textContent='Покупаем…';});
+  window.addEventListener('pageshow',function(event){if(event.persisted)window.location.reload();});
   function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
   function update(){
+    if(purchasing)return;
+    const requestSequence=++sequence;
+    submit.disabled=true;
+    helpOpen.disabled=true;
     var side=form.querySelector('input[name=side]:checked').value;
     var url='{% url "market:quote" question.pk %}?side='+side+'&amount='+encodeURIComponent(amount.value);
     fetch(url).then(function(r){return r.json().then(function(j){return [r.ok,j]})}).then(function(x){
+      if(requestSequence!==sequence)return;
       if(!x[0]){box.innerHTML='<span class="neg">'+esc(x[1].error)+'</span>';return;}
       var j=x[1];
-      box.innerHTML='Акций: <b>'+j.shares.toFixed(2)+'</b> за '+j.cost.toFixed(2)+'. Вероятность ДА: '+
-        Math.round(j.prob_before*100)+'% &rarr; <b>'+Math.round(j.new_prob*100)+'%</b>.<br>Выплата при выигрыше: <b>'+j.payout_if_win.toFixed(2)+'</b>';
-    }).catch(function(){box.textContent='';});
+      document.getElementById('help-side').textContent=j.side==='yes'?'ДА':'НЕТ';
+      [['cost',j.cost],['payout',j.payout_if_win],['profit',j.profit_if_win],['loss',j.max_loss]].forEach(function(item){document.getElementById('help-'+item[0]).textContent=item[1].toFixed(2)+' монет';});
+      document.getElementById('help-shares').textContent=j.shares.toFixed(2);
+      box.innerHTML='<div class="quote-fact"><span>Спишется</span><b>'+j.cost.toFixed(2)+' монет</b></div>'+
+        '<div class="quote-fact"><span>Выплата при верном прогнозе</span><b>'+j.payout_if_win.toFixed(2)+'</b></div>'+
+        '<div class="quote-fact"><span>Результат этой покупки при победе</span><b>'+j.profit_if_win.toFixed(2)+'</b></div>'+
+        '<div class="quote-fact"><span>Максимальная потеря</span><b>'+j.max_loss.toFixed(2)+'</b></div>'+
+        '<div class="small muted">Вероятность ДА: '+Math.round(j.prob_before*100)+'% → '+Math.round(j.new_prob*100)+'% · '+j.shares.toFixed(2)+' акций</div>';
+      submit.disabled=false;
+      helpOpen.disabled=false;
+    }).catch(function(){if(requestSequence===sequence)box.textContent='Не удалось рассчитать покупку. Измените сумму или обновите страницу.';});
   }
-  function later(){clearTimeout(timer);timer=setTimeout(update,150);}
+  function later(){++sequence;submit.disabled=true;helpOpen.disabled=true;clearTimeout(timer);timer=setTimeout(update,150);}
   amount.addEventListener('input',later);
   document.querySelectorAll('[data-stake]').forEach(function(button){button.addEventListener('click',function(){amount.value=button.dataset.stake;update();});});
   form.querySelectorAll('input[name=side]').forEach(function(e){e.addEventListener('change',update)});

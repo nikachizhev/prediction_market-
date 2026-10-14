@@ -5,19 +5,22 @@
 <p class="muted small">Вопросы создаются по вехам с due date и по issues с меткой <code>predict</code> в таких вехах.</p>
 <div class="card">
   <h2>Подключить репозиторий</h2>
+  <p class="muted">Для приватных вопросов подключите репозиторий в своей <a href="{% url 'market:groups' %}">рабочей группе</a>. Здесь администратор сайта управляет общими репозиториями.</p>
+  {% if request.user.is_staff %}
   <form method="post">{% csrf_token %}
     <input type="text" name="url" placeholder="https://github.com/owner/repo" required>
     <p><button class="btn" type="submit">Подключить</button></p>
   </form>
+  {% endif %}
 </div>
 <div class="card">
   <h2>Подключённые репозитории</h2>
   <table>
   {% for r in repos %}
   <tr><td><a href="https://github.com/{{ r }}" target="_blank" rel="noopener">{{ r }}</a></td>
-  <td class="num"><form method="post" action="{% url 'sources:github_delete' r.pk %}" style="margin:0">{% csrf_token %}<button class="btn ghost" type="submit">Отключить</button></form></td></tr>
+  <td class="num">{% if request.user.is_staff %}<form method="post" action="{% url 'sources:github_delete' r.pk %}" style="margin:0">{% csrf_token %}<button class="btn ghost" type="submit">Отключить</button></form>{% endif %}</td></tr>
   {% empty %}<tr><td class="muted">Репозиториев нет.</td></tr>{% endfor %}
   </table>
-  <form method="post" action="{% url 'sources:sync' %}" style="margin-top:12px">{% csrf_token %}<button class="btn" type="submit">Обновить источники</button></form>
+  {% if request.user.is_staff %}<form method="post" action="{% url 'sources:sync' %}" style="margin-top:12px">{% csrf_token %}<button class="btn" type="submit">Обновить источники</button></form>{% endif %}
 </div>
 {% endblock %}

@@ -65,7 +65,8 @@ def chart_data(trader):
     days = [start + timedelta(days=i) for i in range(30)]
     # Results by market, not a reconstructed historical portfolio valuation.
     results = []
-    for position in trader.positions.filter(question__status="resolved").select_related("question").order_by("question__created_at"):
+    from .access import visible_questions
+    for position in trader.positions.filter(question__in=visible_questions(trader), question__status="resolved").select_related("question").order_by("question__created_at"):
         cost = Trade.objects.filter(trader=trader, question=position.question).aggregate(value=Sum("cost"))["value"] or Decimal(0)
         payout = Payout.objects.filter(trader=trader, question=position.question).aggregate(value=Sum("amount"))["value"] or Decimal(0)
         results.append((position.question.title, float(payout-cost)))

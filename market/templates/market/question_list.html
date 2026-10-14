@@ -4,9 +4,9 @@
 <div class="head">
   <div><span class="eyebrow">КАК ВЫ ДУМАЕТЕ, ЧТО БУДЕТ ДАЛЬШЕ?</span><h1 style="margin:8px 0">Рынки и прогнозы</h1><p class="muted">Выберите вопрос, поделитесь чутьём и следите за результатом.</p></div>
   <a class="btn" href="{% url 'market:create' %}">Создать рынок</a>
-  <form method="post" action="{% url 'sources:sync' %}">{% csrf_token %}
+  {% if request.user.is_staff %}<form method="post" action="{% url 'sources:sync' %}">{% csrf_token %}
     <button class="btn ghost" type="submit">Обновить источники</button>
-  </form>
+  </form>{% endif %}
 </div>
 <div class="market-tabs" aria-label="Фильтр по состоянию">
 <a href="{% querystring status='' %}" {% if not filters.status %}aria-current="page"{% endif %}>Все</a>

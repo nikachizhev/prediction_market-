@@ -24,6 +24,7 @@ class QuestionDraft:
     initial_prob: float = 0.5
     conflicted_logins: list[str] = field(default_factory=list)  # GitHub logins
     conflicted_trader_ids: list[int] = field(default_factory=list)  # direct Trader pks
+    group_id: int | None = None
 
 
 class QuestionSource(Protocol):

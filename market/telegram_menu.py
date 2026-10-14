@@ -47,7 +47,8 @@ def handle_menu(trader, command, send):
              f"Прибыль с учётом позиций: {profit(trader):+.2f}\n"
              "Оценка позиций не гарантирует такую же сумму при продаже.", reply_markup=keyboard())
     elif command in ("/markets", "/myquestions"):
-        questions = Question.objects.all()
+        from .access import visible_questions
+        questions = visible_questions(trader)
         if command == "/markets":
             questions = questions.filter(status=Question.Status.OPEN).filter(
                 Q(deadline__isnull=True) | Q(deadline__gt=timezone.now()))
@@ -62,10 +63,11 @@ def handle_menu(trader, command, send):
             send(chat_id, card(question))
         send(chat_id, f"Все вопросы и участие: {settings.SITE_URL}/markets/")
     elif command == "/positions":
-        positions = trader.positions.filter(
+        from .access import visible_questions
+        positions = trader.positions.filter(question__in=visible_questions(trader),
             question__status__in=[Question.Status.OPEN, Question.Status.CLOSED],
         ).filter(Q(yes_shares__gt=0) | Q(no_shares__gt=0)).select_related("question")
-        answers = trader.submissions.filter(
+        answers = trader.submissions.filter(question__in=visible_questions(trader),
             question__status__in=[Question.Status.OPEN, Question.Status.CLOSED],
         ).select_related("question")
         send(chat_id, f"Активных позиций: {positions.count()}. Ответов: {answers.count()}.",

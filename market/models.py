@@ -100,7 +100,48 @@ class TelegramSiteLink(models.Model):
     expires_at = models.DateTimeField()
 
 
+class Group(models.Model):
+    name = models.CharField("Название", max_length=120)
+    description = models.TextField("Описание", max_length=2000, blank=True)
+    kind = models.CharField("Тип группы", max_length=12, choices=[("social", "Сообщество"), ("work", "Рабочая группа")], default="social")
+    owner = models.ForeignKey(Trader, on_delete=models.PROTECT, related_name="owned_groups")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return self.name
+
+
+class GroupMembership(models.Model):
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="memberships")
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="memberships")
+    status = models.CharField(max_length=12, choices=[("active", "Участник"), ("invited", "Приглашён"), ("requested", "Заявка")])
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["group", "trader"], name="unique_group_member")]
+
+
+class Notification(models.Model):
+    recipient = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="notifications")
+    text = models.CharField(max_length=500)
+    kind = models.CharField(max_length=30, default="info")
+    question = models.ForeignKey("Question", null=True, blank=True, on_delete=models.CASCADE)
+    group = models.ForeignKey(Group, null=True, blank=True, on_delete=models.CASCADE)
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    key = models.CharField(max_length=160, unique=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+
 class Question(models.Model):
+    tracks_deadline = models.BooleanField("ДА означает выполнение в срок", default=False, help_text="Включает вопрос в панель рисков. Используйте, только если ДА означает выполнение задачи к дедлайну.")
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    group = models.ForeignKey(Group, null=True, blank=True, on_delete=models.PROTECT, related_name="questions")
     class Kind(models.TextChoices):
         LMSR = "lmsr", "LMSR"
         LS = "ls_lmsr", "LS-LMSR"
@@ -227,6 +268,8 @@ class Position(models.Model):
     yes_shares = models.DecimalField(max_digits=16, decimal_places=6, default=Decimal(0))
     no_shares = models.DecimalField(max_digits=16, decimal_places=6, default=Decimal(0))
     spent = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal(0))
+    yes_spent = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal(0))
+    no_spent = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal(0))
 
     class Meta:
         verbose_name = "позиция"
@@ -240,6 +283,8 @@ class Position(models.Model):
 
 
 class Trade(models.Model):
+    request_key = models.UUIDField(null=True, blank=True, unique=True)
+    requested_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     class Side(models.TextChoices):
         YES = "yes", "ДА"
         NO = "no", "НЕТ"
@@ -258,6 +303,28 @@ class Trade(models.Model):
         verbose_name = "сделка"
         verbose_name_plural = "сделки"
         ordering = ["created_at", "id"]
+
+
+class MarketSubscription(models.Model):
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="market_subscriptions")
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="subscriptions")
+    last_probability = models.FloatField(null=True)
+    last_alert_at = models.DateTimeField(null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["trader", "question"], name="unique_market_subscription")]
+
+
+class PurchaseConfirmation(models.Model):
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE)
+    question = models.ForeignKey(Question, on_delete=models.CASCADE)
+    token_hash = models.CharField(max_length=64, unique=True)
+    side = models.CharField(max_length=3)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    snapshot = models.JSONField()
+    expires_at = models.DateTimeField()
+    trade = models.OneToOneField(Trade, null=True, on_delete=models.CASCADE)
 
 
 class DailyReward(models.Model):

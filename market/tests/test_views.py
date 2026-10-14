@@ -87,8 +87,10 @@ def test_quote_json_and_error(client, q):
 
 def test_buy_flow_and_privacy(client, q, anya, boris):
     login(client, anya)
-    r = client.post(reverse("market:buy", args=[q.pk]), {"side": "yes", "amount": "50"})
+    token = client.get(reverse("market:question", args=[q.pk])).context["purchase_token"]
+    r = client.post(reverse("market:buy", args=[q.pk]), {"side": "yes", "amount": "50", "purchase_token": token})
     assert r.status_code == 302
+    assert anya.trades.count() == 1
     anya.refresh_from_db()
     assert anya.balance < Decimal("1000")
     page = client.get(reverse("market:question", args=[q.pk])).content.decode()
@@ -105,7 +107,8 @@ def test_buy_flow_and_privacy(client, q, anya, boris):
 
 def test_buy_errors_shown_as_message(client, q, anya):
     login(client, anya)
-    r = client.post(reverse("market:buy", args=[q.pk]), {"side": "yes", "amount": "99999"}, follow=True)
+    token = client.get(reverse("market:question", args=[q.pk])).context["purchase_token"]
+    r = client.post(reverse("market:buy", args=[q.pk]), {"side": "yes", "amount": "99999", "purchase_token": token}, follow=True)
     assert "Максимальная ставка" in r.content.decode() or "Недостаточно" in r.content.decode()
     anya.refresh_from_db()
     assert anya.balance == Decimal("1000") + sum(anya.daily_rewards.values_list("coins", flat=True))
@@ -123,7 +126,8 @@ def test_conflicted_trader_cannot_bet(client, q, anya):
 
 def test_sell_view(client, q, anya):
     login(client, anya)
-    client.post(reverse("market:buy", args=[q.pk]), {"side": "yes", "amount": "100"})
+    token = client.get(reverse("market:question", args=[q.pk])).context["purchase_token"]
+    client.post(reverse("market:buy", args=[q.pk]), {"side": "yes", "amount": "100", "purchase_token": token})
     pos = anya.positions.get()
     client.post(reverse("market:sell", args=[q.pk]), {"side": "yes", "shares": str(pos.yes_shares)})
     pos.refresh_from_db()

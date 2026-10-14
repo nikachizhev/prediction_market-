@@ -30,12 +30,14 @@ const explanations = {
 };
 function showFields() {
   const groups = {
+    tracks_deadline: ['lmsr', 'ls_lmsr', 'cpmm'],
     option_lines: ['poll', 'multiple'],
     number_min: ['number'], number_max: ['number'], tolerance: ['number'],
     b: ['lmsr', 'ls_lmsr', 'cpmm']
   };
   for (const [name, types] of Object.entries(groups)) {
     document.querySelector('[data-field="' + name + '"]').hidden = !types.includes(kind.value);
+    if(name==='tracks_deadline' && !types.includes(kind.value))document.getElementById('id_tracks_deadline').checked=false;
   }
   const [title, description, example, rule] = explanations[kind.value];
   document.getElementById('type-title').textContent = title;

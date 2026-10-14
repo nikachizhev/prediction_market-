@@ -7,13 +7,14 @@ from .models import Question
 from .question_forms import CreateQuestionForm, ResponseForm, ResultForm
 from .participation import submit, finish
 from .services import MarketError
+from .access import visible_questions
 
 
 def create(request):
     trader = get_trader(request)
     if not trader:
         return redirect("market:login")
-    form = CreateQuestionForm(request.POST if request.method == "POST" else None)
+    form = CreateQuestionForm(request.POST if request.method == "POST" else None, trader=trader, initial={"group": request.GET.get("group")})
     if request.method == "POST" and form.is_valid():
         with transaction.atomic():
             question = form.save(commit=False)
@@ -37,6 +38,7 @@ def detail(request, question):
             counts.append({"label": label, "count": count, "correct": str(i) in (question.answer or [])})
     return render(request, "market/participation.html", {
         "question": question, "response": response,
+        "subscribed": bool(trader and question.subscriptions.filter(trader=trader).exists()),
         "response_form": ResponseForm(question=question), "result_form": ResultForm(question=question),
         "counts": counts, "participants": question.submissions.count(),
         "is_creator": bool(trader and question.creator_id == trader.pk),
@@ -45,7 +47,7 @@ def detail(request, question):
 
 @require_POST
 def respond(request, pk):
-    question = get_object_or_404(Question, pk=pk)
+    question = get_object_or_404(visible_questions(get_trader(request)), pk=pk)
     trader = get_trader(request)
     if not trader:
         return redirect("market:login")
@@ -60,7 +62,7 @@ def respond(request, pk):
 
 @require_POST
 def finish_view(request, pk):
-    question = get_object_or_404(Question, pk=pk)
+    question = get_object_or_404(visible_questions(get_trader(request)), pk=pk)
     trader = get_trader(request)
     if not trader:
         return redirect("market:login")

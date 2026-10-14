@@ -36,7 +36,7 @@ def site_login(request):
         return redirect("market:login")
     response = render(request, "market/telegram_site_login.html")
     response["Cache-Control"] = "no-store"
-    response["Referrer-Policy"] = "no-referrer"
+    response["Referrer-Policy"] = "same-origin"
     return response
 
 

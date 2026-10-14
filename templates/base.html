@@ -57,7 +57,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .filters label{margin-top:0}.filter-actions{display:flex;align-items:center;gap:10px;padding-bottom:1px}
 @media(max-width:800px){.filters{grid-template-columns:1fr 1fr}.filter-actions{grid-column:1/-1}}
 </style>
-<link rel="stylesheet" href="{% static 'market/site.css' %}">
+<link rel="stylesheet" href="{% static 'market/site.css' %}?v=20261015-buyhelp">
 <link rel="stylesheet" href="{% static 'market/mascots.css' %}">
 <link rel="stylesheet" href="{% static 'market/companion-widget.css' %}">
 {% block head %}{% endblock %}
@@ -69,10 +69,13 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <a href="{% url 'market:personal_rating' %}">Мой рейтинг</a>
   <a href="{% url 'market:leaderboard' %}">Лидерборд</a>
   <a href="{% url 'market:me' %}">Мои ставки</a>
+  {% if request.user.is_authenticated %}<a href="{% url 'market:groups' %}">Мои группы</a>{% endif %}
   <a href="{% url 'sources:github' %}">GitHub</a>
   {% if request.user.is_staff %}<a href="{% url 'admin:index' %}">Админка</a>{% endif %}
   <span class="user">
     {% if request.user.is_authenticated %}
+    {% include 'market/notification_bell.html' %}
+    <a class="subscriptions-nav" href="{% url 'market:subscriptions' %}" aria-label="Мои подписки">Подписки</a>
     <details class="account-menu"><summary aria-label="Открыть меню профиля"><span class="account-avatar">{{ request.user.username|first|upper }}</span><span>{% if current_trader %}{{ current_trader.display_name }}<small>{{ current_trader.balance }} монет</small>{% else %}{{ request.user.username }}{% endif %}</span><span aria-hidden="true">⌄</span></summary>
     <div class="account-dropdown"><a href="{% url 'market:profile' %}">Настройки профиля</a><a href="{% url 'market:friends' %}">Друзья{% if social_count %} · {{ social_count }} новых{% endif %}</a><a href="{% url 'market:me' %}">Мои ставки</a><a href="{% url 'market:personal_rating' %}">Моя статистика</a><a href="{% url 'market:mascot' %}">Выбор проводника ✧</a><form method="post" action="{% url 'market:logout' %}">{% csrf_token %}<button type="submit">Выйти из аккаунта</button></form></div></details>
     {% else %}<a href="{% url 'market:login' %}">Войти</a> &middot; <a href="{% url 'market:register' %}">Регистрация</a>{% endif %}

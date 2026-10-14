@@ -36,7 +36,7 @@ def _create(src: QuestionSource, draft: QuestionDraft) -> Question | None:
             return services.create_question(
                 title=draft.title, resolution_criteria=draft.resolution_criteria,
                 source_type=src.source_type, source_ref=draft.source_ref, deadline=draft.deadline,
-                initial_prob=draft.initial_prob, conflicted_traders=_conflicted(draft),
+                initial_prob=draft.initial_prob, conflicted_traders=_conflicted(draft), group_id=draft.group_id,
             )
     except IntegrityError:
         return None
@@ -70,7 +70,10 @@ def sync_all(sources: list[QuestionSource] | None = None) -> list[str]:
                     created += 1
             if created:
                 msgs.append(f"[{name}] создано вопросов: {created}")
-            for q in Question.objects.filter(source_type=name).exclude(status__in=FINAL):
+            questions = Question.objects.filter(source_type=name).exclude(status__in=FINAL)
+            if getattr(src, "group_id", None) is not None:
+                questions = questions.filter(group_id=src.group_id)
+            for q in questions:
                 try:
                     upd = src.check(q)
                     if upd is not None:

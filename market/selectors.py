@@ -14,11 +14,12 @@ MARKET_SORTS = {
 }
 
 
-def market_list(*, search: str = "", status: str = "", source: str = "", sort: str = "new") -> QuerySet:
+def market_list(*, search: str = "", status: str = "", source: str = "", sort: str = "new", trader=None) -> QuerySet:
     """Return market cards with their list-page aggregates."""
     from .models import Trade
     volumes = Trade.objects.filter(question_id=OuterRef("pk")).order_by().values("question_id").annotate(total=Sum(Abs("cost"))).values("total")
-    qs = Question.objects.annotate(
+    from .access import visible_questions
+    qs = visible_questions(trader).annotate(
         n_traders=Count("trades__trader", distinct=True),
         n_trades=Count("trades", distinct=True),
         n_answers=Count("submissions", distinct=True),

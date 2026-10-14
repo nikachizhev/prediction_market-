@@ -33,6 +33,12 @@ def check_open(question):
         raise MarketError("Участие в этом вопросе закрыто.")
 
 
+def check_access(trader, question):
+    from .access import can_access
+    if not can_access(trader, question):
+        raise MarketError("Этот вопрос доступен только участникам группы.")
+
+
 def _ceil_cent(x: Decimal) -> Decimal:
     return x.quantize(CENT, rounding=ROUND_CEILING)
 
@@ -94,11 +100,24 @@ def _get_position(trader: Trader, question: Question) -> Position:
 
 
 @transaction.atomic
-def buy(trader: Trader, question: Question, side: str, amount: Decimal | float | int | str) -> Trade:
+def buy(trader: Trader, question: Question, side: str, amount: Decimal | float | int | str, *, request_key=None) -> Trade:
     _check_side(side)
     amount = _d(amount)
     question = Question.objects.select_for_update().get(pk=question.pk)
     trader = Trader.objects.select_for_update().get(pk=trader.pk)
+    check_access(trader, question)
+    if request_key is not None:
+        from uuid import UUID
+        try:
+            request_key = UUID(str(request_key))
+        except (ValueError, TypeError, AttributeError):
+            raise MarketError("Недействительный идентификатор покупки.") from None
+        previous = Trade.objects.filter(request_key=request_key).first()
+        if previous:
+            if (previous.trader_id != trader.pk or previous.question_id != question.pk
+                    or previous.side != side or previous.requested_amount != amount):
+                raise MarketError("Этот идентификатор уже использован для другой покупки. Обновите страницу.")
+            return previous
     if question.status != Question.Status.OPEN:
         raise MarketError("Ставки на этот вопрос закрыты.")
     if question.conflicted_traders.filter(pk=trader.pk).exists():
@@ -110,6 +129,8 @@ def buy(trader: Trader, question: Question, side: str, amount: Decimal | float |
         raise MarketError("Недостаточно средств на балансе.")
     if amount > max_bet:
         raise MarketError(f"Максимальная ставка за сделку — {settings.MAX_BET}.")
+    if amount != amount.quantize(CENT):
+        raise MarketError("Укажите сумму не более чем с двумя знаками после запятой.")
     q = quote(question, side, amount)
     if q["cost"] > trader.balance:
         raise MarketError("Недостаточно средств на балансе.")
@@ -117,19 +138,24 @@ def buy(trader: Trader, question: Question, side: str, amount: Decimal | float |
     if side == "yes":
         question.q_yes += float(q["shares"])
         pos.yes_shares += q["shares"]
+        pos.yes_spent += q["cost"]
     else:
         question.q_no += float(q["shares"])
         pos.no_shares += q["shares"]
-    pos.spent += q["cost"]
+        pos.no_spent += q["cost"]
+    pos.spent = pos.yes_spent + pos.no_spent
     mechanisms.move_pool(question, side, float(q["shares"]), q["pool_cost"])
     trader.balance -= q["cost"]
     trade = Trade.objects.create(
         trader=trader, question=question, side=side, shares=q["shares"], cost=q["cost"],
         prob_before=q["prob_before"], prob_after=q["new_prob"],
+        request_key=request_key, requested_amount=amount,
     )
     question.save(update_fields=["q_yes", "q_no", "pool_yes", "pool_no"])
     pos.save()
     trader.save(update_fields=["balance"])
+    from .subscriptions import price_changed
+    price_changed(question)
     return trade
 
 
@@ -140,6 +166,7 @@ def sell(trader: Trader, question: Question, side: str, shares: Decimal | float 
     shares = _d(shares).quantize(SHARE_Q, rounding=ROUND_FLOOR)
     question = Question.objects.select_for_update().get(pk=question.pk)
     trader = Trader.objects.select_for_update().get(pk=trader.pk)
+    check_access(trader, question)
     check_open(question)
     if not question.is_trading:
         raise MarketError("Этот вопрос не поддерживает торговлю.")
@@ -161,8 +188,11 @@ def sell(trader: Trader, question: Question, side: str, shares: Decimal | float 
     else:
         question.q_no -= float(shares)
         pos.no_shares -= shares
-    # Reduce `spent` proportionally so annulment refunds the remaining cost basis.
-    pos.spent -= (pos.spent * shares / held).quantize(CENT, rounding=ROUND_FLOOR)
+    # A sale only consumes the cost basis of its own side, never the opposite side.
+    cost_field = "yes_spent" if side == "yes" else "no_spent"
+    basis = getattr(pos, cost_field)
+    setattr(pos, cost_field, basis - (basis * shares / held).quantize(CENT, rounding=ROUND_FLOOR))
+    pos.spent = pos.yes_spent + pos.no_spent
     trader.balance += proceeds
     trade = Trade.objects.create(
         trader=trader, question=question, side=side, shares=-shares, cost=-proceeds,
@@ -171,6 +201,8 @@ def sell(trader: Trader, question: Question, side: str, shares: Decimal | float 
     question.save(update_fields=["q_yes", "q_no", "pool_yes", "pool_no"])
     pos.save()
     trader.save(update_fields=["balance"])
+    from .subscriptions import price_changed
+    price_changed(question)
     return trade
 
 
@@ -212,8 +244,11 @@ def resolve(question: Question, outcome: str) -> Question:
             pos.trader.save(update_fields=["balance"])
             Payout.objects.create(trader=pos.trader, question=question, amount=amount, kind=Payout.Kind.PAYOUT)
     question.status = Question.Status.RESOLVED
+    question.resolved_at = timezone.now()
     question.outcome = outcome
-    question.save(update_fields=["status", "outcome"])
+    question.save(update_fields=["status", "outcome", "resolved_at"])
+    from .notifications import market_finished
+    market_finished(question)
     return question
 
 
@@ -229,8 +264,11 @@ def annul(question: Question) -> Question:
             pos.trader.save(update_fields=["balance"])
             Payout.objects.create(trader=pos.trader, question=question, amount=pos.spent, kind=Payout.Kind.REFUND)
     question.status = Question.Status.ANNULLED
+    question.resolved_at = timezone.now()
     question.outcome = None
-    question.save(update_fields=["status", "outcome"])
+    question.save(update_fields=["status", "outcome", "resolved_at"])
+    from .notifications import market_finished
+    market_finished(question)
     return question
 
 
@@ -244,6 +282,7 @@ def create_question(
     initial_prob: float = 0.5,
     b: float | None = None,
     conflicted_traders=(),
+    group_id=None,
 ) -> Question:
     b = float(b if b is not None else settings.LMSR_DEFAULT_B)
     q_yes, q_no = lmsr.initial_q(initial_prob, b)
@@ -251,7 +290,7 @@ def create_question(
         question = Question.objects.create(
             title=title, resolution_criteria=resolution_criteria, source_type=source_type,
             source_ref=source_ref, deadline=deadline, initial_prob=initial_prob, b=b,
-            q_yes=q_yes, q_no=q_no,
+            q_yes=q_yes, q_no=q_no, group_id=group_id, tracks_deadline=source_type == Question.Source.GITHUB,
         )
         if conflicted_traders:
             question.conflicted_traders.set(conflicted_traders)
@@ -289,3 +328,51 @@ def claim_daily_reward(trader):
         trader.balance += reward.coins
         trader.save(update_fields=["balance"])
     return reward if created else None
+
+
+def purchase_snapshot(question):
+    return {field: getattr(question, field) for field in ("kind", "b", "alpha", "q_yes", "q_no", "pool_yes", "pool_no")}
+
+
+def prepare_purchase(trader, question, side, amount):
+    import hashlib
+    import secrets
+    from datetime import timedelta
+    from .models import PurchaseConfirmation
+    check_access(trader, question)
+    if question.conflicted_traders.filter(pk=trader.pk).exists():
+        raise MarketError("Конфликт интересов: вы не можете ставить на этот вопрос.")
+    amount = _d(amount)
+    if amount > min(trader.balance, Decimal(settings.MAX_BET)):
+        raise MarketError("Недостаточно средств или превышена максимальная ставка.")
+    if amount <= 0 or amount != amount.quantize(CENT):
+        raise MarketError("Укажите положительную сумму, не более двух знаков после запятой.")
+    preview = quote(question, side, amount)
+    token = secrets.token_urlsafe(32)
+    PurchaseConfirmation.objects.create(trader=trader, question=question,
+        token_hash=hashlib.sha256(token.encode()).hexdigest(), side=side,
+        amount=amount, snapshot=purchase_snapshot(question),
+        expires_at=timezone.now()+timedelta(minutes=2))
+    return preview, token
+
+
+@transaction.atomic
+def confirm_purchase(trader, question, token):
+    import hashlib
+    from .models import PurchaseConfirmation
+    confirmation = PurchaseConfirmation.objects.select_for_update().filter(
+        trader=trader, question=question, token_hash=hashlib.sha256(token.encode()).hexdigest()).first()
+    if not confirmation:
+        raise MarketError("Подтверждение недействительно. Рассчитайте ставку заново.")
+    question = Question.objects.select_for_update().get(pk=question.pk)
+    check_access(trader, question)
+    if confirmation.trade_id:
+        return confirmation.trade
+    if confirmation.expires_at <= timezone.now():
+        raise MarketError("Расчёт действовал две минуты и устарел. Рассчитайте ставку заново.")
+    if confirmation.snapshot != purchase_snapshot(question):
+        raise MarketError("Цена изменилась после расчёта. Проверьте новую ставку перед покупкой.")
+    trade = buy(trader, question, confirmation.side, confirmation.amount)
+    confirmation.trade = trade
+    confirmation.save(update_fields=["trade"])
+    return trade

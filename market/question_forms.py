@@ -1,19 +1,27 @@
 from django import forms
 from django.utils import timezone
-from .models import Question
+from .models import Question, Group
 
 
 class CreateQuestionForm(forms.ModelForm):
+    group = forms.ModelChoiceField(label="Где опубликовать", queryset=Group.objects.none(), required=False, empty_label="Общий рынок — виден всем")
     option_lines = forms.CharField(label="Варианты (каждый с новой строки)", widget=forms.Textarea, required=False)
+
+    def __init__(self, *args, trader=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .models import Group
+        self.fields["group"].queryset = Group.objects.filter(memberships__trader=trader, memberships__status="active") if trader else Group.objects.none()
 
     class Meta:
         model = Question
-        fields = ("title", "kind", "resolution_criteria", "deadline", "b", "number_min", "number_max", "tolerance")
+        fields = ("title", "group", "kind", "tracks_deadline", "resolution_criteria", "deadline", "b", "number_min", "number_max", "tolerance")
         labels = {"kind": "Тип", "b": "Начальная ликвидность", "number_min": "Минимальное число", "number_max": "Максимальное число", "tolerance": "Допустимая ошибка"}
         widgets = {"deadline": forms.DateTimeInput(attrs={"type": "datetime-local"})}
 
     def clean(self):
         data = super().clean()
+        if data.get("tracks_deadline") and (data.get("kind") not in ("lmsr", "ls_lmsr", "cpmm") or not data.get("deadline")):
+            self.add_error("tracks_deadline", "Для панели рисков нужен рынок ДА/НЕТ с дедлайном.")
         options = [s.strip() for s in data.get("option_lines", "").splitlines() if s.strip()]
         if data.get("kind") in ("poll", "multiple"):
             if not 2 <= len(options) <= 20 or len(set(options)) != len(options) or any(len(s)>200 for s in options):

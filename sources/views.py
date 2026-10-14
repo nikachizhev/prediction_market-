@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
+from django.core.exceptions import PermissionDenied
 
 from .github import parse_repo_url
 from .models import GitHubRepo
@@ -12,6 +13,10 @@ from .sync import sync_all
 
 @require_POST
 def sync(request):
+    if not request.user.is_authenticated or not request.user.is_staff:
+        if not request.user.is_authenticated:
+            return redirect("market:login")
+        raise PermissionDenied
     for m in sync_all():
         level = messages.WARNING if ("ошибка" in m or "недоступен" in m) else messages.INFO
         messages.add_message(request, level, m)
@@ -23,22 +28,28 @@ def sync(request):
 
 def github(request):
     if request.method == "POST":
+        if not request.user.is_authenticated or not request.user.is_staff:
+            if not request.user.is_authenticated:
+                return redirect("market:login")
+            raise PermissionDenied
         parsed = parse_repo_url(request.POST.get("url") or "")
         if not parsed:
             messages.error(request, "Не удалось разобрать ссылку. Ожидается https://github.com/owner/repo")
         else:
-            repo, created = GitHubRepo.objects.get_or_create(owner=parsed[0], name=parsed[1])
+            repo, created = GitHubRepo.objects.get_or_create(owner=parsed[0], name=parsed[1], group=None)
             messages.success(request, f"Репозиторий {repo} {'подключён' if created else 'уже подключён'}.")
             if created:
                 for m in sync_all():
                     messages.info(request, m)
         return redirect("sources:github")
-    return render(request, "sources/github.html", {"repos": GitHubRepo.objects.all()})
+    return render(request, "sources/github.html", {"repos": GitHubRepo.objects.filter(group__isnull=True)})
 
 
 @require_POST
 def github_delete(request, pk):
-    repo = get_object_or_404(GitHubRepo, pk=pk)
+    if not request.user.is_authenticated or not request.user.is_staff:
+        raise PermissionDenied
+    repo = get_object_or_404(GitHubRepo, pk=pk, group__isnull=True)
     repo.delete()
     messages.success(request, f"Репозиторий {repo} отключён (созданные вопросы сохранены).")
     return redirect("sources:github")

@@ -19,6 +19,7 @@ from .selectors import MARKET_SORTS, market_list
 from .identity import get_trader
 from .services import MarketError
 from .question_forms import ResultForm
+from .access import visible_questions
 
 
 def _trader(request: HttpRequest) -> Trader | None:
@@ -44,7 +45,7 @@ def question_list(request: HttpRequest) -> HttpResponse:
         "source": request.GET.get("source", ""),
         "sort": request.GET.get("sort", "new"),
     }
-    questions = list(market_list(**filters))
+    questions = list(market_list(**filters, trader=_trader(request)))
     for q in questions:
         q.pct = round(q.prob * 100)
         q.volume = q.volume or Decimal(0)
@@ -72,7 +73,7 @@ def markets_api(request: HttpRequest) -> JsonResponse:
     if filters["sort"] not in MARKET_SORTS:
         filters["sort"] = "new"
     rows = []
-    for q in market_list(**filters)[:100]:
+    for q in market_list(**filters, trader=_trader(request))[:100]:
         rows.append(
             {
                 "id": q.pk,
@@ -104,7 +105,7 @@ def personal_rating(request: HttpRequest) -> HttpResponse:
 
 
 def question_detail(request: HttpRequest, pk: int) -> HttpResponse:
-    question = get_object_or_404(Question, pk=pk)
+    question = get_object_or_404(visible_questions(_trader(request)), pk=pk)
     if not question.is_trading:
         from .question_views import detail
         return detail(request, question)
@@ -134,6 +135,7 @@ def question_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "result_form": ResultForm(question=question),
         "is_creator": bool(trader and question.creator_id == trader.pk),
         "question": question,
+        "subscribed": bool(trader and question.subscriptions.filter(trader=trader).exists()),
         "pct": round(question.prob * 100, 1),
         "chart_labels": labels,
         "chart_points": points,
@@ -149,6 +151,9 @@ def question_detail(request: HttpRequest, pk: int) -> HttpResponse:
     if trader:
         ctx["conflicted"] = question.conflicted_traders.filter(pk=trader.pk).exists()
         ctx["can_bet"] = question.accepting_entries and not ctx["conflicted"]
+        if ctx["can_bet"]:
+            from .purchase_tokens import issue
+            ctx["purchase_token"] = issue(trader, question)
         pos = Position.objects.filter(trader=trader, question=question).first()
         if pos and (pos.yes_shares > 0 or pos.no_shares > 0 or pos.spent > 0):
             p = question.prob
@@ -162,7 +167,7 @@ def question_detail(request: HttpRequest, pk: int) -> HttpResponse:
 
 
 def quote_view(request: HttpRequest, pk: int) -> JsonResponse:
-    question = get_object_or_404(Question, pk=pk)
+    question = get_object_or_404(visible_questions(_trader(request)), pk=pk)
     try:
         q = services.quote(question, request.GET.get("side", ""), _dec(request.GET.get("amount")))
     except MarketError as e:
@@ -175,18 +180,26 @@ def quote_view(request: HttpRequest, pk: int) -> JsonResponse:
             "prob_before": q["prob_before"],
             "new_prob": q["new_prob"],
             "payout_if_win": float(q["payout_if_win"]),
+            "profit_if_win": float(q["payout_if_win"]-q["cost"]),
+            "max_loss": float(q["cost"]),
         }
     )
 
 
 @require_POST
 def buy_view(request: HttpRequest, pk: int) -> HttpResponse:
-    question = get_object_or_404(Question, pk=pk)
+    question = get_object_or_404(visible_questions(_trader(request)), pk=pk)
     trader = _trader(request)
     if not trader:
         return _need_trader(request)
     try:
-        trade = services.buy(trader, question, request.POST.get("side", ""), _dec(request.POST.get("amount")))
+        if request.POST.get("confirmation_token"):
+            # Support confirmation forms opened before the one-click UI update.
+            trade = services.confirm_purchase(trader, question, request.POST["confirmation_token"])
+        else:
+            from .purchase_tokens import read
+            key = read(request.POST.get("purchase_token"), trader, question)
+            trade = services.buy(trader, question, request.POST.get("side", ""), _dec(request.POST.get("amount")), request_key=key)
         messages.success(
             request,
             f"Ставка принята: {trade.shares:.2f} акций {trade.get_side_display()} за {trade.cost} монет.",
@@ -198,7 +211,7 @@ def buy_view(request: HttpRequest, pk: int) -> HttpResponse:
 
 @require_POST
 def sell_view(request: HttpRequest, pk: int) -> HttpResponse:
-    question = get_object_or_404(Question, pk=pk)
+    question = get_object_or_404(visible_questions(_trader(request)), pk=pk)
     trader = _trader(request)
     if not trader:
         return _need_trader(request)
@@ -239,7 +252,7 @@ def me(request: HttpRequest) -> HttpResponse:
         messages.success(request, "Настройки сохранены.")
         return redirect("market:me")
     positions = []
-    for p in Position.objects.filter(trader=trader).select_related("question").order_by("-question__created_at"):
+    for p in Position.objects.filter(trader=trader, question__in=visible_questions(trader)).select_related("question").order_by("-question__created_at"):
         if p.yes_shares <= 0 and p.no_shares <= 0 and p.spent <= 0:
             continue
         q = p.question

@@ -21,10 +21,10 @@ API = "https://api.github.com"
 Getter = Callable[[str, dict], Any]
 
 
-def http_get(path: str, params: dict | None = None) -> Any:
+def http_get(path: str, params: dict | None = None, *, use_token=True) -> Any:
     """Default getter: returns all pages of a list endpoint, or the JSON object."""
     headers = {"Accept": "application/vnd.github+json"}
-    if settings.GITHUB_TOKEN:
+    if settings.GITHUB_TOKEN and use_token:
         headers["Authorization"] = f"Bearer {settings.GITHUB_TOKEN}"
     params = dict(params or {})
     params.setdefault("per_page", 100)
@@ -68,15 +68,18 @@ def deadline_from_due(due_on: str) -> datetime:
 class GitHubSource:
     source_type = "github"
 
-    def __init__(self, getter: Getter | None = None, now: Callable[[], datetime] | None = None):
+    def __init__(self, getter: Getter | None = None, now: Callable[[], datetime] | None = None, group_id=None):
+        self.group_id = group_id
+        self.custom_getter = getter is not None
+        self.public_only = False
         self.get = getter or http_get
         self.now = now or timezone.now
         self._cache: dict[tuple, Any] = {}
 
     def _fetch(self, path: str, params: dict) -> Any:
-        key = (path, tuple(sorted(params.items())))
+        key = (path, tuple(sorted(params.items())), self.public_only)
         if key not in self._cache:
-            self._cache[key] = self.get(path, params)
+            self._cache[key] = http_get(path, params, use_token=False) if self.public_only and not self.custom_getter else self.get(path, params)
         return self._cache[key]
 
     def _milestones(self, o: str, r: str) -> list[dict]:
@@ -88,7 +91,12 @@ class GitHubSource:
 
     def discover(self) -> list[QuestionDraft]:
         drafts: list[QuestionDraft] = []
-        for repo in GitHubRepo.objects.all():
+        repos = GitHubRepo.objects.all()
+        if self.group_id is not None:
+            repos = repos.filter(group_id=self.group_id)
+        for repo in repos:
+            self.public_only = bool(repo.group_id and not repo.allow_private)
+            prefix = f"ghg{repo.group_id}" if repo.group_id else "gh"
             o, r = repo.owner, repo.name
             try:
                 milestones = self._milestones(o, r)
@@ -105,7 +113,7 @@ class GitHubSource:
                         f"ДА, если веха «{m['title']}» в {o}/{r} закрыта не позднее конца {dl:%d.%m.%Y} (МСК). "
                         "НЕТ, если к этому сроку она остаётся открытой. Повторное открытие не отменяет разрешение."
                     ),
-                    source_ref=f"gh:{o}/{r}:milestone:{m['number']}", deadline=dl,
+                    source_ref=f"{prefix}:{o}/{r}:milestone:{m['number']}", deadline=dl, group_id=repo.group_id,
                     initial_prob=0.5, conflicted_logins=[],
                 ))
             for i in issues:
@@ -121,7 +129,7 @@ class GitHubSource:
                         f"{dl:%d.%m.%Y} (МСК). НЕТ, если к этому сроку она открыта. Если задача закрыта как "
                         "«not planned», вопрос аннулируется. Повторное открытие не отменяет разрешение."
                     ),
-                    source_ref=f"gh:{o}/{r}:issue:{i['number']}", deadline=dl,
+                    source_ref=f"{prefix}:{o}/{r}:issue:{i['number']}", deadline=dl, group_id=repo.group_id,
                     initial_prob=0.5, conflicted_logins=logins,
                 ))
         return drafts
@@ -135,6 +143,8 @@ class GitHubSource:
         except ValueError:
             return None
         deadline = question.deadline
+        connection = GitHubRepo.objects.filter(owner=o, name=r, group_id=question.group_id).first() if question.group_id else None
+        self.public_only = bool(question.group_id and not (connection and connection.allow_private))
         now = self.now()
         if kind == "milestone":
             item = next((m for m in self._milestones(o, r) if m["number"] == num), None)

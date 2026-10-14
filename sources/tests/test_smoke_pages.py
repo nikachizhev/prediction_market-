@@ -23,6 +23,8 @@ def test_pages_render_after_seed(client, db):
 
 
 def test_sync_post_and_add_repo(client, db, monkeypatch):
+    from django.contrib.auth.models import User
+    client.force_login(User.objects.create_user("source-admin", is_staff=True))
     import sources.github as gh
     monkeypatch.setattr(gh, "http_get", lambda p, params=None: [])
     r = client.post(reverse("sources:sync"), HTTP_REFERER="http://testserver/leaderboard/")
@@ -41,8 +43,9 @@ def test_abmock_ui_flow(client, db):
     assert r.status_code == 302
     q = Question.objects.get()
     assert round(q.prob, 2) == 0.25
-    client.post("/abmock/1/start/")
-    client.post("/abmock/1/finish/")
+    experiment_id = q.source_ref.split(":", 1)[1]
+    client.post(f"/abmock/{experiment_id}/start/")
+    client.post(f"/abmock/{experiment_id}/finish/")
     q.refresh_from_db()
     assert q.status == "resolved"
-    assert client.get("/abmock/1/").status_code == 200
+    assert client.get(f"/abmock/{experiment_id}/").status_code == 200

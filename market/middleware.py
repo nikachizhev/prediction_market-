@@ -13,6 +13,8 @@ class DailyRewardMiddleware:
                 route = None
             if route and route.app_name == "market" and route.url_name in (
                 "markets", "index", "me", "profile", "personal_rating", "leaderboard", "friends", "mascot", "question",
+                "groups", "group_detail", "group_create", "notifications",
+                "group_risks", "group_report", "subscriptions",
             ):
                 from .identity import get_trader
                 from .services import claim_daily_reward

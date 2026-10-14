@@ -7,6 +7,25 @@ from . import services
 from .models import Payout, Position, Question, Trade, Trader, EmailVerification
 from .question_forms import ResultForm
 from .participation import finish
+from .models import Group, GroupMembership, Notification
+
+
+@admin.register(Group)
+class GroupAdmin(admin.ModelAdmin):
+    list_display = ("name", "kind", "owner")
+    search_fields = ("name",)
+    readonly_fields = ("owner",)
+
+
+@admin.register(GroupMembership)
+class MembershipAdmin(admin.ModelAdmin):
+    list_display = ("group", "trader", "status")
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = ("recipient", "kind", "created_at", "read_at")
+    readonly_fields = ("recipient", "text", "kind", "question", "group", "key", "created_at")
 
 admin.site.site_header = "Рынок прогнозов · Управление"
 admin.site.site_title = "Админка рынка"
@@ -27,13 +46,13 @@ class QuestionAdmin(admin.ModelAdmin):
     list_display = ("title", "kind", "source_type", "status", "outcome", "deadline", "result_link")
     list_filter = ("kind", "status", "source_type")
     search_fields = ("title", "resolution_criteria")
-    readonly_fields = ("status", "outcome", "answer", "q_yes", "q_no", "pool_yes", "pool_no", "created_at")
+    readonly_fields = ("status", "outcome", "answer", "q_yes", "q_no", "pool_yes", "pool_no", "created_at", "resolved_at")
     actions = ["resolve_yes", "resolve_no", "close_selected", "annul_selected"]
 
     def get_readonly_fields(self, request, obj=None):
         fields = self.readonly_fields
         if obj:
-            fields += ("kind", "creator", "b", "alpha", "initial_prob", "options", "number_min", "number_max", "tolerance", "resolution_criteria", "source_ref", "source_type")
+            fields += ("group", "kind", "creator", "b", "alpha", "initial_prob", "options", "number_min", "number_max", "tolerance", "resolution_criteria", "source_ref", "source_type")
         return fields
 
     def has_delete_permission(self, request, obj=None):

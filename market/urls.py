@@ -7,12 +7,25 @@ from . import telegram_auth
 from . import email_verification
 from . import mascots
 from . import friends
+from . import groups, notifications
+from . import group_analytics, subscriptions
 
 from . import views
 
 app_name = "market"
 
 urlpatterns = [
+    path("groups/", groups.index, name="groups"),
+    path("groups/create/", groups.create, name="group_create"),
+    path("groups/<int:pk>/", groups.detail, name="group_detail"),
+    path("groups/<int:pk>/risks/", group_analytics.dashboard, name="group_risks"),
+    path("groups/<int:pk>/report/", group_analytics.dashboard, {"report": True}, name="group_report"),
+    path("subscriptions/", subscriptions.index, name="subscriptions"),
+    path("q/<int:pk>/subscribe/", subscriptions.toggle, name="subscribe"),
+    path("notifications/", notifications.inbox, name="notifications"),
+    path("api/notifications/", notifications.feed, name="notification_feed"),
+    path("notifications/read-all/", notifications.read_all, name="notifications_read_all"),
+    path("notifications/<int:pk>/read/", notifications.read, name="notification_read"),
     path("welcome/", mascots.welcome, name="welcome"),
     path("me/mascot/", mascots.choose, name="mascot"),
     path("me/mascot/visibility/", mascots.visibility, name="mascot_visibility"),
