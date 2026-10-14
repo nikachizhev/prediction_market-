@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block title %}{{ question.title }}{% endblock %}
 {% block content %}
+{% if is_creator and question.status != 'resolved' and question.status != 'annulled' %}
+<div class="card"><h2>Указать результат</h2><form method="post" action="{% url 'market:finish' question.pk %}">{% csrf_token %}{{ result_form.as_p }}<button class="btn">Завершить и выплатить</button></form></div>
+{% endif %}
+<p>{{ question.get_kind_display }}{% if question.kind == 'ls_lmsr' %} · Вероятность нормализована; стоимость включает надбавку LS-LMSR.{% endif %}</p>
 <div class="card">
   <div class="muted small">{% include "market/_badges.html" %}
     {% if question.deadline %} &middot; дедлайн {{ question.deadline|date:"d.m.Y H:i" }}{% endif %}</div>

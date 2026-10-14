@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from .models import Trader
+from .identity import get_trader
 
 
 def current_trader(request):
-    trader = None
-    tid = request.session.get("trader_id") if hasattr(request, "session") else None
-    if tid:
-        trader = Trader.objects.filter(pk=tid).first()
-    return {"current_trader": trader}
+    trader = get_trader(request)
+    from .mascots import CHARACTERS
+    character = next((c for c in CHARACTERS if trader and c["key"] == trader.mascot), None)
+    return {"current_trader": trader, "floating_character": character}

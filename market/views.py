@@ -16,17 +16,18 @@ from django.views.decorators.http import require_POST
 from . import services
 from .models import Position, Question, Trade, Trader
 from .selectors import MARKET_SORTS, market_list
+from .identity import get_trader
 from .services import MarketError
+from .question_forms import ResultForm
 
 
 def _trader(request: HttpRequest) -> Trader | None:
-    tid = request.session.get("trader_id")
-    return Trader.objects.filter(pk=tid).first() if tid else None
+    return get_trader(request)
 
 
 def _need_trader(request: HttpRequest) -> HttpResponse:
     messages.info(request, "Сначала выберите пользователя.")
-    return redirect(f"{reverse('market:switch_user')}?next={request.path}")
+    return redirect(f"{reverse('market:login')}?next={request.path}")
 
 
 def _dec(raw: str | None) -> Decimal:
@@ -78,8 +79,9 @@ def markets_api(request: HttpRequest) -> JsonResponse:
                 "title": q.title,
                 "status": q.status,
                 "source": q.source_type,
-                "probability_yes": round(q.prob, 6),
-                "participants": q.n_traders,
+                "kind": q.kind,
+                "probability_yes": round(q.prob, 6) if q.is_trading else None,
+                "participants": q.n_traders if q.is_trading else q.n_answers,
                 "trades": q.n_trades,
                 "volume": float(q.volume or 0),
                 "deadline": q.deadline.isoformat() if q.deadline else None,
@@ -93,11 +95,18 @@ def personal_rating(request: HttpRequest) -> HttpResponse:
     trader = _trader(request)
     if not trader:
         return _need_trader(request)
-    return render(request, "market/personal_rating.html", {"trader": trader})
+    from .statistics import statistics, ranking
+    rows = ranking()
+    own = next((r for r in rows if r["trader"].pk == trader.pk), None) or statistics(trader)
+    from .mascots import progression
+    return render(request, "market/personal_rating.html", {"trader": trader, "stats": own, "ratings": rows, "companion": progression(trader, own)})
 
 
 def question_detail(request: HttpRequest, pk: int) -> HttpResponse:
     question = get_object_or_404(Question, pk=pk)
+    if not question.is_trading:
+        from .question_views import detail
+        return detail(request, question)
     trader = _trader(request)
     trades = list(question.trades.all())
 
@@ -121,6 +130,8 @@ def question_detail(request: HttpRequest, pk: int) -> HttpResponse:
 
     agg = question.trades.aggregate(volume=Sum(Abs("cost")))
     ctx = {
+        "result_form": ResultForm(question=question),
+        "is_creator": bool(trader and question.creator_id == trader.pk),
         "question": question,
         "pct": round(question.prob * 100, 1),
         "chart_labels": labels,
@@ -245,6 +256,8 @@ def me(request: HttpRequest) -> HttpResponse:
 
 
 def switch_user(request: HttpRequest) -> HttpResponse:
+    return redirect("market:login")
+    # Legacy account switching is disabled; only password authentication is allowed.
     nxt = request.POST.get("next") or request.GET.get("next") or reverse("market:index")
     if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
         nxt = reverse("market:index")

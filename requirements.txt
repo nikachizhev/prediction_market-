@@ -3,3 +3,4 @@ requests
 python-dotenv
 pytest
 pytest-django
+psycopg[binary]>=3.2,<4

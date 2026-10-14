@@ -10,6 +10,10 @@ from . import lmsr
 
 
 class Trader(models.Model):
+    show_companion = models.BooleanField(default=True)
+    mascot = models.CharField(max_length=12, blank=True, default="", choices=[("vesta", "Веста"), ("klep", "Клёп"), ("fox", "Фокс")])
+    telegram_chat_id = models.BigIntegerField(null=True, blank=True, unique=True)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="trader")
     name = models.CharField("имя", max_length=100)
     pseudonym = models.CharField("псевдоним", max_length=100)
     show_real_name = models.BooleanField("показывать имя", default=False)
@@ -30,7 +34,65 @@ class Trader(models.Model):
         return self.name if self.show_real_name else self.pseudonym
 
 
+class TelegramLink(models.Model):
+    trader = models.OneToOneField(Trader, on_delete=models.CASCADE)
+    token_hash = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+
+
+class TelegramAuth(models.Model):
+    token_hash = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    telegram_id = models.BigIntegerField(null=True)
+    first_name = models.CharField(max_length=100, blank=True)
+    consumed = models.BooleanField(default=False)
+
+
+class BotRegistration(models.Model):
+    chat_id = models.BigIntegerField(unique=True)
+    name = models.CharField(max_length=100, blank=True)
+    expires_at = models.DateTimeField()
+
+
+class EmailVerification(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    token_hash = models.CharField(max_length=64, unique=True)
+    email = models.EmailField()
+    expires_at = models.DateTimeField()
+    sent_at = models.DateTimeField(null=True)
+    verified_at = models.DateTimeField(null=True)
+
+
+class TelegramSiteLink(models.Model):
+    trader = models.OneToOneField(Trader, on_delete=models.CASCADE)
+    token_hash = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+
+
 class Question(models.Model):
+    class Kind(models.TextChoices):
+        LMSR = "lmsr", "LMSR"
+        LS = "ls_lmsr", "LS-LMSR"
+        CPMM = "cpmm", "CPMM"
+        POLL = "poll", "Анонимный опрос"
+        NUMBER = "number", "Угадай число"
+        MULTIPLE = "multiple", "Множественный выбор"
+
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.LMSR)
+    creator = models.ForeignKey(Trader, null=True, blank=True, on_delete=models.SET_NULL, related_name="created_questions")
+    options = models.JSONField(default=list, blank=True)
+    answer = models.JSONField(null=True, blank=True)
+    number_min = models.DecimalField(max_digits=16, decimal_places=4, default=0)
+    number_max = models.DecimalField(max_digits=16, decimal_places=4, default=100)
+    tolerance = models.DecimalField(max_digits=16, decimal_places=4, default=0)
+    alpha = models.FloatField(default=0.05)
+    pool_yes = models.FloatField(default=200)
+    pool_no = models.FloatField(default=200)
+
+    @property
+    def is_trading(self):
+        return self.kind in (self.Kind.LMSR, self.Kind.LS, self.Kind.CPMM)
+
     class Source(models.TextChoices):
         MANUAL = "manual", "Вручную"
         GITHUB = "github", "GitHub"
@@ -84,7 +146,18 @@ class Question(models.Model):
     @property
     def prob(self) -> float:
         """Current YES price."""
-        return lmsr.price_yes(self.q_yes, self.q_no, self.b)
+        from .mechanisms import probability
+        return probability(self, self.q_yes, self.q_no)
+
+
+class Submission(models.Model):
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="submissions")
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="submissions")
+    value = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["question", "trader"], name="unique_submission")]
 
 
 class Position(models.Model):

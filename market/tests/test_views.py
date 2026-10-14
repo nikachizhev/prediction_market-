@@ -23,9 +23,11 @@ def boris(db):
 
 
 def login(client, trader):
-    s = client.session
-    s["trader_id"] = trader.pk
-    s.save()
+    from django.contrib.auth.models import User
+    user = User.objects.create_user(username=f"trader-{trader.pk}", password="test-password")
+    trader.user = user
+    trader.save(update_fields=["user"])
+    client.force_login(user)
 
 
 def test_list_and_detail_readable_anonymously(client, q):
@@ -56,21 +58,21 @@ def test_markets_api_returns_frontend_summary(client, q, anya):
 
 def test_personal_rating_is_empty_and_requires_trader(client, anya):
     r = client.get(reverse("market:personal_rating"))
-    assert r.status_code == 302 and reverse("market:switch_user") in r["Location"]
+    assert r.status_code == 302 and reverse("market:login") in r["Location"]
     login(client, anya)
     page = client.get(reverse("market:personal_rating")).content.decode()
-    assert "Мой рейтинг" in page and "Раздел готовится" in page
+    assert "Мой рейтинг" in page and "Верно:" in page
 
 
 def test_me_redirects_without_trader(client, db):
     r = client.get(reverse("market:me"))
-    assert r.status_code == 302 and reverse("market:switch_user") in r["Location"]
+    assert r.status_code == 302 and reverse("market:login") in r["Location"]
 
 
 def test_switch_user_sets_session(client, anya):
     r = client.post(reverse("market:switch_user"), {"trader_id": anya.pk})
     assert r.status_code == 302
-    assert client.session["trader_id"] == anya.pk
+    assert "_auth_user_id" not in client.session
 
 
 def test_quote_json_and_error(client, q):

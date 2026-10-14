@@ -9,9 +9,11 @@ def test_pages_render_after_seed(client, db):
     call_command("seed_demo", "--reset", verbosity=0)
     call_command("seed_demo", "--reset", verbosity=0)  # reset is repeatable
     t = Trader.objects.get(name="Аня")
-    s = client.session
-    s["trader_id"] = t.pk
-    s.save()
+    from django.contrib.auth.models import User
+    user = User.objects.create_user(username="smoke-user")
+    t.user = user
+    t.save(update_fields=["user"])
+    client.force_login(user)
     q = Question.objects.first()
     for url in ["/", f"/q/{q.pk}/", "/leaderboard/", "/me/", "/abmock/", "/sources/github/", "/abmock/1/"]:
         r = client.get(url)

@@ -2,9 +2,25 @@
 {% block title %}Мой рейтинг{% endblock %}
 {% block content %}
 <h1>Мой рейтинг</h1>
+<div class="card companion-panel companion-level-{{ companion.level }}">
+{% if companion.character %}<div class="companion-portrait"><div class="mascot-art mascot-{{ companion.character.key }}" role="img" aria-label="{{ companion.character.name }}"></div><div class="companion-stars" aria-hidden="true">{% for star in companion.stars %}✦ {% endfor %}</div></div>{% endif %}
+<div class="companion-info"><span class="eyebrow">ВАШ ПРОВОДНИК · УРОВЕНЬ {{ companion.level }}</span><h2>{% if companion.character %}{{ companion.character.name }} · {{ companion.title }}{% else %}Выберите своего проводника{% endif %}</h2>
+<p>{{ companion.xp }} XP · {{ companion.participations }} прогнозов · {{ stats.correct }} верных · {{ companion.money_xp }} XP за ставки</p>
+<progress value="{{ companion.progress }}" max="100" aria-label="Опыт до следующего уровня"></progress>
+{% if companion.next_title %}<p class="small muted">До уровня «{{ companion.next_title }}»: ещё {{ companion.missing_xp }} XP и {{ companion.missing_correct }} верных прогнозов.</p>{% else %}<p>Вы достигли уровня Оракула ✧</p>{% endif %}
+<a href="{% url 'market:mascot' %}">{% if companion.character %}Сменить проводника{% else %}Выбрать проводника{% endif %} →</a>
+<p class="small muted">10 XP за каждый отдельный вопрос, 20 XP за верный прогноз. Бонус за общий объём покупок: √монет, максимум 50 XP. Повторные сделки не добавляют участия. Опросы и аннулированные вопросы не дают опыт прогнозов.</p>
+</div></div>
 <div class="card">
-  <h2>Раздел готовится</h2>
-  <p>Здесь появится личная статистика {{ trader.display_name }}: место среди участников, прибыль, точность прогнозов и динамика по периодам.</p>
-  <p class="muted" style="margin-bottom:0">Пока рейтинг не рассчитывается — сделки и позиции продолжают сохраняться и позже смогут участвовать в расчёте.</p>
+  <h2>{{ trader.display_name }} · Место {{ stats.rank|default:'—' }}</h2>
+  <p>Участие в вопросах: {{ stats.markets }} · Сделок: {{ stats.trades }}</p>
+  <p>Потрачено на покупки: {{ stats.spent }} · Получено от продаж: {{ stats.received }} · Выплаты: {{ stats.payouts }}</p>
+  <p>Верно: {{ stats.correct }} · Неверно: {{ stats.wrong }} · Точность: {{ stats.accuracy|default_if_none:'—' }}%</p>
+  <p>Нейтральных позиций: {{ stats.neutral }} · Средняя ошибка числа: {{ stats.mean_error|default_if_none:'—' }}</p>
+  <p>Прибыль с оценкой открытых позиций: {{ stats.profit }}</p>
+  <p class="muted">Верный торговый прогноз — преобладающая оставшаяся позиция. Равные позиции исключены. Для нескольких вариантов требуется точное совпадение, для числа — попадание в допуск. Опросы и аннулированные вопросы не влияют на точность.</p>
 </div>
+<div class="card"><h2>Участники</h2><table><tr><th>Место</th><th>Участник</th><th>Вопросов</th><th>Верно</th><th>Неверно</th><th>Покупки</th></tr>
+{% for row in ratings %}<tr><td>{{ row.rank }}</td><td>{{ row.trader.display_name }}</td><td>{{ row.markets }}</td><td>{{ row.correct }}</td><td>{{ row.wrong }}</td><td>{{ row.spent }}</td></tr>{% endfor %}
+</table><p class="muted">Порядок: число верных, меньше ошибок, прибыль.</p></div>
 {% endblock %}

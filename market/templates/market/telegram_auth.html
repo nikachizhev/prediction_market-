@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-shell"><div class="card auth-card">
+<span class="eyebrow">ВХОД ЧЕРЕЗ TELEGRAM</span><h1>Ещё один шаг</h1>
+{% if not verified %}<p>Откройте бота и нажмите Start, чтобы подтвердить свой Telegram. Затем вернитесь на эту страницу.</p>
+<a class="btn telegram-btn" href="{{ request.session.telegram_auth_url }}" target="_blank" rel="noopener noreferrer">Открыть Telegram ↗</a>
+<p><a class="btn ghost" href="{% url 'market:telegram_complete' %}">Я подтвердил — проверить</a></p>
+{% else %}<p class="pos">Telegram подтверждён ✓</p><form method="post">{% csrf_token %}
+{% if not existing %}<p>Укажите почту для нового профиля. Пароль для входа через Telegram не нужен.</p>{{ form.as_p }}{% endif %}
+<button class="btn" type="submit">{% if existing %}Войти{% else %}Создать аккаунт{% endif %}</button></form>{% endif %}
+</div></div>{% endblock %}

@@ -1,4 +1,5 @@
 <!doctype html>
+{% load static %}
 <html lang="ru">
 <head>
 <meta charset="utf-8">
@@ -56,6 +57,9 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .filters label{margin-top:0}.filter-actions{display:flex;align-items:center;gap:10px;padding-bottom:1px}
 @media(max-width:800px){.filters{grid-template-columns:1fr 1fr}.filter-actions{grid-column:1/-1}}
 </style>
+<link rel="stylesheet" href="{% static 'market/site.css' %}">
+<link rel="stylesheet" href="{% static 'market/mascots.css' %}">
+<link rel="stylesheet" href="{% static 'market/companion-widget.css' %}">
 {% block head %}{% endblock %}
 </head>
 <body>
@@ -65,17 +69,20 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <a href="{% url 'market:personal_rating' %}">Мой рейтинг</a>
   <a href="{% url 'market:leaderboard' %}">Лидерборд</a>
   <a href="{% url 'market:me' %}">Мои ставки</a>
+  <a href="{% url 'market:mascot' %}">Проводник ✧</a>
   <a href="{% url 'abmock:index' %}">Платформа экспериментов</a>
   <a href="{% url 'sources:github' %}">GitHub</a>
+  {% if request.user.is_staff %}<a href="{% url 'admin:index' %}">Админка</a>{% endif %}
   <span class="user">
-    {% if current_trader %}{{ current_trader.name }} &middot; {{ current_trader.balance }} монет{% else %}не выбран пользователь{% endif %}
-    &middot; <a href="{% url 'market:switch_user' %}">сменить</a>
+    {% if current_trader %}{{ current_trader.display_name }} &middot; {{ current_trader.balance }} монет{% endif %}
+    {% if request.user.is_authenticated %}<form method="post" action="{% url 'market:logout' %}" style="display:inline">{% csrf_token %}<button class="btn ghost" type="submit">Выйти</button></form>{% else %}<a href="{% url 'market:login' %}">Войти</a> &middot; <a href="{% url 'market:register' %}">Регистрация</a>{% endif %}
   </span>
 </div></nav>
 <main>
   {% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}
   {% block content %}{% endblock %}
 </main>
+{% if floating_character %}{% include "market/floating_companion.html" %}{% endif %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 {% block scripts %}{% endblock %}
 </body>

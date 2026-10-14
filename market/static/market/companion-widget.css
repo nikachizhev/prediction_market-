@@ -1,0 +1,18 @@
+/* Each character has a standalone full-body asset. Never crop to fill a box. */
+.mascot-art{aspect-ratio:2/3;background-size:contain;background-position:center;display:block}
+.mascot-vesta{background-image:url('vesta-full.png')}
+.mascot-klep{background-image:url('klep-full.png')}
+.mascot-fox{background-image:url('fox-full.png')}
+.companion-portrait{border-radius:18px;overflow:visible}
+.companion-portrait .mascot-art{mix-blend-mode:normal}
+.floating-companion{position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));z-index:40;width:112px;pointer-events:none}
+.floating-companion button,.floating-companion a{pointer-events:auto}
+.floating-companion-link{display:block;text-decoration:none!important;filter:drop-shadow(0 6px 10px #55366b24)}
+.floating-companion-link .mascot-art{width:112px}
+.companion-name{display:block;text-align:center;font-size:11px;color:#674975;background:#fffaf4e8;border:1px solid #e5d8ee;border-radius:20px;padding:3px 8px}
+.companion-hide{position:absolute;right:0;top:0;border:1px solid #d8cce0;border-radius:50%;width:28px;height:28px;background:#fffaf4;color:#674975;font-size:20px;cursor:pointer;z-index:1}
+.companion-show{margin-left:auto;display:block;border:1px solid #d8cce0;border-radius:50%;width:38px;height:38px;background:#fffaf4;color:#674975;font-size:22px;cursor:pointer;box-shadow:0 3px 12px #55366b15}
+.companion-save-status{font-size:11px;color:#a44141;background:#fffaf4;display:block}
+body:has(.floating-companion) main{padding-bottom:260px}
+@media(min-width:1500px){body:has(.floating-companion) main{padding-bottom:80px}}
+@media(max-width:720px){.floating-companion{width:76px;right:8px;bottom:max(8px,env(safe-area-inset-bottom))}.floating-companion-link .mascot-art{width:76px}.companion-hide{width:24px;height:24px;font-size:17px}.companion-name{font-size:10px}body:has(.floating-companion) main{padding-bottom:185px}}

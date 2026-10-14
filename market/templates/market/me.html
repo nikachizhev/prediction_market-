@@ -32,4 +32,17 @@
   </form>
 </div>
 </div>
+<div class="card">
+  <h2>Telegram</h2>
+  <form method="post" action="{% url 'market:telegram' %}">{% csrf_token %}
+    {% if trader.telegram_chat_id %}
+      <p>Аккаунт подключён. Команды бота: /balance, /markets.</p>
+      <button class="btn" name="action" value="test">Проверить связь</button>
+      <button class="btn ghost" name="action" value="disconnect">Отключить</button>
+    {% else %}
+      <button class="btn" name="action" value="connect">Подключить Telegram</button>
+      {% if request.session.telegram_link %}<p><a href="{{ request.session.telegram_link }}" target="_blank" rel="noopener noreferrer">Открыть бота и нажать Start</a>. Ссылка действует 10 минут.</p>{% endif %}
+    {% endif %}
+  </form>
+</div>
 {% endblock %}

@@ -8,6 +8,8 @@ from django.conf import settings
 from django.db import transaction
 
 from . import lmsr
+from . import mechanisms
+from django.utils import timezone
 from .models import Payout, Position, Question, Trade, Trader
 
 CENT = Decimal("0.01")
@@ -20,7 +22,15 @@ class MarketError(ValueError):
 
 
 def _d(x: float | Decimal | int | str) -> Decimal:
-    return x if isinstance(x, Decimal) else Decimal(repr(float(x)) if isinstance(x, float) else str(x))
+    value = x if isinstance(x, Decimal) else Decimal(repr(float(x)) if isinstance(x, float) else str(x))
+    if not value.is_finite():
+        raise MarketError("Введите конечное число.")
+    return value
+
+
+def check_open(question):
+    if question.status != Question.Status.OPEN or (question.deadline and question.deadline <= timezone.now()):
+        raise MarketError("Участие в этом вопросе закрыто.")
 
 
 def _ceil_cent(x: Decimal) -> Decimal:
@@ -48,25 +58,32 @@ def quote(question: Question, side: str, amount: Decimal | float | int | str) ->
     """Preview of buying `side` for `amount` coins. Does not validate balance."""
     _check_side(side)
     amount = _d(amount)
+    check_open(question)
+    if not question.is_trading:
+        raise MarketError("Этот вопрос не поддерживает торговлю.")
     if amount <= 0:
         raise MarketError("Сумма ставки должна быть положительной.")
     if question.status != Question.Status.OPEN:
         raise MarketError("Ставки на этот вопрос закрыты.")
-    shares_f = lmsr.shares_for_amount(side, float(amount), question.q_yes, question.q_no, question.b)
+    shares_f = mechanisms.shares_for_amount(question, side, float(amount))
     shares = _floor_shares(shares_f)
     if shares <= 0:
         raise MarketError("Сумма слишком мала.")
-    real = lmsr.trade_cost(side, float(shares), question.q_yes, question.q_no, question.b)
+    real = mechanisms.trade_cost(question, side, float(shares))
     cost = min(_ceil_cent(_d(real)), amount.quantize(CENT, rounding=ROUND_CEILING))
     dq = float(shares)
     new_q_yes = question.q_yes + (dq if side == "yes" else 0.0)
     new_q_no = question.q_no + (dq if side == "no" else 0.0)
+    import copy
+    preview = copy.copy(question)
+    mechanisms.move_pool(preview, side, dq, real)
     return {
         "side": side,
         "shares": shares,
         "cost": cost,
         "prob_before": question.prob,
-        "new_prob": lmsr.price_yes(new_q_yes, new_q_no, question.b),
+        "new_prob": mechanisms.probability(preview, new_q_yes, new_q_no),
+        "pool_cost": real,
         "payout_if_win": _floor_cent(shares),
     }
 
@@ -104,12 +121,13 @@ def buy(trader: Trader, question: Question, side: str, amount: Decimal | float |
         question.q_no += float(q["shares"])
         pos.no_shares += q["shares"]
     pos.spent += q["cost"]
+    mechanisms.move_pool(question, side, float(q["shares"]), q["pool_cost"])
     trader.balance -= q["cost"]
     trade = Trade.objects.create(
         trader=trader, question=question, side=side, shares=q["shares"], cost=q["cost"],
         prob_before=q["prob_before"], prob_after=q["new_prob"],
     )
-    question.save(update_fields=["q_yes", "q_no"])
+    question.save(update_fields=["q_yes", "q_no", "pool_yes", "pool_no"])
     pos.save()
     trader.save(update_fields=["balance"])
     return trade
@@ -122,6 +140,9 @@ def sell(trader: Trader, question: Question, side: str, shares: Decimal | float 
     shares = _d(shares).quantize(SHARE_Q, rounding=ROUND_FLOOR)
     question = Question.objects.select_for_update().get(pk=question.pk)
     trader = Trader.objects.select_for_update().get(pk=trader.pk)
+    check_open(question)
+    if not question.is_trading:
+        raise MarketError("Этот вопрос не поддерживает торговлю.")
     if question.status != Question.Status.OPEN:
         raise MarketError("Ставки на этот вопрос закрыты.")
     if shares <= 0:
@@ -131,7 +152,9 @@ def sell(trader: Trader, question: Question, side: str, shares: Decimal | float 
     if shares > held:
         raise MarketError("Нельзя продать больше акций, чем у вас есть.")
     before = question.prob
-    proceeds = _floor_cent(_d(-lmsr.trade_cost(side, -float(shares), question.q_yes, question.q_no, question.b)))
+    real_cost = mechanisms.trade_cost(question, side, -float(shares))
+    proceeds = _floor_cent(_d(-real_cost))
+    mechanisms.move_pool(question, side, -float(shares), real_cost)
     if side == "yes":
         question.q_yes -= float(shares)
         pos.yes_shares -= shares
@@ -145,7 +168,7 @@ def sell(trader: Trader, question: Question, side: str, shares: Decimal | float 
         trader=trader, question=question, side=side, shares=-shares, cost=-proceeds,
         prob_before=before, prob_after=question.prob,
     )
-    question.save(update_fields=["q_yes", "q_no"])
+    question.save(update_fields=["q_yes", "q_no", "pool_yes", "pool_no"])
     pos.save()
     trader.save(update_fields=["balance"])
     return trade
@@ -177,6 +200,8 @@ def resolve(question: Question, outcome: str) -> Question:
     if outcome not in ("yes", "no"):
         raise MarketError("Исход должен быть «yes» или «no».")
     question = Question.objects.select_for_update().get(pk=question.pk)
+    if not question.is_trading:
+        raise MarketError("Используйте форму результата для этого типа вопроса.")
     if question.status in (Question.Status.RESOLVED, Question.Status.ANNULLED):
         raise MarketError("Вопрос уже разрешён или аннулирован.")
     for pos in _lock_positions(question):
