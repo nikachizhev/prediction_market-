@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Платформа экспериментов{% endblock %}
+{% block content %}
+<h1>Платформа экспериментов (заглушка)</h1>
+<p class="muted small">Имитация внешней системы A/B-тестов. Вопросы на рынке создаются и разрешаются по её состоянию автоматически.</p>
+<div class="grid">
+<div class="card">
+  <h2>Эксперименты</h2>
+  <table><tr><th>Название</th><th>Метрика</th><th>Автор</th><th>Статус</th></tr>
+  {% for e in experiments %}
+  <tr><td><a href="{% url 'abmock:detail' e.pk %}">{{ e.name }}</a></td><td>{{ e.metric }}</td><td>{{ e.author.name }}</td><td>{{ e.get_status_display }}</td></tr>
+  {% empty %}<tr><td colspan="4" class="muted">Экспериментов нет.</td></tr>{% endfor %}
+  </table>
+</div>
+<div class="card">
+  <h2>Создать эксперимент</h2>
+  <form method="post">{% csrf_token %}
+    <label>Название</label><input type="text" name="name" required>
+    <label>Гипотеза</label><input type="text" name="hypothesis">
+    <label>Метрика</label><input type="text" name="metric" required placeholder="конверсия в активацию карты">
+    <label>Автор</label>
+    <select name="author">{% for t in traders %}<option value="{{ t.pk }}" {% if current_trader and current_trader.pk == t.pk %}selected{% endif %}>{{ t.name }}</option>{% endfor %}</select>
+    <label>Базовая конверсия</label><input type="text" name="baseline_rate" value="0.04">
+    <label>Истинный рост (скрытый параметр симуляции)</label><input type="text" name="true_lift" value="0.3">
+    <label>Размер группы</label><input type="number" name="n_per_group" value="20000">
+    <p><button class="btn" type="submit">Создать</button></p>
+  </form>
+</div>
+</div>
+{% endblock %}

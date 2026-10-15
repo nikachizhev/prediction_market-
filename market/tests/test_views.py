@@ -1,0 +1,159 @@
+from decimal import Decimal
+
+import pytest
+from django.urls import reverse
+
+from market import services
+from market.models import Trader
+
+
+@pytest.fixture
+def q(db):
+    return services.create_question(title="Будет ли релиз?", resolution_criteria="Крит", initial_prob=0.25)
+
+
+@pytest.fixture
+def anya(db):
+    return Trader.objects.create(name="Аня", pseudonym="Лиса")
+
+
+@pytest.fixture
+def boris(db):
+    return Trader.objects.create(name="Борис", pseudonym="Волк")
+
+
+def login(client, trader):
+    from django.contrib.auth.models import User
+    user = User.objects.create_user(username=f"trader-{trader.pk}", password="test-password")
+    trader.user = user
+    trader.save(update_fields=["user"])
+    client.force_login(user)
+
+
+def test_list_and_detail_readable_anonymously(client, q):
+    r = client.get(reverse("market:index"))
+    assert r.status_code == 200 and "Будет ли релиз?" in r.content.decode()
+    assert "25%" in r.content.decode()
+    r = client.get(reverse("market:question", args=[q.pk]))
+    assert r.status_code == 200
+
+
+def test_market_list_filters_and_explicit_route(client, q, db):
+    services.create_question(title="Другой вопрос", resolution_criteria="Иной критерий")
+    r = client.get(reverse("market:markets"), {"q": "релиз", "status": "open"})
+    page = r.content.decode()
+    assert r.status_code == 200
+    assert "Будет ли релиз?" in page and "Другой вопрос" not in page
+
+
+def test_markets_api_returns_frontend_summary(client, q, anya):
+    services.buy(anya, q, "yes", 10)
+    r = client.get(reverse("market:markets_api"), {"status": "open"})
+    body = r.json()
+    assert r.status_code == 200 and body["count"] == 1
+    assert body["results"][0]["id"] == q.pk
+    assert body["results"][0]["participants"] == 1
+    assert body["results"][0]["trades"] == 1
+
+
+def test_personal_rating_is_empty_and_requires_trader(client, anya):
+    r = client.get(reverse("market:personal_rating"))
+    assert r.status_code == 302 and reverse("market:login") in r["Location"]
+    login(client, anya)
+    page = client.get(reverse("market:personal_rating")).content.decode()
+    assert "Мой рейтинг" in page and "Верно:" in page
+
+
+def test_me_redirects_without_trader(client, db):
+    r = client.get(reverse("market:me"))
+    assert r.status_code == 302 and reverse("market:login") in r["Location"]
+
+
+def test_switch_user_sets_session(client, anya):
+    r = client.post(reverse("market:switch_user"), {"trader_id": anya.pk})
+    assert r.status_code == 302
+    assert "_auth_user_id" not in client.session
+
+
+def test_quote_json_and_error(client, q):
+    r = client.get(reverse("market:quote", args=[q.pk]), {"side": "yes", "amount": "100"})
+    j = r.json()
+    assert r.status_code == 200 and j["new_prob"] > 0.25 and j["shares"] > 100 and j["payout_if_win"] > 0
+    r = client.get(reverse("market:quote", args=[q.pk]), {"side": "yes", "amount": "abc"})
+    assert r.status_code == 400 and "error" in r.json()
+    r = client.get(reverse("market:quote", args=[q.pk]), {"side": "zzz", "amount": "10"})
+    assert r.status_code == 400
+
+
+def test_buy_flow_and_privacy(client, q, anya, boris):
+    login(client, anya)
+    token = client.get(reverse("market:question", args=[q.pk])).context["purchase_token"]
+    r = client.post(reverse("market:buy", args=[q.pk]), {"side": "yes", "amount": "50", "purchase_token": token})
+    assert r.status_code == 302
+    assert anya.trades.count() == 1
+    anya.refresh_from_db()
+    assert anya.balance < Decimal("1000")
+    page = client.get(reverse("market:question", args=[q.pk])).content.decode()
+    assert "Ваша позиция" in page and "кто-то купил" in page
+
+    # another trader sees the anonymous feed but no names / no position
+    client.logout()
+    login(client, boris)
+    page = client.get(reverse("market:question", args=[q.pk])).content.decode()
+    assert "кто-то купил" in page
+    assert "Ваша позиция" not in page
+    assert "Аня" not in page and "Лиса" not in page
+
+
+def test_buy_errors_shown_as_message(client, q, anya):
+    login(client, anya)
+    token = client.get(reverse("market:question", args=[q.pk])).context["purchase_token"]
+    r = client.post(reverse("market:buy", args=[q.pk]), {"side": "yes", "amount": "99999", "purchase_token": token}, follow=True)
+    assert "Максимальная ставка" in r.content.decode() or "Недостаточно" in r.content.decode()
+    anya.refresh_from_db()
+    assert anya.balance == Decimal("1000") + sum(anya.daily_rewards.values_list("coins", flat=True))
+
+
+def test_conflicted_trader_cannot_bet(client, q, anya):
+    q.conflicted_traders.add(anya)
+    login(client, anya)
+    page = client.get(reverse("market:question", args=[q.pk])).content.decode()
+    assert "конфликт интересов" in page and 'id="betform"' not in page
+    client.post(reverse("market:buy", args=[q.pk]), {"side": "yes", "amount": "10"})
+    anya.refresh_from_db()
+    assert anya.balance == Decimal("1000") + sum(anya.daily_rewards.values_list("coins", flat=True))
+
+
+def test_sell_view(client, q, anya):
+    login(client, anya)
+    token = client.get(reverse("market:question", args=[q.pk])).context["purchase_token"]
+    client.post(reverse("market:buy", args=[q.pk]), {"side": "yes", "amount": "100", "purchase_token": token})
+    pos = anya.positions.get()
+    client.post(reverse("market:sell", args=[q.pk]), {"side": "yes", "shares": str(pos.yes_shares)})
+    pos.refresh_from_db()
+    assert pos.yes_shares == 0
+
+
+def test_leaderboard_uses_display_name(client, q, anya, boris):
+    login(client, anya)
+    page = client.get(reverse("market:leaderboard")).content.decode()
+    assert "Лиса" in page and "Аня" not in page.split("<nav>")[-1].split("</nav>")[-1]
+    anya.show_real_name = True
+    anya.save()
+    assert "Аня" in client.get(reverse("market:leaderboard")).content.decode()
+
+
+def test_leaderboard_shows_own_row_outside_top10(client, db):
+    ts = [Trader.objects.create(name=f"T{i}", pseudonym=f"P{i}", balance=Decimal(2000 - i)) for i in range(12)]
+    login(client, ts[-1])
+    page = client.get(reverse("market:leaderboard")).content.decode()
+    assert "(вы)" in page
+
+
+def test_me_update_settings(client, anya):
+    login(client, anya)
+    r = client.post(reverse("market:me"), {"show_real_name": "on", "pseudonym": "Кот", "github_login": "anya"})
+    assert r.status_code == 302
+    anya.refresh_from_db()
+    assert anya.show_real_name and anya.pseudonym == "Кот" and anya.github_login == "anya"
+    assert client.get(reverse("market:me")).status_code == 200

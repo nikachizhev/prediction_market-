@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Выберите проводника{% endblock %}
+{% block content %}
+<div class="page-intro"><span class="eyebrow">МАГИЯ ВАШИХ ПРОГНОЗОВ</span><h1>Кто будет предсказывать<br>вместе с вами?</h1><p class="muted">Три характера, одинаковые возможности. Выбирайте сердцем — сменить проводника можно в любой момент.</p></div>
+<form method="post">{% csrf_token %}<div class="mascot-choices">
+{% for character in characters %}<label class="mascot-choice"><input type="radio" name="mascot" value="{{ character.key }}" {% if selected == character.key %}checked{% endif %} required>
+<div class="mascot-choice-body"><div class="mascot-art mascot-{{ character.key }}" role="img" aria-label="{{ character.name }}, {{ character.role }}"></div><div class="mascot-copy"><span class="eyebrow">{{ character.role }}</span><h2>{{ character.name }}</h2><p>{{ character.description }}</p><span class="choose-label">Выбрать {{ character.name }} ✧</span></div></div></label>{% endfor %}</div>
+<div class="form-footer"><p class="muted small">Прогресс общий для всех персонажей и не теряется при смене.</p><button class="btn">Начать вместе →</button></div></form>
+{% endblock %}

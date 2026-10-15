@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}<div class="auth-shell"><div class="card auth-card">
+<span class="eyebrow">ПОДТВЕРЖДЕНИЕ ПОЧТЫ</span><h1>Проверьте почту</h1>
+<p>Откройте письмо от «Рынка прогнозов», перейдите по ссылке и подтвердите адрес. Ссылка действует 24 часа.</p>
+<p class="muted">Нет письма? Проверьте «Спам» или запросите новое.</p>
+<form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn">Отправить повторно</button></form>
+<p><a href="{% url 'market:login' %}">Почта подтверждена — войти</a></p>
+</div></div>{% endblock %}

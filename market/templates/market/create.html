@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-intro"><span class="eyebrow">НОВЫЙ ВОПРОС</span><h1>Дайте идее вероятность.</h1><p class="muted">Соберите прогноз команды или узнайте её мнение.</p></div>
+<div class="create-layout"><div class="card">
+<form method="post" id="create-form">{% csrf_token %}
+{{ form.non_field_errors }}
+{% for field in form %}{% if field.name != 'option_lines' %}
+<div class="field" data-field="{{ field.name }}">{{ field.label_tag }}{{ field }}{{ field.errors }}{% if field.help_text %}<div class="helptext">{{ field.help_text }}</div>{% endif %}</div>
+{% endif %}{% endfor %}
+<section data-field="option_lines" id="options-section">
+<label>Варианты ответа</label><p class="helptext">От 2 до 20 вариантов. У каждого — отдельное поле.</p>
+<div id="option-rows"></div>
+<button class="btn ghost" id="add-option" type="button">＋ Добавить вариант</button>
+<div id="option-fallback">{{ form.option_lines }}</div>{{ form.option_lines.errors }}
+</section>
+<div class="form-footer"><a href="{% url 'market:markets' %}">Отмена</a><button class="btn" type="submit">Опубликовать вопрос →</button></div>
+</form></div>
+<aside class="card type-explainer" aria-live="polite"><span class="eyebrow">КАК ЭТО РАБОТАЕТ</span><h2 id="type-title"></h2><p id="type-description"></p><div class="example-box"><span class="eyebrow">НАПРИМЕР</span><p id="type-example"></p></div><p id="type-rule" class="muted"></p><hr><p class="small muted">Заранее опишите, откуда возьмётся результат. После публикации автор не участвует в собственном вопросе.</p></aside>
+</div>{% endblock %}
+{% block scripts %}
+<script>
+const kind = document.getElementById('id_kind');
+const explanations = {
+ lmsr: ['LMSR · постоянная глубина', 'Рынок ДА/НЕТ с виртуальными акциями. Покупка ДА повышает вероятность, НЕТ — снижает. Чувствительность определяется начальной ликвидностью и не меняется от общего числа акций.', 'Выйдет ли новый релиз до 1 декабря?', 'Больше ликвидность — меньше влияние одной покупки. Выигравшая акция приносит 1 монету.'],
+ ls_lmsr: ['LS-LMSR · растущая глубина', 'Ликвидность увеличивается вместе с открытыми акциями. На активном рынке той же суммой сложнее изменить прогноз. На сайте показана нормализованная вероятность; цена включает надбавку механизма.', 'Преодолеет ли продукт 10 000 регистраций за месяц?', 'Подходит для долгих активных обсуждений. Покупку и продажу можно совершать до закрытия.'],
+ cpmm: ['CPMM · пул ликвидности', 'Акции ДА и НЕТ торгуются через пул с постоянным произведением резервов. Покупка меняет их соотношение, а размер пула определяет влияние сделки.', 'Будет ли выполнен квартальный план?', 'Выбранная ликвидность задаёт начальный размер каждого резерва. Оборот сам по себе не увеличивает глубину пула.'],
+ poll: ['Анонимный опрос · мнение команды', 'Один человек выбирает один вариант без монет. Имена и индивидуальные ответы скрыты от посетителей, общие результаты появляются после завершения.', 'Где проведём следующую встречу команды?', 'Для защиты от повторного голосования связь с аккаунтом хранится в базе. Правильных ответов нет, точность рейтинга не меняется.'],
+ number: ['Угадай число · точность прогноза', 'Каждый участник отправляет одно число в заданном диапазоне. После публикации фактического результата считается абсолютная ошибка.', 'Сколько пользователей зарегистрируется за неделю?', 'Задайте допустимую ошибку: при результате 100 и допуске 5 верны ответы от 95 до 105. Монеты не списываются.'],
+ multiple: ['Множественный выбор · несколько ответов', 'Участник отмечает один или несколько вариантов. Автор после завершения указывает полный набор правильных ответов.', 'Какие функции войдут в следующий релиз?', 'Прогноз верен при точном совпадении всего набора: лишний или пропущенный вариант считается ошибкой. Монеты не списываются.']
+};
+function showFields() {
+  const groups = {
+    tracks_deadline: ['lmsr', 'ls_lmsr', 'cpmm'],
+    option_lines: ['poll', 'multiple'],
+    number_min: ['number'], number_max: ['number'], tolerance: ['number'],
+    b: ['lmsr', 'ls_lmsr', 'cpmm']
+  };
+  for (const [name, types] of Object.entries(groups)) {
+    document.querySelector('[data-field="' + name + '"]').hidden = !types.includes(kind.value);
+    if(name==='tracks_deadline' && !types.includes(kind.value))document.getElementById('id_tracks_deadline').checked=false;
+  }
+  const [title, description, example, rule] = explanations[kind.value];
+  document.getElementById('type-title').textContent = title;
+  document.getElementById('type-description').textContent = description;
+  document.getElementById('type-example').textContent = example;
+  document.getElementById('type-rule').textContent = rule;
+}
+const rows = document.getElementById('option-rows');
+const textarea = document.getElementById('id_option_lines');
+const add = document.getElementById('add-option');
+function syncOptions() { textarea.value = Array.from(rows.querySelectorAll('input')).map(el => el.value).join('\n'); }
+function refreshRows() {
+  rows.querySelectorAll('.option-row').forEach((row, index) => {
+    row.querySelector('input').setAttribute('aria-label', 'Вариант ' + (index + 1));
+    row.querySelector('.option-number').textContent = String(index + 1).padStart(2, '0');
+    row.querySelector('button').disabled = rows.children.length <= 2;
+  });
+  add.disabled = rows.children.length >= 20;
+  syncOptions();
+}
+function addRow(value = '') {
+  if (rows.children.length >= 20) return;
+  const row = document.createElement('div'); row.className = 'option-row';
+  const number = document.createElement('span'); number.className = 'option-number';
+  const input = document.createElement('input'); input.type = 'text'; input.maxLength = 200; input.value = value; input.placeholder = 'Текст варианта'; input.addEventListener('input', syncOptions);
+  const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove-option'; remove.textContent = '×'; remove.setAttribute('aria-label', 'Удалить вариант');
+  remove.addEventListener('click', () => { row.remove(); refreshRows(); });
+  row.append(number, input, remove); rows.append(row); refreshRows();
+}
+const initial = textarea.value.split('\n').filter(value => value.trim());
+document.getElementById('option-fallback').hidden = true;
+(initial.length ? initial : ['', '']).forEach(addRow);
+add.addEventListener('click', () => { addRow(); rows.lastElementChild.querySelector('input').focus(); });
+document.getElementById('create-form').addEventListener('submit', syncOptions);
+kind.addEventListener('change', showFields);
+showFields();
+</script>
+{% endblock %}

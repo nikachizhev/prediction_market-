@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ exp.name }}{% endblock %}
+{% block content %}
+<p class="small"><a href="{% url 'abmock:index' %}">&larr; Платформа экспериментов (заглушка)</a></p>
+<div class="head"><h1 style="margin:0">{{ exp.name }}</h1><span class="badge">{{ exp.get_status_display }}</span></div>
+<div class="card">
+  <p><b>Гипотеза:</b> {{ exp.hypothesis|default:"—" }}</p>
+  <p><b>Метрика:</b> {{ exp.metric }} &middot; <b>Автор:</b> {{ exp.author.name }} &middot; <b>Базовая конверсия:</b> {{ exp.baseline_rate }} &middot; <b>Группа:</b> {{ exp.n_per_group }}</p>
+  {% if question %}<p><a href="{% url 'market:question' question.pk %}">Рынок по этому эксперименту &rarr;</a></p>{% endif %}
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+  {% if exp.status == "draft" %}<form method="post" action="{% url 'abmock:action' exp.pk 'start' %}">{% csrf_token %}<button class="btn">Запустить</button></form>{% endif %}
+  {% if exp.status == "running" %}<form method="post" action="{% url 'abmock:action' exp.pk 'finish' %}">{% csrf_token %}<button class="btn yes">Завершить</button></form>{% endif %}
+  {% if exp.status == "draft" or exp.status == "running" %}<form method="post" action="{% url 'abmock:action' exp.pk 'cancel' %}">{% csrf_token %}<button class="btn no">Отменить</button></form>{% endif %}
+  </div>
+</div>
+{% if exp.status == "finished" %}
+<div class="card">
+  <h2>Результаты</h2>
+  <table>
+    <tr><th>Группа</th><th class="num">Участников</th><th class="num">Успехов</th><th class="num">Конверсия</th></tr>
+    <tr><td>A (контроль)</td><td class="num">{{ exp.n_a }}</td><td class="num">{{ exp.x_a }}</td><td class="num">{{ exp.rate_a|floatformat:4 }}</td></tr>
+    <tr><td>B (вариант)</td><td class="num">{{ exp.n_b }}</td><td class="num">{{ exp.x_b }}</td><td class="num">{{ exp.rate_b|floatformat:4 }}</td></tr>
+  </table>
+  <p>z = {{ exp.z|floatformat:3 }} &middot; p-value (односторонний) = {{ exp.p_value|floatformat:4 }}</p>
+  <p><b>Вердикт:</b> {% if exp.significant %}<span class="pos">статистически значимый рост (p &lt; 0.05)</span>{% else %}<span class="neg">значимого роста нет</span>{% endif %}</p>
+</div>
+{% endif %}
+{% endblock %}

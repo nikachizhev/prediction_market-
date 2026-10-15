@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Пригласить друга{% endblock %}
+{% block content %}<div class="profile-column"><h1>Предложить вопрос друзьям</h1><div class="card"><h2>{{ question.title }}</h2>
+{% if available %}<p class="muted">Приглашение появится в разделе «Друзья» у получателя.</p>
+{% for person in friends %}<form method="post" class="friend-row">{% csrf_token %}<span>{{ person.display_name }}</span><input type="hidden" name="friend_id" value="{{ person.pk }}"><button class="btn">Пригласить</button></form>{% empty %}<p>Сначала <a href="{% url 'market:friends' %}">добавьте друзей</a>.</p>{% endfor %}
+{% else %}<p>Приём ответов уже завершён.</p>{% endif %}
+<p><a href="{% url 'market:question' question.pk %}">Вернуться к вопросу</a></p></div></div>{% endblock %}
