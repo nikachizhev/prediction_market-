@@ -52,3 +52,50 @@ export function plural(n: number, one: string, few: string, many: string): strin
 export function pluralize(n: number, one: string, few: string, many: string): string {
   return `${formatMoney(n, 0)} ${plural(n, one, few, many)}`;
 }
+
+/** Compact amount for volumes: 950 -> "950", 52600 -> "52,6 тыс.", 1250000 -> "1,3 млн". */
+export function formatCompact(value: number | string): string {
+  const num = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(num)) return '0';
+  const abs = Math.abs(num);
+  if (abs >= 1_000_000) return formatMoney(num / 1_000_000, 1) + NBSP + 'млн';
+  if (abs >= 1_000) return formatMoney(num / 1_000, 1) + NBSP + 'тыс.';
+  return formatMoney(num, 0);
+}
+
+const MONTHS_GENITIVE = [
+  'января',
+  'февраля',
+  'марта',
+  'апреля',
+  'мая',
+  'июня',
+  'июля',
+  'августа',
+  'сентября',
+  'октября',
+  'ноября',
+  'декабря',
+];
+
+/** "1 декабря", with the year when it differs from `now`: "30 июня 2027". */
+export function formatDayMonth(iso: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  const base = `${date.getDate()} ${MONTHS_GENITIVE[date.getMonth()]}`;
+  return date.getFullYear() === now.getFullYear() ? base : `${base} ${date.getFullYear()}`;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * When a market stops taking predictions, as in the feed mockup:
+ * "ещё 12 дней" within two months, otherwise "до 31 декабря".
+ */
+export function formatEnds(closesAt: string, now: Date = new Date()): string {
+  const left = new Date(closesAt).getTime() - now.getTime();
+  if (left <= 0) return 'приём закрыт';
+  const days = Math.floor(left / DAY_MS);
+  if (days === 0) return 'меньше суток';
+  if (days <= 60) return 'ещё ' + pluralize(days, 'день', 'дня', 'дней');
+  return 'до ' + formatDayMonth(closesAt, now);
+}

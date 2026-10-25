@@ -2,9 +2,7 @@ import { useParams } from 'react-router-dom';
 import { BalancePill } from '../components/BalancePill';
 import { Placeholder } from './Placeholder';
 
-export function FeedScreen() {
-  return <Placeholder title="Лента" header={<BalancePill />} />;
-}
+export { FeedScreen } from './Feed';
 
 export function MineScreen() {
   return <Placeholder title="Мои" />;

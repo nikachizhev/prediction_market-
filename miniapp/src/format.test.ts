@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { formatMoney, formatPercent, formatPoints, formatSigned, plural, pluralize } from './format';
+import {
+  formatCompact,
+  formatEnds,
+  formatMoney,
+  formatPercent,
+  formatPoints,
+  formatSigned,
+  plural,
+  pluralize,
+} from './format';
 
 const S = ' ';
 
@@ -81,5 +90,33 @@ describe('plural', () => {
   it('builds a phrase with the number', () => {
     expect(pluralize(3, 'рынок', 'рынка', 'рынков')).toBe('3 рынка');
     expect(pluralize(1500, 'рынок', 'рынка', 'рынков')).toBe(`1${S}500 рынков`);
+  });
+});
+
+describe('formatCompact', () => {
+  it('shortens thousands and millions', () => {
+    expect(formatCompact('950.00')).toBe('950');
+    expect(formatCompact(52600)).toBe(`52,6${S}тыс.`);
+    expect(formatCompact(1000)).toBe(`1${S}тыс.`);
+    expect(formatCompact(1_250_000)).toBe(`1,3${S}млн`);
+  });
+});
+
+describe('formatEnds', () => {
+  const now = new Date(2026, 9, 25, 12, 0);
+
+  it('counts days within two months', () => {
+    expect(formatEnds(new Date(2026, 10, 6, 13, 0).toISOString(), now)).toBe('ещё 12 дней');
+    expect(formatEnds(new Date(2026, 9, 26, 13, 0).toISOString(), now)).toBe('ещё 1 день');
+    expect(formatEnds(new Date(2026, 9, 25, 20, 0).toISOString(), now)).toBe('меньше суток');
+  });
+
+  it('shows the date for far deadlines', () => {
+    expect(formatEnds(new Date(2026, 11, 31, 23, 0).toISOString(), now)).toBe('до 31 декабря');
+    expect(formatEnds(new Date(2027, 5, 30, 12, 0).toISOString(), now)).toBe('до 30 июня 2027');
+  });
+
+  it('marks closed markets', () => {
+    expect(formatEnds(new Date(2026, 9, 1).toISOString(), now)).toBe('приём закрыт');
   });
 });

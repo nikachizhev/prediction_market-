@@ -62,8 +62,10 @@ export interface MarketDetail extends MarketCard {
   author: { display_name: string; photo_url: string | null; resolved: number; disputes_lost: number };
   is_creator: boolean;
   can_trade: boolean;
+  /** How much can be staked right now (trade limit, per-market cap, balance). */
+  max_amount: Money;
   my_position: Position | null;
-  trades: { side: Side; amount: Money; prob_after: number; at: string }[];
+  trades: { side: Side; amount: Money; prob_after: number; at: string; sell: boolean }[];
   resolution: {
     proposed_outcome: Side | 'cancel' | null;
     evidence_url: string | null;
@@ -77,6 +79,8 @@ export interface Quote {
   side: Side;
   amount: Money;
   fee: Money;
+  /** What will actually be charged (<= amount). */
+  cost: Money;
   shares: string;
   payout_if_win: Money;
   prob_before: number;
@@ -99,7 +103,7 @@ export interface LedgerEntry {
 }
 
 export interface Grant {
-  kind: 'starter' | 'daily';
+  kind: 'starter' | 'daily' | 'insurance';
   amount: Money;
 }
 
@@ -113,6 +117,8 @@ export interface Category {
   slug: string;
   label: string;
 }
+
+export type EventName = 'share' | 'onboarding_done' | 'onboarding_skip' | 'open_bot';
 
 export type MarketSort = 'hot' | 'new' | 'soon';
 export type HistoryPeriod = 'd' | 'w' | 'm' | 'all';
@@ -234,7 +240,7 @@ export const api = {
 
   profile: () => request<ProfileResponse>('GET', '/profile'),
 
-  event: (name: string, props?: Record<string, unknown>) => request<{ ok: true }>('POST', '/events', { name, props }),
+  event: (name: EventName, props?: Record<string, unknown>) => request<{ ok: true }>('POST', '/events', { name, props }),
 };
 
 export { newRequestKey };
