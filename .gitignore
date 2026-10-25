@@ -12,3 +12,7 @@ db.sqlite3
 .pytest_cache/
 media/
 staticfiles/
+
+# Mini App frontend
+miniapp/node_modules/
+miniapp/dist/
