@@ -14,6 +14,8 @@ export interface Limits {
   creation_cost: Money;
   dispute_cost: Money;
   b: number;
+  /** Share of the balance allowed per trade (0.2). */
+  trade_limit_share?: number;
 }
 
 export interface Me {
@@ -44,6 +46,8 @@ export interface MarketCard {
   status: MarketStatus;
   outcome: Side | null;
   starred: boolean;
+  /** Where my position leans («Твой прогноз»). */
+  my_side?: Side | null;
 }
 
 export interface Position {
@@ -62,6 +66,8 @@ export interface MarketDetail extends MarketCard {
   author: { display_name: string; photo_url: string | null; resolved: number; disputes_lost: number };
   is_creator: boolean;
   can_trade: boolean;
+  /** Why trading is not possible, in Russian; null when it is. */
+  trade_block?: string | null;
   /** How much can be staked right now (trade limit, per-market cap, balance). */
   max_amount: Money;
   my_position: Position | null;
@@ -126,7 +132,7 @@ export type HistoryPeriod = 'd' | 'w' | 'm' | 'all';
 export interface MineResponse {
   positions: (MarketCard & { position: Position })[];
   watched: MarketCard[];
-  created: (MarketCard & { fee_expected: Money; needs_resolution: boolean })[];
+  created: (MarketCard & { fee_expected: Money; needs_resolution: boolean; resolve_link: string })[];
 }
 
 export interface RatingResponse {
