@@ -472,3 +472,25 @@ class Dispute(models.Model):
         verbose_name = "спор"
         verbose_name_plural = "споры"
         constraints = [models.UniqueConstraint(fields=["question", "trader"], name="one_dispute_per_trader")]
+
+
+class ResolutionDraft(models.Model):
+    """The creator's unfinished outcome dialog in the bot; one per creator, survives bot restarts."""
+    class Stage(models.TextChoices):
+        EVIDENCE = "evidence", "ждём доказательство"
+        PREVIEW = "preview", "предпросмотр"
+
+    trader = models.OneToOneField(Trader, on_delete=models.CASCADE, related_name="resolution_draft")
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="resolution_drafts")
+    outcome = models.CharField(max_length=10)
+    stage = models.CharField(max_length=10, choices=Stage.choices, default=Stage.EVIDENCE)
+    evidence = models.FileField(upload_to="evidence/drafts/", blank=True)
+    evidence_file_id = models.CharField(max_length=200, blank=True, default="")
+    # Telegram can't reuse a document's file_id in sendPhoto, so remember what was sent.
+    evidence_is_document = models.BooleanField(default=False)
+    note = models.CharField(max_length=500, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "черновик итога"
+        verbose_name_plural = "черновики итогов"

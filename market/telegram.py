@@ -35,6 +35,26 @@ def send(chat_id, text, **kwargs):
     return api("sendMessage", chat_id=chat_id, text=text, **kwargs)
 
 
+MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024  # Bot API getFile limit
+
+
+def download_file(file_id: str) -> tuple[bytes, str]:
+    """Fetch a file the user sent to the bot; returns its bytes and Telegram file_path."""
+    info = api("getFile", file_id=file_id)
+    path = info.get("file_path")
+    if not path or (info.get("file_size") or 0) > MAX_DOWNLOAD_BYTES:
+        raise TelegramError("Файл недоступен или слишком большой.")
+    try:
+        response = requests.get(
+            f"https://api.telegram.org/file/bot{settings.TELEGRAM_BOT_TOKEN}/{path}", timeout=40,
+        )
+    except requests.RequestException:
+        raise TelegramError("Не удалось скачать файл из Telegram.") from None
+    if not response.ok or len(response.content) > MAX_DOWNLOAD_BYTES:
+        raise TelegramError("Не удалось скачать файл из Telegram.")
+    return response.content, path
+
+
 def create_link(trader):
     token = secrets.token_urlsafe(24)
     TelegramLink.objects.update_or_create(
@@ -63,13 +83,22 @@ def consume_link(token, chat_id):
 
 
 def handle_update(update):
+    from . import bot_resolution_dialog as resolution_dialog
+    if "callback_query" in update:
+        resolution_dialog.handle_callback(update["callback_query"])
+        return
     message = update.get("message", {})
     chat = message.get("chat", {})
     if chat.get("type") != "private" or message.get("from", {}).get("is_bot"):
         return
     chat_id = chat["id"]
+    if resolution_dialog.handle_message(message):
+        return
     parts = message.get("text", "").split(maxsplit=1)
     command = parts[0].split("@")[0] if parts else ""
+    if command == "/start" and len(parts) == 2 and parts[1].startswith("resolve_"):
+        resolution_dialog.start(chat_id, parts[1][len("resolve_"):])
+        return
     if command == "/start" and len(parts) == 2:
         if parts[1].startswith("auth_"):
             from .telegram_auth import confirm
@@ -87,6 +116,10 @@ def handle_update(update):
     if trader and (not trader.user or trader.user.is_active) and command in ("/start", "/menu", "/help"):
         handle_menu(trader, command, send)
         return
+    if not trader and command == "/start":
+        from .bot_resolution import welcome
+        welcome(chat_id)
+        return
     from .bot_registration import handle_dialog
     if handle_dialog(chat_id, text):
         return
@@ -94,7 +127,8 @@ def handle_update(update):
         send(chat_id, "Сначала подтвердите почту. /resend — повторить отправку письма.")
         return
     if not trader:
-        send(chat_id, "Создать аккаунт: /register. Существующий аккаунт привяжите в разделе «Мои ставки» на сайте.")
+        from .bot_resolution import welcome
+        welcome(chat_id)
     elif handle_menu(trader, command, send):
         return
     elif command == "/unlink":

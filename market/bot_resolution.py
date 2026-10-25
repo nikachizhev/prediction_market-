@@ -17,6 +17,17 @@ def app_url(path: str = "") -> str:
     return f"{settings.SITE_URL}/app/{path}"
 
 
+def app_button(text: str = "Открыть приложение", path: str = "") -> dict:
+    return {"text": text, "web_app": {"url": app_url(path)}}
+
+
+def welcome(chat_id: int) -> None:
+    """/start for someone without an account: everything happens in the Mini App."""
+    telegram.send(chat_id, "Привет! Здесь рынок прогнозов на виртуальные монеты: делай прогнозы, "
+                           "создавай свои рынки и следи за итогами. Всё — в приложении.",
+                  reply_markup={"inline_keyboard": [[app_button()]]})
+
+
 def outcome_keyboard(question: Question) -> dict:
     return {"inline_keyboard": [
         [{"text": "ДА", "callback_data": f"res:{question.pk}:yes"}, {"text": "НЕТ", "callback_data": f"res:{question.pk}:no"}],
