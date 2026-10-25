@@ -172,7 +172,8 @@ function withQuery(path: string, query?: Query): string {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
+  // The header lets API calls pass ngrok's free-tier browser warning during development; others ignore it.
+  const headers: Record<string, string> = { Accept: 'application/json', 'ngrok-skip-browser-warning': '1' };
   const initData = tg.initData;
   if (initData) headers.Authorization = `tma ${initData}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
