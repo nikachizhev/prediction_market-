@@ -12,3 +12,4 @@ db.sqlite3
 .pytest_cache/
 media/
 staticfiles/
+.claude/worktrees/
