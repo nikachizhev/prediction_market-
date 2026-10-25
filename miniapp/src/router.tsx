@@ -1,6 +1,11 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { createBrowserRouter, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { BalancePill } from './components/BalancePill';
 import { TabBar } from './components/TabBar';
+import { useToast } from './components/Toast';
+import { grantMessage } from './grants';
+import { Onboarding } from './screens/Onboarding';
+import { Placeholder } from './screens/Placeholder';
 import { useSession } from './session';
 import { tg } from './telegram';
 import {
@@ -20,6 +25,9 @@ function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const nested = !TAB_PATHS.has(location.pathname);
+  const { me, newAccount } = useSession();
+  const onboarding = !!me && newAccount && !me.onboarded;
+  useGrantToast();
 
   useEffect(() => {
     if (!nested) {
@@ -35,6 +43,14 @@ function Layout() {
     return off;
   }, [nested, navigate]);
 
+  if (onboarding) {
+    return (
+      <div className="app">
+        <Onboarding />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <SessionGate>
@@ -47,9 +63,24 @@ function Layout() {
   );
 }
 
+/** Tells once per launch about the daily bonus or insurance granted by POST /api/session. */
+function useGrantToast() {
+  const { granted } = useSession();
+  const toast = useToast();
+  const shown = useRef(false);
+  useEffect(() => {
+    if (shown.current) return;
+    const text = grantMessage(granted);
+    if (!text) return;
+    shown.current = true;
+    tg.HapticFeedback.notification('success');
+    toast(text);
+  }, [granted, toast]);
+}
+
 /** Shows an error with a retry button if the session could not start. */
 function SessionGate({ children }: { children: ReactNode }) {
-  const { error, retry } = useSession();
+  const { me, error, retry } = useSession();
   if (error) {
     return (
       <div className="screen session-error" role="alert">
@@ -61,6 +92,9 @@ function SessionGate({ children }: { children: ReactNode }) {
       </div>
     );
   }
+  // Screens call the API only after POST /api/session: it is the request that
+  // creates the account and decides about the starter pack and the daily bonus.
+  if (!me) return <Placeholder title="" header={<BalancePill />} cards={3} />;
   return <>{children}</>;
 }
 

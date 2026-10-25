@@ -32,6 +32,14 @@ interface TgBackButton {
   offClick(cb: () => void): void;
 }
 
+export interface MainButtonParams {
+  text?: string;
+  color?: string;
+  text_color?: string;
+  is_active?: boolean;
+  is_visible?: boolean;
+}
+
 interface TgMainButton {
   text: string;
   isVisible: boolean;
@@ -42,6 +50,7 @@ interface TgMainButton {
   disable(): void;
   showProgress(leaveActive?: boolean): void;
   hideProgress(): void;
+  setParams(params: MainButtonParams): void;
   onClick(cb: () => void): void;
   offClick(cb: () => void): void;
 }
@@ -66,6 +75,8 @@ interface TgWebApp {
   expand(): void;
   openTelegramLink(url: string): void;
   openLink(url: string): void;
+  isVersionAtLeast(version: string): boolean;
+  requestWriteAccess?(cb?: (allowed: boolean) => void): void;
   onEvent(event: TelegramEvent, cb: () => void): void;
   offEvent(event: TelegramEvent, cb: () => void): void;
 }
@@ -153,6 +164,9 @@ export const tg = {
     hideProgress(): void {
       webApp()?.MainButton.hideProgress();
     },
+    setParams(params: MainButtonParams): void {
+      webApp()?.MainButton.setParams(params);
+    },
     /** Subscribes to taps; returns an unsubscribe function. */
     onClick(cb: () => void): () => void {
       const app = webApp();
@@ -178,6 +192,19 @@ export const tg = {
     const app = webApp();
     if (app) app.openTelegramLink(url);
     else window.open(url, '_blank', 'noopener');
+  },
+
+  /** True when the client can ask for permission to receive bot messages. */
+  get canRequestWriteAccess(): boolean {
+    const app = webApp();
+    return !!app && typeof app.requestWriteAccess === 'function' && app.isVersionAtLeast('6.9');
+  },
+
+  /** Asks the user to let the bot write to them; resolves with the answer. */
+  requestWriteAccess(): Promise<boolean> {
+    const app = webApp();
+    if (!app || typeof app.requestWriteAccess !== 'function') return Promise.resolve(false);
+    return new Promise((resolve) => app.requestWriteAccess!((allowed) => resolve(allowed)));
   },
 
   /** Subscribes to a WebApp event; returns an unsubscribe function. */

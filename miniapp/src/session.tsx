@@ -1,6 +1,6 @@
 // User session: POST /api/session on start, `me` and balance shared via context.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, ApiError, type Grant, type Me, type Money } from './api';
+import { api, ApiError, type Grant, type Me, type Money, type Session } from './api';
 import { tg } from './telegram';
 
 interface SessionState {
@@ -13,6 +13,8 @@ interface SessionState {
   balance: number;
   /** Updates the balance after a trade or market creation. */
   setBalance: (balance: Money) => void;
+  /** Shifts the balance by `delta` coins (optimistic trades and their rollback). */
+  adjustBalance: (delta: number) => void;
   /** Replaces `me` (e.g. after PATCH /api/me). */
   setMe: (me: Me) => void;
   /** Re-fetches `me` from the server. */
@@ -22,6 +24,18 @@ interface SessionState {
 }
 
 const SessionContext = createContext<SessionState | null>(null);
+
+// POST /api/session creates the account and grants bonuses, so it must run once
+// per attempt even when React (StrictMode) runs the effect twice: the second
+// call would report new_account = false and the onboarding would be lost.
+let started: { attempt: number; promise: Promise<Session> } | null = null;
+
+function startSession(attempt: number): Promise<Session> {
+  if (!started || started.attempt !== attempt) {
+    started = { attempt, promise: api.session(tg.startParam) };
+  }
+  return started.promise;
+}
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
@@ -35,8 +49,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    api
-      .session(tg.startParam)
+    startSession(attempt)
       .then((res) => {
         if (cancelled) return;
         setMe(res.me);
@@ -59,6 +72,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setMe((prev) => (prev ? { ...prev, balance } : prev));
   }, []);
 
+  const adjustBalance = useCallback((delta: number) => {
+    setMe((prev) => (prev ? { ...prev, balance: (Number(prev.balance) + delta).toFixed(2) } : prev));
+  }, []);
+
   const refresh = useCallback(async () => {
     setMe(await api.me());
   }, []);
@@ -74,11 +91,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       error,
       balance: me ? Number(me.balance) : 0,
       setBalance,
+      adjustBalance,
       setMe,
       refresh,
       retry,
     }),
-    [me, granted, newAccount, loading, error, setBalance, refresh, retry],
+    [me, granted, newAccount, loading, error, setBalance, adjustBalance, refresh, retry],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
