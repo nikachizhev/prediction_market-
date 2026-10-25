@@ -25,3 +25,14 @@ def test_serves_assets_and_spa_fallback(client, dist):
 def test_not_built(client, tmp_path):
     with override_settings(MINIAPP_DIST=tmp_path / "none"):
         assert client.get("/app/").status_code == 503
+
+
+@pytest.mark.django_db
+def test_seed_miniapp_runs_twice():
+    from django.core.management import call_command
+    from market.models import Question
+    call_command("seed_miniapp")
+    count = Question.objects.count()
+    assert count == 7 and all(q.category for q in Question.objects.all())
+    call_command("seed_miniapp", "--reset")
+    assert Question.objects.count() == count
