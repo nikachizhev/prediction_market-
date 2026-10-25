@@ -1,0 +1,19 @@
+.avatar {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  object-fit: cover;
+}
+
+.avatar.is-me {
+  background: var(--yes-tint);
+  color: var(--yes);
+}
