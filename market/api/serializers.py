@@ -46,6 +46,7 @@ def limits() -> dict:
         "max_trade": money(settings.MAX_TRADE), "market_cap": money(settings.MARKET_CAP),
         "fee_rate": float(Decimal(settings.TRADE_FEE)), "creation_cost": money(settings.MARKET_CREATION_COST),
         "dispute_cost": money(settings.DISPUTE_COST), "b": settings.LMSR_DEFAULT_B,
+        "trade_limit_share": float(Decimal(settings.TRADE_LIMIT_SHARE)),
     }
 
 
@@ -94,7 +95,40 @@ class History:
         return [{"t": iso(t), "p": round(p, 4)} for t, p in pts]
 
 
-def card(question: Question, *, starred: set[int] | None = None, now: datetime | None = None) -> dict:
+def my_sides(trader: Trader, question_ids: list[int]) -> dict[int, str]:
+    """The side a trader leans to in each market (by shares held), for the feed's «Твой прогноз»."""
+    sides = {}
+    for pos in Position.objects.filter(trader=trader, question_id__in=question_ids):
+        if pos.yes_shares > pos.no_shares:
+            sides[pos.question_id] = "yes"
+        elif pos.no_shares > pos.yes_shares:
+            sides[pos.question_id] = "no"
+    return sides
+
+
+def trade_block(question: Question, trader: Trader) -> str | None:
+    """Why this trader cannot buy here, in Russian; None when trading is allowed."""
+    from .. import services
+    if question.status == Question.Status.RESOLVED or question.status == Question.Status.ANNULLED:
+        return "Рынок завершён."
+    if question.hidden_at:
+        return "Рынок скрыт до решения модератора."
+    if not question.accepting_entries:
+        return "Приём прогнозов закрыт."
+    if question.creator_id == trader.pk:
+        return "Создатель рынка не может делать прогнозы на свой рынок."
+    if question.conflicted_traders.filter(pk=trader.pk).exists():
+        return "Конфликт интересов: вы не можете ставить на этот рынок."
+    if services.max_buy_amount(trader, question) <= 0:
+        room = Decimal(settings.MARKET_CAP) - services.invested(trader, question)
+        if room <= 0:
+            return f"В один рынок можно вложить не больше {settings.MARKET_CAP}."
+        return "На балансе не хватает монет."
+    return None
+
+
+def card(question: Question, *, starred: set[int] | None = None, now: datetime | None = None,
+         my_side: str | None = None) -> dict:
     now = now or timezone.now()
     history = History(question, since=now - timedelta(days=7))
     spark = [history.at(now - timedelta(days=6 - i)) for i in range(6)] + [question.prob]
@@ -107,7 +141,7 @@ def card(question: Question, *, starred: set[int] | None = None, now: datetime |
         "spark": [round(p, 4) for p in spark],
         "participants": stats["traders"] or 0, "volume": money(stats["volume"]),
         "closes_at": iso(question.deadline), "status": market_status(question),
-        "outcome": question.outcome, "starred": question.pk in (starred or set()),
+        "outcome": question.outcome, "starred": question.pk in (starred or set()), "my_side": my_side,
     }
 
 
@@ -141,16 +175,16 @@ def resolution(question: Question, trader: Trader) -> dict | None:
 
 def detail(question: Question, trader: Trader) -> dict:
     from .. import services
-    data = card(question, starred=starred_ids(trader))
+    data = card(question, starred=starred_ids(trader), my_side=my_sides(trader, [question.pk]).get(question.pk))
     pos = Position.objects.filter(trader=trader, question=question).first()
+    block = trade_block(question, trader)
     is_creator = question.creator_id == trader.pk
     trades = Trade.objects.filter(question=question).order_by("-created_at", "-id")[:20]
     data.update({
         "criteria": question.resolution_criteria, "resolves_at": iso(question.resolves_at),
         "created_at": iso(question.created_at), "author": author(question.creator),
         "is_creator": is_creator,
-        "can_trade": (question.accepting_entries and not question.hidden_at and not is_creator
-                      and not question.conflicted_traders.filter(pk=trader.pk).exists()),
+        "can_trade": block is None, "trade_block": block,
         "max_amount": money(services.max_buy_amount(trader, question)),
         "my_position": position(pos, question),
         # Anonymous: no trader, only side, size and the price it moved to.

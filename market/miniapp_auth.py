@@ -137,22 +137,39 @@ def get_or_create_trader(session: TelegramSession) -> tuple[Trader, bool]:
     return trader, False
 
 
-def authenticate(request) -> tuple[Trader, TelegramSession, bool]:
+def authenticate(request, *, create: bool = False) -> tuple[Trader, TelegramSession, bool]:
+    """Only the session endpoint creates accounts, so it alone sees a newcomer (starter pack, onboarding)."""
+    from django.db import OperationalError
     header = request.headers.get("Authorization", "")
     scheme, _, init_data = header.partition(" ")
     if scheme.lower() != "tma":
         raise InvalidInitData("Откройте приложение из Telegram.")
     session = verify_init_data(init_data.strip())
-    trader, created = get_or_create_trader(session)
-    return trader, session, created
+    if not create:
+        trader = Trader.objects.filter(telegram_chat_id=int(session.user["id"])).first()
+        if trader is None:
+            raise InvalidInitData("Откройте приложение заново.")
+        return trader, session, False
+    for attempt in range(3):
+        try:
+            trader, created = get_or_create_trader(session)
+            return trader, session, created
+        except OperationalError:
+            # Two simultaneous first opens can deadlock in PostgreSQL; the retry finds the account.
+            if attempt == 2:
+                raise
+    raise AssertionError("unreachable")
 
 
-def api_view(view):
+def api_view(view=None, *, create: bool = False):
     """JSON endpoint authenticated by initData; sets request.trader and request.telegram."""
+    if view is None:
+        return lambda v: api_view(v, create=create)
+
     @wraps(view)
     def wrapper(request, *args, **kwargs):
         try:
-            trader, session, created = authenticate(request)
+            trader, session, created = authenticate(request, create=create)
         except InvalidInitData as exc:
             return JsonResponse({"error": str(exc)}, status=401)
         request.trader = trader

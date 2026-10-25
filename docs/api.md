@@ -4,7 +4,7 @@
 
 ## Авторизация
 
-Каждый запрос несёт заголовок `Authorization: tma <initData>` — строку `Telegram.WebApp.initData` как есть. Сервер проверяет HMAC-SHA256 (ключ `HMAC_SHA256("WebAppData", BOT_TOKEN)`) и `auth_date` не старше 24 ч. Нет заголовка или подпись неверна → `401 {"error": "..."}`.
+Каждый запрос несёт заголовок `Authorization: tma <initData>` — строку `Telegram.WebApp.initData` как есть. Сервер проверяет HMAC-SHA256 (ключ `HMAC_SHA256("WebAppData", BOT_TOKEN)`) и `auth_date` не старше 24 ч. Нет заголовка или подпись неверна → `401 {"error": "..."}`. Аккаунт создаёт только `POST /api/session`; до него остальные эндпоинты отвечают 401 — клиент сначала ждёт сессию.
 
 ## Ошибки
 
@@ -19,7 +19,7 @@ type MarketStatus = "open" | "closed" | "pending" | "disputed" | "resolved" | "a
 // open — идёт приём; closed — приём закрыт, ждём итог; pending — итог указан, идёт окно спора;
 // disputed — спор у модератора; resolved — завершён; annulled — отменён, деньги возвращены
 
-interface Limits { max_trade: Money; market_cap: Money; fee_rate: number; creation_cost: Money; dispute_cost: Money; b: number }
+interface Limits { max_trade: Money; market_cap: Money; fee_rate: number; creation_cost: Money; dispute_cost: Money; b: number; trade_limit_share: number }  // 0.2 — доля баланса на сделку
 
 interface Me {
   id: number; name: string; pseudonym: string; show_real_name: boolean; display_name: string;
@@ -36,6 +36,7 @@ interface MarketCard {
   participants: number; volume: Money;
   closes_at: string; status: MarketStatus; outcome: Side | null;
   starred: boolean;
+  my_side: Side | null;              // куда склоняется моя позиция — «Твой прогноз» в ленте
 }
 
 interface Position { yes_shares: string; no_shares: string; spent: Money; value: Money; payout_if_yes: Money; payout_if_no: Money }
@@ -43,7 +44,7 @@ interface Position { yes_shares: string; no_shares: string; spent: Money; value:
 interface MarketDetail extends MarketCard {
   criteria: string; resolves_at: string; created_at: string;
   author: { display_name: string; photo_url: string | null; resolved: number; disputes_lost: number };
-  is_creator: boolean; can_trade: boolean; max_amount: Money;   // сколько можно поставить сейчас (лимит сделки, 500 на рынок, баланс)
+  is_creator: boolean; can_trade: boolean; trade_block: string | null;   // причина, почему ставить нельзя max_amount: Money;   // сколько можно поставить сейчас (лимит сделки, 500 на рынок, баланс)
   my_position: Position | null;
   trades: { side: Side; amount: Money; prob_after: number; at: string; sell: boolean }[];   // анонимная лента, последние 20
   resolution: { proposed_outcome: Side | "cancel" | null; evidence_url: string | null; note: string; dispute_until: string | null; can_dispute: boolean } | null;
@@ -64,7 +65,7 @@ interface LedgerEntry { kind: string; label: string; amount: Money; at: string; 
 | `GET /api/me` | — | `Me` |
 | `PATCH /api/me` | `{pseudonym?, show_real_name?, onboarded?}` | `Me` |
 | `GET /api/categories` | — | `{slug, label}[]`: games «Игры», study «Учёба», weather «Погода», tech «Технологии», sport «Спорт» |
-| `GET /api/markets` | `?category=&q=&sort=hot\|new\|soon&page=` (20 на страницу) | `{items: MarketCard[], next_page: number \| null}` |
+| `GET /api/markets` | `?category=&q=&sort=hot\|new\|soon&page=` (20 на страницу) | `{items: MarketCard[], next_page: number \| null, total: number}` |
 | `GET /api/markets/{id}` | — | `MarketDetail` |
 | `GET /api/markets/{id}/history` | `?period=d\|w\|m\|all` | `{points: {t: string, p: number}[]}` |
 | `POST /api/markets/{id}/quote` | `{side, amount}` | `Quote` |
