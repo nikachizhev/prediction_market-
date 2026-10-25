@@ -99,6 +99,9 @@ def handle_update(update):
     if command == "/start" and len(parts) == 2 and parts[1].startswith("resolve_"):
         resolution_dialog.start(chat_id, parts[1][len("resolve_"):])
         return
+    if command == "/start" and len(parts) == 2 and parts[1].startswith("dispute_"):
+        resolution_dialog.start_dispute(chat_id, parts[1][len("dispute_"):])
+        return
     if command == "/start" and len(parts) == 2:
         if parts[1].startswith("auth_"):
             from .telegram_auth import confirm

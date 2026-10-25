@@ -268,3 +268,16 @@ def test_setup_bot(bot):
     assert bot.calls[0][1]["menu_button"] == {
         "type": "web_app", "text": "Открыть приложение", "web_app": {"url": "https://example.test/app/"}}
     assert bot.calls[1][1]["commands"][0]["command"] == "start"
+
+
+@pytest.mark.django_db
+def test_start_dispute_link_asks_for_confirmation(monkeypatch):
+    from market import telegram as tg
+    sent = []
+    monkeypatch.setattr(tg, "send", lambda chat_id, text, **kw: sent.append((chat_id, text, kw)))
+    from market.models import Question
+    q = Question.objects.create(title="Q")
+    tg.handle_update({"update_id": 1, "message": {"chat": {"id": 77, "type": "private"}, "from": {"id": 77},
+                                                  "text": f"/start dispute_{q.pk}"}})
+    assert sent and "Оспорить?" in sent[0][1]
+    assert sent[0][2]["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == f"dispok:{q.pk}"

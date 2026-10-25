@@ -153,7 +153,7 @@ def test_quote_buy_idempotent_and_anonymous_feed(anya, boris):
     # Others see the trade in the feed but not who made it.
     _, seen = boris.get(f"markets/{m.pk}")
     assert seen["my_position"] is None and seen["participants"] == 1
-    assert set(seen["trades"][0]) == {"side", "amount", "prob_after", "at", "sell"}
+    assert set(seen["trades"][0]) == {"side", "amount", "prob_before", "prob_after", "at", "sell"}
     assert "Аня" not in json.dumps(seen, ensure_ascii=False)
 
 

@@ -169,8 +169,9 @@ export function MarketScreen() {
   }, [me]);
 
   const openDispute = useCallback(() => {
-    const link = botChatLink(me?.referral_link);
-    if (!link || !marketRef.current) return;
+    if (!marketRef.current) return;
+    const link = botChatLink(me?.referral_link, `dispute_${marketRef.current.id}`);
+    if (!link) return;
     tg.openTelegramLink(link);
     api.event('open_bot', { market: marketRef.current.id, reason: 'dispute' }).catch(() => {});
   }, [me]);
@@ -552,7 +553,7 @@ function ReviewSection({
           <button type="button" className="mk-outline-button" onClick={onDispute}>
             Оспорить итог{disputeCost ? ` · ${formatMoney(disputeCost, 0)} монет` : ''}
           </button>
-          <p className="mk-text sub small">Спор принимает бот: нажми «Оспорить» в его сообщении с итогом.</p>
+          <p className="mk-text sub small">Спор принимает бот: он спросит подтверждение перед списанием монет.</p>
         </>
       )}
     </section>
