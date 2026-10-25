@@ -285,7 +285,7 @@ def _lock_positions(question: Question) -> tuple[list[Position], dict[int, Trade
     return positions, traders
 
 
-def _settle_creator(question: Question, traders: dict[int, Trader]) -> None:
+def _settle_creator(question: Question, traders: dict[int, Trader], *, refund_subsidy: bool = True) -> None:
     """Return the unused subsidy and pay the creator's share of fees; the rest burns."""
     creator = traders.get(question.creator_id) if question.creator_id else None
     if creator is None:
@@ -300,7 +300,7 @@ def _settle_creator(question: Question, traders: dict[int, Trader]) -> None:
     # What the market maker holds: the subsidy plus net stakes (fees excluded) minus payouts.
     maker = question.subsidy + trades["cost"] - trades["fee"] - paid
     subsidy_back = _floor_cent(min(max(maker, zero), question.subsidy))
-    if subsidy_back > 0:
+    if subsidy_back > 0 and refund_subsidy:
         _credit(creator, subsidy_back, LedgerEntry.Kind.SUBSIDY_RETURN, question)
     creator_fee = _floor_cent(question.fee_pool * Decimal(settings.CREATOR_FEE_SHARE))
     if creator_fee > 0:
@@ -308,8 +308,8 @@ def _settle_creator(question: Question, traders: dict[int, Trader]) -> None:
 
 
 @transaction.atomic
-def resolve(question: Question, outcome: str) -> Question:
-    """Pay 1 coin per winning share (rounded down to 0.01 per holder)."""
+def resolve(question: Question, outcome: str, *, refund_subsidy: bool = True) -> Question:
+    """Pay 1 coin per winning share (rounded down to 0.01 per holder); a creator at fault loses the subsidy."""
     if outcome not in ("yes", "no"):
         raise MarketError("Исход должен быть «yes» или «no».")
     question = Question.objects.select_for_update().get(pk=question.pk)
@@ -324,7 +324,7 @@ def resolve(question: Question, outcome: str) -> Question:
         if amount > 0:
             _credit(pos.trader, amount, LedgerEntry.Kind.PAYOUT, question)
             Payout.objects.create(trader=pos.trader, question=question, amount=amount, kind=Payout.Kind.PAYOUT)
-    _settle_creator(question, traders)
+    _settle_creator(question, traders, refund_subsidy=refund_subsidy)
     question.status = Question.Status.RESOLVED
     question.resolved_at = timezone.now()
     question.outcome = outcome
@@ -575,3 +575,119 @@ def confirm_purchase(trader, question, token):
     confirmation.trade = trade
     confirmation.save(update_fields=["trade"])
     return trade
+
+
+# --- resolution by the creator and disputes (spec E4) ---------------------------------
+
+def _participant(trader: Trader, question: Question) -> bool:
+    return Trade.objects.filter(trader=trader, question=question).exists()
+
+
+@transaction.atomic
+def propose_resolution(trader: Trader, question: Question, outcome: str, *, evidence=None,
+                       evidence_file_id: str = "", note: str = "") -> Question:
+    """The creator states the outcome with proof; a 24-hour dispute window opens."""
+    from datetime import timedelta
+    question = Question.objects.select_for_update().get(pk=question.pk)
+    if question.creator_id != trader.pk:
+        raise MarketError("Итог указывает только создатель рынка.")
+    if outcome not in ("yes", "no", "cancel"):
+        raise MarketError("Выберите ДА, НЕТ или отмену рынка.")
+    if question.status not in (Question.Status.OPEN, Question.Status.CLOSED) or question.resolution_state:
+        raise MarketError("Итог этого рынка уже указан.")
+    if question.accepting_entries:
+        raise MarketError("Приём прогнозов ещё идёт — итог можно указать после его окончания.")
+    if outcome != "cancel" and not (evidence or evidence_file_id):
+        raise MarketError("Пришлите фото или скриншот — доказательство итога.")
+    now = timezone.now()
+    question.status = Question.Status.CLOSED
+    question.resolution_state = Question.Resolution.PENDING
+    question.proposed_outcome = outcome
+    question.proposed_at = now
+    question.dispute_until = now + timedelta(hours=settings.DISPUTE_WINDOW_HOURS)
+    question.evidence_file_id = evidence_file_id
+    question.evidence_note = (note or "")[:500]
+    if evidence is not None:
+        question.evidence = evidence
+    question.save()
+    return question
+
+
+@transaction.atomic
+def open_dispute(trader: Trader, question: Question, reason: str = ""):
+    """A participant challenges the stated outcome; the stake comes back if the dispute is upheld."""
+    from .models import Dispute
+    question = Question.objects.select_for_update().get(pk=question.pk)
+    trader = Trader.objects.select_for_update().get(pk=trader.pk)
+    if question.resolution_state not in (Question.Resolution.PENDING, Question.Resolution.DISPUTED):
+        raise MarketError("Оспорить можно только итог в окне спора.")
+    if question.dispute_until is None or question.dispute_until <= timezone.now():
+        raise MarketError("Окно спора закрыто.")
+    if not _participant(trader, question):
+        raise MarketError("Оспорить итог может только участник рынка.")
+    if Dispute.objects.filter(question=question, trader=trader).exists():
+        raise MarketError("Вы уже оспорили этот итог.")
+    stake = Decimal(settings.DISPUTE_COST)
+    if trader.balance < stake:
+        raise MarketError(f"Спор стоит {settings.DISPUTE_COST} монет — на балансе не хватает.")
+    trader.balance -= stake
+    trader.save(update_fields=["balance"])
+    _record(trader, LedgerEntry.Kind.DISPUTE, -stake, question)
+    dispute = Dispute.objects.create(question=question, trader=trader, stake=stake, reason=(reason or "")[:500])
+    question.resolution_state = Question.Resolution.DISPUTED
+    question.save(update_fields=["resolution_state"])
+    return dispute
+
+
+def _apply(question: Question, decision: str, *, creator_at_fault: bool) -> Question:
+    if decision == "cancel":
+        question = annul(question, refund_subsidy=not creator_at_fault)
+    else:
+        question = resolve(question, decision, refund_subsidy=not creator_at_fault)
+    question.resolution_state = Question.Resolution.FINAL
+    question.creator_at_fault = creator_at_fault
+    question.save(update_fields=["resolution_state", "creator_at_fault"])
+    return question
+
+
+@transaction.atomic
+def finalize_resolution(question: Question) -> Question:
+    """No dispute within the window: the creator's outcome stands."""
+    question = Question.objects.select_for_update().get(pk=question.pk)
+    if question.resolution_state != Question.Resolution.PENDING:
+        raise MarketError("Рынок не ждёт окончания окна спора.")
+    if question.dispute_until > timezone.now():
+        raise MarketError("Окно спора ещё открыто.")
+    return _apply(question, question.proposed_outcome, creator_at_fault=False)
+
+
+@transaction.atomic
+def moderator_decide(question: Question, decision: str) -> Question:
+    """Final word on a dispute. Upheld disputes get their stake back; a wrong creator loses the subsidy."""
+    from .models import Dispute
+    if decision not in ("yes", "no", "cancel"):
+        raise MarketError("Решение: ДА, НЕТ или отмена.")
+    question = Question.objects.select_for_update().get(pk=question.pk)
+    if question.resolution_state != Question.Resolution.DISPUTED:
+        raise MarketError("По этому рынку нет открытого спора.")
+    upheld = decision != question.proposed_outcome
+    disputes = list(Dispute.objects.select_for_update().filter(question=question, upheld__isnull=True).order_by("trader_id"))
+    for dispute in disputes:
+        dispute.upheld = upheld
+        dispute.save(update_fields=["upheld"])
+        if upheld:
+            _credit(Trader.objects.select_for_update().get(pk=dispute.trader_id), dispute.stake,
+                    LedgerEntry.Kind.DISPUTE_REFUND, question)
+    return _apply(question, decision, creator_at_fault=upheld)
+
+
+@transaction.atomic
+def cancel_unresolved(question: Question) -> Question:
+    """The creator stayed silent past the deadline: everyone, the creator included, gets their coins back."""
+    question = Question.objects.select_for_update().get(pk=question.pk)
+    if question.resolution_state or question.status not in (Question.Status.OPEN, Question.Status.CLOSED):
+        raise MarketError("Итог уже указан.")
+    question = annul(question)
+    question.resolution_state = Question.Resolution.FINAL
+    question.save(update_fields=["resolution_state"])
+    return question

@@ -5,6 +5,7 @@ from django.core.exceptions import PermissionDenied
 
 from . import services
 from .models import Payout, Position, Question, Trade, Trader, EmailVerification
+from .models import Dispute, Event, LedgerEntry, MarketComplaint
 from .question_forms import ResultForm
 from .participation import finish
 from .models import Group, GroupMembership, Notification
@@ -44,10 +45,10 @@ class TraderAdmin(admin.ModelAdmin):
 @admin.register(Question)
 class QuestionAdmin(admin.ModelAdmin):
     list_display = ("title", "kind", "source_type", "status", "outcome", "deadline", "result_link")
-    list_filter = ("kind", "status", "source_type")
+    list_filter = ("resolution_state", "kind", "status", "category", "source_type")
     search_fields = ("title", "resolution_criteria")
     readonly_fields = ("status", "outcome", "answer", "q_yes", "q_no", "pool_yes", "pool_no", "created_at", "resolved_at")
-    actions = ["resolve_yes", "resolve_no", "close_selected", "annul_selected"]
+    actions = ["decide_yes", "decide_no", "decide_cancel", "unhide", "resolve_yes", "resolve_no", "close_selected", "annul_selected"]
 
     def get_readonly_fields(self, request, obj=None):
         fields = self.readonly_fields
@@ -108,17 +109,45 @@ class QuestionAdmin(admin.ModelAdmin):
     def close_selected(self, request, queryset):
         self._apply(request, queryset, services.close_betting, "участие закрыто")
 
+    @staticmethod
+    def _direct(fn):
+        """Manual resolution must not bypass a creator's outcome that is in the dispute flow."""
+        def run(q):
+            if q.resolution_state in (Question.Resolution.PENDING, Question.Resolution.DISPUTED):
+                raise services.MarketError("Итог указан создателем — используйте «Решение по спору».")
+            return fn(q)
+        return run
+
     @admin.action(description="Разрешить ДА")
     def resolve_yes(self, request, queryset):
-        self._apply(request, queryset, lambda q: services.resolve(q, "yes"), "разрешён ДА")
+        self._apply(request, queryset, self._direct(lambda q: services.resolve(q, "yes")), "разрешён ДА")
 
     @admin.action(description="Разрешить НЕТ")
     def resolve_no(self, request, queryset):
-        self._apply(request, queryset, lambda q: services.resolve(q, "no"), "разрешён НЕТ")
+        self._apply(request, queryset, self._direct(lambda q: services.resolve(q, "no")), "разрешён НЕТ")
 
     @admin.action(description="Аннулировать")
     def annul_selected(self, request, queryset):
-        self._apply(request, queryset, services.annul, "аннулирован")
+        self._apply(request, queryset, self._direct(services.annul), "аннулирован")
+
+    @admin.action(description="Решение по спору: ДА")
+    def decide_yes(self, request, queryset):
+        self._apply(request, queryset, lambda q: services.moderator_decide(q, "yes"), "спор решён: ДА")
+
+    @admin.action(description="Решение по спору: НЕТ")
+    def decide_no(self, request, queryset):
+        self._apply(request, queryset, lambda q: services.moderator_decide(q, "no"), "спор решён: НЕТ")
+
+    @admin.action(description="Решение по спору: отменить рынок")
+    def decide_cancel(self, request, queryset):
+        self._apply(request, queryset, lambda q: services.moderator_decide(q, "cancel"), "спор решён: отмена")
+
+    @admin.action(description="Вернуть скрытый жалобами рынок в ленту")
+    def unhide(self, request, queryset):
+        def run(q):
+            Question.objects.filter(pk=q.pk).update(hidden_at=None)
+            MarketComplaint.objects.filter(question=q).delete()
+        self._apply(request, queryset, run, "возвращён в ленту")
 
 
 class ReadOnlyLedgerAdmin(admin.ModelAdmin):
@@ -153,3 +182,29 @@ class VerificationAdmin(ReadOnlyLedgerAdmin):
 
 for m in (Position, Payout):
     admin.site.register(m, ReadOnlyLedgerAdmin)
+
+
+@admin.register(Dispute)
+class DisputeAdmin(ReadOnlyLedgerAdmin):
+    list_display = ("question", "trader", "stake", "upheld", "created_at")
+    list_filter = ("upheld",)
+    list_select_related = ("question", "trader")
+
+
+@admin.register(MarketComplaint)
+class ComplaintAdmin(ReadOnlyLedgerAdmin):
+    list_display = ("question", "trader", "reason", "created_at")
+    list_select_related = ("question", "trader")
+
+
+@admin.register(LedgerEntry)
+class LedgerAdmin(ReadOnlyLedgerAdmin):
+    list_display = ("trader", "kind", "amount", "balance_after", "question", "created_at")
+    list_filter = ("kind",)
+    list_select_related = ("trader", "question")
+
+
+@admin.register(Event)
+class EventAdmin(ReadOnlyLedgerAdmin):
+    list_display = ("name", "trader", "created_at")
+    list_filter = ("name",)
