@@ -19,6 +19,8 @@ def test_menu_and_stats():
     Trader.objects.create(name="Menu", pseudonym="Menu", telegram_chat_id=123)
     with patch("market.telegram.send") as send:
         dispatch("/start")
+        assert send.call_args.kwargs["reply_markup"]["inline_keyboard"][0][0]["web_app"]
+        dispatch("/menu")
         assert send.call_args.kwargs["reply_markup"]["keyboard"]
         dispatch("📈 Статистика")
         assert "Точность: пока нет результатов" in texts(send)

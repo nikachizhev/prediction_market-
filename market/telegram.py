@@ -116,12 +116,13 @@ def handle_update(update):
     text = message.get("text", "")
     text = BUTTONS.get(text, text)
     command = text.split(maxsplit=1)[0].split("@")[0] if text else ""
-    if trader and (not trader.user or trader.user.is_active) and command in ("/start", "/menu", "/help"):
-        handle_menu(trader, command, send)
-        return
-    if not trader and command == "/start":
+    if command == "/start":
+        # Everything lives in the Mini App now; the old site menu stays reachable via /menu.
         from .bot_resolution import welcome
         welcome(chat_id)
+        return
+    if trader and (not trader.user or trader.user.is_active) and command in ("/menu", "/help"):
+        handle_menu(trader, command, send)
         return
     from .bot_registration import handle_dialog
     if handle_dialog(chat_id, text):
