@@ -1,4 +1,4 @@
-from decimal import Decimal, ROUND_FLOOR
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from importlib import import_module
 from uuid import uuid4
 from unittest.mock import patch
@@ -80,8 +80,9 @@ def test_selling_one_side_keeps_other_refund(trader, market, sold_side):
     balance = trader.balance
     services.annul(market)
     trader.refresh_from_db()
-    assert trader.balance == balance+50
-    assert Payout.objects.get(question=market).amount == 50
+    # Cancelling returns the whole net stake (fees and the loss on the sold side included).
+    assert trader.balance == 1000
+    assert Payout.objects.get(question=market).amount == 1000-balance
     with pytest.raises(services.MarketError):
         services.annul(market)
 
@@ -92,7 +93,7 @@ def test_partial_sales_rebuys_and_rounding_preserve_basis(trader, market):
     sold_shares = (yes.shares/3).quantize(Decimal('.000001'), rounding=ROUND_FLOOR)
     services.sell(trader, market, 'yes', sold_shares)
     pos = trader.positions.get(question=market)
-    expected = yes.cost-(yes.cost*sold_shares/yes.shares).quantize(Decimal('.01'), rounding=ROUND_FLOOR)
+    expected = yes.cost-(yes.cost*sold_shares/yes.shares).quantize(Decimal('.01'), rounding=ROUND_CEILING)
     assert pos.yes_spent == expected and pos.no_spent == Decimal('17.17')
     services.buy(trader, market, 'yes', 10)
     pos.refresh_from_db()
@@ -103,7 +104,8 @@ def test_partial_sales_rebuys_and_rounding_preserve_basis(trader, market):
     pos.refresh_from_db()
     assert pos.spent == pos.yes_spent == pos.no_spent == 0
     services.annul(market)
-    assert not Payout.objects.filter(question=market).exists()
+    trader.refresh_from_db()
+    assert trader.balance == 1000
 
 
 def test_data_migration_rebuilds_legacy_broken_basis_without_changing_balance(trader, market):

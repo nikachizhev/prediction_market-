@@ -15,7 +15,7 @@ def test_daily_bonus_is_once_and_excluded_from_profit():
     assert claim_daily_reward(trader)
     assert claim_daily_reward(trader) is None
     trader.refresh_from_db()
-    assert trader.balance == 1005
+    assert trader.balance == 1020
     assert profit(trader) == 0
     assert progression(trader, statistics(trader))["xp"] == 2
     assert DailyReward.objects.count() == 1
@@ -30,7 +30,7 @@ def test_day_changes_at_moscow_midnight():
         assert claim_daily_reward(trader)
         assert claim_daily_reward(trader) is None
     trader.refresh_from_db()
-    assert trader.balance == 1010
+    assert trader.balance == 1040
 
 
 @pytest.mark.django_db

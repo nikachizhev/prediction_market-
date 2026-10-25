@@ -53,7 +53,7 @@ def test_report_uses_historical_forecast_not_final_probability(members):
     first = services.buy(member, question, "yes", 100)
     Trade.objects.filter(pk=first.pk).update(created_at=now-timedelta(days=3))
     # A last-minute trade must not replace the forecast from the evaluation horizon.
-    services.buy(member, question, "no", 200)
+    services.buy(member, question, "no", 150)
     services.resolve(question, "yes")
     data = analytics(group)
     row = data["completed"][0]
@@ -99,9 +99,9 @@ def test_subscription_change_threshold_and_cooldown(client, members):
     client.post(reverse("market:subscribe", args=[question.pk]))
     services.buy(owner, question, "yes", 1)
     assert not Notification.objects.filter(kind="market_change").exists()
-    services.buy(owner, question, "yes", 200)
+    services.buy(owner, question, "yes", 150)
     assert Notification.objects.filter(kind="market_change").count() == 1
-    services.buy(owner, question, "no", 200)
+    services.buy(owner, question, "no", 150)
     assert Notification.objects.filter(kind="market_change").count() == 1
 
 

@@ -12,6 +12,7 @@ db.sqlite3
 .pytest_cache/
 media/
 staticfiles/
+.claude/worktrees/
 
 # Mini App frontend
 miniapp/node_modules/
