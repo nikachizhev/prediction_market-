@@ -43,13 +43,14 @@ interface Position { yes_shares: string; no_shares: string; spent: Money; value:
 interface MarketDetail extends MarketCard {
   criteria: string; resolves_at: string; created_at: string;
   author: { display_name: string; photo_url: string | null; resolved: number; disputes_lost: number };
-  is_creator: boolean; can_trade: boolean;
+  is_creator: boolean; can_trade: boolean; max_amount: Money;   // сколько можно поставить сейчас (лимит сделки, 500 на рынок, баланс)
   my_position: Position | null;
-  trades: { side: Side; amount: Money; prob_after: number; at: string }[];   // анонимная лента, последние 20
+  trades: { side: Side; amount: Money; prob_after: number; at: string; sell: boolean }[];   // анонимная лента, последние 20
   resolution: { proposed_outcome: Side | "cancel" | null; evidence_url: string | null; note: string; dispute_until: string | null; can_dispute: boolean } | null;
 }
 
-interface Quote { side: Side; amount: Money; fee: Money; shares: string; payout_if_win: Money; prob_before: number; prob_after: number; max_amount: Money }
+interface Quote { side: Side; amount: Money; fee: Money; cost: Money;   // cost — сколько спишется (≤ amount)
+                shares: string; payout_if_win: Money; prob_before: number; prob_after: number; max_amount: Money }
 interface TradeResult { balance: Money; market: MarketDetail; trade: { side: Side; shares: string; cost: Money; fee: Money } }
 
 interface LedgerEntry { kind: string; label: string; amount: Money; at: string; market: { id: number; title: string } | null }
@@ -59,7 +60,7 @@ interface LedgerEntry { kind: string; label: string; amount: Money; at: string; 
 
 | Метод и путь | Тело / параметры | Ответ |
 | --- | --- | --- |
-| `POST /api/session` | `{start_param?: string}` — вызывается при каждом открытии. Создаёт аккаунт (стартовый пакет, пригласивший по `ref_<код>`), начисляет бонус дня, пишет событие `app_open` | `{me: Me, new_account: boolean, granted: {kind: "starter" \| "daily", amount: Money}[]}` |
+| `POST /api/session` | `{start_param?: string}` — вызывается при каждом открытии. Создаёт аккаунт (стартовый пакет, пригласивший по `ref_<код>`), начисляет бонус дня, пишет событие `app_open` | `{me: Me, new_account: boolean, granted: {kind: "starter" \| "daily" \| "insurance", amount: Money}[]}` — в день регистрации бонуса дня нет |
 | `GET /api/me` | — | `Me` |
 | `PATCH /api/me` | `{pseudonym?, show_real_name?, onboarded?}` | `Me` |
 | `GET /api/categories` | — | `{slug, label}[]`: games «Игры», study «Учёба», weather «Погода», tech «Технологии», sport «Спорт» |
@@ -72,9 +73,9 @@ interface LedgerEntry { kind: string; label: string; amount: Money; at: string; 
 | `POST /api/markets/{id}/star` | `{starred: boolean}` | `{starred}` |
 | `POST /api/markets/{id}/report` | `{reason?: string}` | `{ok: true}` |
 | `POST /api/markets` | `{title, criteria, category, closes_at, resolves_at}` | `{market: MarketDetail, balance: Money}` |
-| `GET /api/mine` | — | `{positions: (MarketCard & {position: Position})[], watched: MarketCard[], created: (MarketCard & {fee_expected: Money, needs_resolution: boolean})[]}` |
-| `GET /api/rating` | `?scope=all\|friends&by=profit\|accuracy&period=week\|month\|all` | `{items: {rank, display_name, photo_url, value: string, is_me}[], me: {rank, value} \| null}` |
+| `GET /api/mine` | — | `{positions: (MarketCard & {position: Position})[], watched: MarketCard[], created: (MarketCard & {fee_expected: Money, needs_resolution: boolean, resolve_link: string})[]}` |
+| `GET /api/rating` | `?scope=all\|friends&by=profit\|accuracy&period=week\|month\|all` | `{items: {rank, display_name, photo_url, value: string, is_me}[], me: {rank, value} \| null}`; `value` — прибыль (`"123.45"`) или доля верных (`"0.6300"`). Прибыль за неделю/месяц — по рынкам, завершённым за период |
 | `GET /api/profile` | — | `{me: Me, stats: {profit: Money, accuracy: number \| null, predictions: number, markets_created: number}, balance_history: {t, balance}[], ledger: LedgerEntry[]}` |
-| `POST /api/events` | `{name: "share" \| "onboarding_done" \| ..., props?: object}` | `{ok: true}` |
+| `POST /api/events` | `{name: "share" \| "onboarding_done" \| "onboarding_skip" \| "open_bot", props?: object}` | `{ok: true}` |
 
 «Указать итог» в «Моих» открывает бота: `https://t.me/<бот>?start=resolve_<id>`.

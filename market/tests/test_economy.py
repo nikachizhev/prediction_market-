@@ -232,3 +232,46 @@ def test_profit_excludes_bonuses_and_keeps_locked_subsidy(creator, market):
     assert services.profit(creator) == 0
     services.claim_daily_reward(creator)
     assert services.profit(creator) == 0
+
+
+def test_annul_after_profitable_sale_prints_nothing(creator, market):
+    """Review finding: a seller's profit used to be refunded on top of everyone's stake."""
+    a, b = make("A", 5000), make("B", 5000)
+    before = total_coins() + market.subsidy
+    bought = services.buy(a, market, "yes", 200)
+    for amount in (200, 200, 100):
+        services.buy(b, market, "yes", amount)
+    services.sell(a, market, "yes", bought.shares)
+    services.annul(market)
+    assert total_coins() <= before
+    b.refresh_from_db()
+    assert b.balance <= D(5000)
+
+
+def test_annul_refunds_sale_fees_too(creator, market):
+    anya = make("Аня")
+    t = services.buy(anya, market, "yes", 100)
+    services.sell(anya, market, "yes", t.shares)
+    services.annul(market)
+    anya.refresh_from_db(); creator.refresh_from_db()
+    # Net stake (buy cost minus sale proceeds) comes back; the subsidy covers it, the creator gets the rest.
+    assert anya.balance == D(1000)
+    assert creator.balance <= D(1000)
+
+
+def test_tiny_sales_consume_basis(market):
+    anya = make("Аня")
+    t = services.buy(anya, market, "yes", 100)
+    for _ in range(20):
+        services.sell(anya, market, "yes", D("0.012"))
+    pos = Position.objects.get(trader=anya, question=market)
+    assert pos.yes_spent <= t.cost - D("0.20")
+
+
+def test_insurance_not_granted_while_own_market_holds_subsidy(db):
+    author = make("Автор", 140)
+    m = new_market(author)
+    assert services.claim_insurance(author) is None
+    services.annul(m)
+    author.refresh_from_db()
+    assert author.balance == D(140)

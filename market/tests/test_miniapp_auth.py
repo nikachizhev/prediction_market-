@@ -98,3 +98,9 @@ def test_api_view_requires_signed_header():
     assert view(rf.get("/api/me", HTTP_AUTHORIZATION="tma user=%7B%22id%22%3A42%7D")).status_code == 401
     ok = view(rf.get("/api/me", HTTP_AUTHORIZATION=f"tma {init_data(42)}"))
     assert ok.status_code == 200 and json.loads(ok.content) == {"id": 42}
+
+
+def test_non_ascii_hash_is_rejected_not_crashing():
+    bad = init_data().split("&hash=")[0] + "&hash=%D0%AF"
+    with pytest.raises(InvalidInitData):
+        verify_init_data(bad, TOKEN)

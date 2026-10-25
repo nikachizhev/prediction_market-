@@ -246,7 +246,8 @@ def sell(trader: Trader, question: Question, side: str, shares: Decimal | float 
     # A sale only consumes the cost basis of its own side, never the opposite side.
     cost_field = "yes_spent" if side == "yes" else "no_spent"
     basis = getattr(pos, cost_field)
-    setattr(pos, cost_field, basis - (basis * shares / held).quantize(CENT, rounding=ROUND_FLOOR))
+    # Consumed basis rounds up, so tiny sales cannot keep the full basis (it caps the 500 per market).
+    setattr(pos, cost_field, max(Decimal(0), basis - (basis * shares / held).quantize(CENT, rounding=ROUND_CEILING)))
     pos.spent = pos.yes_spent + pos.no_spent
     trader.balance += proceeds
     question.fee_pool += fee
@@ -284,14 +285,10 @@ def _lock_positions(question: Question) -> tuple[list[Position], dict[int, Trade
     return positions, traders
 
 
-def _settle_creator(question: Question, traders: dict[int, Trader], *, cancelled: bool, refund_subsidy: bool = True) -> None:
+def _settle_creator(question: Question, traders: dict[int, Trader]) -> None:
     """Return the unused subsidy and pay the creator's share of fees; the rest burns."""
     creator = traders.get(question.creator_id) if question.creator_id else None
     if creator is None:
-        return
-    if cancelled:
-        if refund_subsidy and question.subsidy > 0:
-            _credit(creator, question.subsidy, LedgerEntry.Kind.SUBSIDY_RETURN, question)
         return
     from django.db.models import Sum
     from django.db.models.functions import Coalesce
@@ -327,7 +324,7 @@ def resolve(question: Question, outcome: str) -> Question:
         if amount > 0:
             _credit(pos.trader, amount, LedgerEntry.Kind.PAYOUT, question)
             Payout.objects.create(trader=pos.trader, question=question, amount=amount, kind=Payout.Kind.PAYOUT)
-    _settle_creator(question, traders, cancelled=False)
+    _settle_creator(question, traders)
     question.status = Question.Status.RESOLVED
     question.resolved_at = timezone.now()
     question.outcome = outcome
@@ -339,16 +336,33 @@ def resolve(question: Question, outcome: str) -> Question:
 
 @transaction.atomic
 def annul(question: Question, *, refund_subsidy: bool = True) -> Question:
-    """Refund each trader's `spent` (fees included) and, unless the creator is at fault, the subsidy."""
+    """Cancel: everyone gets back their net stake, fees included; the creator gets the subsidy unless at fault.
+
+    Someone who sold at a profit keeps it, so the subsidy covers the gap first, then refunds shrink pro rata.
+    """
     question = Question.objects.select_for_update().get(pk=question.pk)
     if question.status in (Question.Status.RESOLVED, Question.Status.ANNULLED):
         raise MarketError("Вопрос уже разрешён или аннулирован.")
     positions, traders = _lock_positions(question)
-    for pos in positions:
-        if pos.spent > 0:
-            _credit(pos.trader, pos.spent, LedgerEntry.Kind.REFUND, question)
-            Payout.objects.create(trader=pos.trader, question=question, amount=pos.spent, kind=Payout.Kind.REFUND)
-    _settle_creator(question, traders, cancelled=True, refund_subsidy=refund_subsidy)
+    from django.db.models import Sum
+    # Net money each trader put in: purchases with fees minus sale proceeds.
+    net = dict(Trade.objects.filter(question=question).values("trader_id").annotate(n=Sum("cost")).values_list("trader_id", "n"))
+    wanted = {tid: amount for tid, amount in net.items() if amount > 0}
+    # The market holds exactly the subsidy plus all net stakes; refunds can never exceed that.
+    pool = question.subsidy + sum(net.values(), Decimal(0))
+    total = sum(wanted.values(), Decimal(0))
+    subsidy_back = max(Decimal(0), min(question.subsidy, pool - total)) if refund_subsidy else Decimal(0)
+    available = max(Decimal(0), pool - subsidy_back)
+    scale = Decimal(1) if total <= available else available / total
+    for tid, amount in sorted(wanted.items()):
+        refund = _floor_cent(amount * scale)
+        if refund > 0:
+            _credit(traders[tid], refund, LedgerEntry.Kind.REFUND, question)
+            Payout.objects.create(trader=traders[tid], question=question, amount=refund, kind=Payout.Kind.REFUND)
+    creator = traders.get(question.creator_id) if question.creator_id else None
+    subsidy_back = _floor_cent(subsidy_back)
+    if creator is not None and subsidy_back > 0:
+        _credit(creator, subsidy_back, LedgerEntry.Kind.SUBSIDY_RETURN, question)
     question.status = Question.Status.ANNULLED
     question.resolved_at = timezone.now()
     question.outcome = None
@@ -424,6 +438,14 @@ def claim_daily_reward(trader):
     return reward if created else None
 
 
+def skip_daily_reward_today(trader: Trader) -> None:
+    """The starter pack is the first day's gift; the daily bonus starts tomorrow."""
+    from zoneinfo import ZoneInfo
+    from .models import DailyReward
+    day = timezone.localdate(timezone=ZoneInfo("Europe/Moscow"))
+    DailyReward.objects.get_or_create(trader=trader, day=day, defaults={"coins": Decimal(0), "xp": 0})
+
+
 def _fmt(value: Decimal) -> str:
     return f"{value.normalize():f}".replace(".", ",")
 
@@ -441,11 +463,12 @@ def grant_starter_pack(trader: Trader) -> LedgerEntry | None:
 
 
 def has_open_positions(trader: Trader) -> bool:
+    """Coins still at stake: shares in unsettled markets or the subsidy of an own unsettled market."""
     from django.db.models import Q
+    unsettled = [Question.Status.OPEN, Question.Status.CLOSED]
     return trader.positions.filter(
-        Q(yes_shares__gt=0) | Q(no_shares__gt=0),
-        question__status__in=[Question.Status.OPEN, Question.Status.CLOSED],
-    ).exists()
+        Q(yes_shares__gt=0) | Q(no_shares__gt=0), question__status__in=unsettled,
+    ).exists() or trader.created_questions.filter(status__in=unsettled, subsidy__gt=0).exists()
 
 
 @transaction.atomic

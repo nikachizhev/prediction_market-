@@ -62,7 +62,7 @@ def verify_init_data(init_data: str, bot_token: str | None = None, *, max_age: i
     received = fields.pop("hash", "")
     check = "\n".join(f"{k}={v}" for k, v in sorted(fields.items()))
     expected = hmac.new(_secret_key(bot_token), check.encode(), hashlib.sha256).hexdigest()
-    if not received or not hmac.compare_digest(expected, received):
+    if not received or not hmac.compare_digest(expected.encode(), received.encode()):
         raise InvalidInitData("Неверная подпись Telegram.")
     try:
         auth_date = int(fields.get("auth_date", ""))
@@ -101,7 +101,9 @@ def get_or_create_trader(session: TelegramSession) -> tuple[Trader, bool]:
     user = session.user
     telegram_id = int(user["id"])
     trader = Trader.objects.filter(telegram_chat_id=telegram_id).first()
-    if trader is None:
+    for _attempt in range(3):
+        if trader is not None:
+            break
         try:
             with transaction.atomic():
                 trader = Trader.objects.create(
@@ -114,11 +116,13 @@ def get_or_create_trader(session: TelegramSession) -> tuple[Trader, bool]:
                 )
                 grant_starter_pack(trader)
         except IntegrityError:
-            # A parallel first open created the account; use it.
-            trader = Trader.objects.get(telegram_chat_id=telegram_id)
+            # Either a parallel first open created the account, or the referral code collided: retry.
+            trader = Trader.objects.filter(telegram_chat_id=telegram_id).first()
         else:
             trader.refresh_from_db()
             return trader, True
+    if trader is None:
+        raise InvalidInitData("Не удалось создать аккаунт. Попробуйте ещё раз.")
     changed = []
     for field, value in (("name", _full_name(user)), ("telegram_username", (user.get("username") or "")[:64]),
                          ("photo_url", (user.get("photo_url") or "")[:500])):

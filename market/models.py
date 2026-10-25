@@ -412,3 +412,28 @@ class LedgerEntry(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["trader"], condition=Q(kind="starter"), name="one_starter_pack"),
         ]
+
+
+class MarketComplaint(models.Model):
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="complaints")
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="complaints")
+    reason = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "жалоба"
+        verbose_name_plural = "жалобы"
+        constraints = [models.UniqueConstraint(fields=["question", "trader"], name="one_complaint_per_trader")]
+
+
+class Event(models.Model):
+    """Product analytics (spec E7): one row per user action, read by BI without personal data."""
+    trader = models.ForeignKey(Trader, null=True, blank=True, on_delete=models.SET_NULL, related_name="events")
+    name = models.CharField(max_length=40, db_index=True)
+    props = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = "событие"
+        verbose_name_plural = "события"
+        ordering = ["-created_at", "-id"]
