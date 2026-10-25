@@ -34,9 +34,9 @@ MVP = E1–E5 + минимум бота (кнопка «Открыть прил�
 | T06 | E2 | Экраны: карточка рынка, «Мои» | `miniapp/src/screens/*` | T05 | todo |
 | T07 | E3, E2 | Экраны: мастер создания, рейтинг, профиль | `miniapp/src/screens/*` | T05 | todo |
 | T08 | E4 | Разрешение: сервис предложения итога, окно спора 24 ч, спор за 20, решение модератора в админке, напоминания 24/48 ч и отмена на 72 ч, воркер | `market/services.py`, `market/resolution.py`, `market/admin.py`, `run_worker`, тесты | T02 | done |
-| T09 | E4, бот | Бот: кнопка меню «Открыть приложение», диалог «Чем закончилось?» с фото и подтверждением, «Оспорить», сообщение о выплате | `market/telegram*.py`, `market/bot_resolution.py`, тесты | T08 | todo |
+| T09 | E4, бот | Бот: кнопка меню «Открыть приложение», диалог «Чем закончилось?» с фото и подтверждением, «Оспорить», сообщение о выплате | `market/telegram*.py`, `market/bot_resolution.py`, тесты | T08 | done |
 | T10 | E7 (MVP) | Таблица событий: открытие приложения, сделка, создание, шеринг | `market/models.py`, `market/events.py`, точки вызова в API | T03 | done |
-| T11 | — | Раздача собранного `miniapp/dist` через Django, README: запуск, туннель, BotFather | `config/urls.py`, `README.md` | T05 | todo |
+| T11 | — | Раздача собранного `miniapp/dist` через Django, README: запуск, туннель, BotFather | `config/urls.py`, `README.md` | T05 | in progress |
 
 ## Ответы на открытые вопросы спеки
 
