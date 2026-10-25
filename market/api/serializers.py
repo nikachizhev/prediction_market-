@@ -131,11 +131,12 @@ def author(trader: Trader | None) -> dict:
         return {"display_name": "Команда", "photo_url": None, "resolved": 0, "disputes_lost": 0}
     resolved = trader.created_questions.filter(status=Question.Status.RESOLVED).count()
     return {"display_name": trader.display_name, "photo_url": trader.photo_url or None,
-            "resolved": resolved, "disputes_lost": 0}
+            "resolved": resolved, "disputes_lost": trader.created_questions.filter(creator_at_fault=True).count()}
 
 
 def resolution(question: Question, trader: Trader) -> dict | None:
-    return None
+    from ..resolution import public_state
+    return public_state(question, trader)
 
 
 def detail(question: Question, trader: Trader) -> dict:

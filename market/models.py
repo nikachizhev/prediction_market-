@@ -248,6 +248,27 @@ class Question(models.Model):
     # Fees held in the market; split between the creator and burning at resolution, refunded on cancel.
     fee_pool = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal(0))
     hidden_at = models.DateTimeField("скрыт до решения модератора", null=True, blank=True)
+
+    # Resolution by the creator in the bot (spec E4).
+    class Resolution(models.TextChoices):
+        NONE = "", "Итог не указан"
+        PENDING = "pending", "Окно спора"
+        DISPUTED = "disputed", "Спор у модератора"
+        FINAL = "final", "Завершено"
+
+    resolution_state = models.CharField("разрешение", max_length=10, choices=Resolution.choices, blank=True, default="")
+    proposed_outcome = models.CharField("итог от создателя", max_length=6, blank=True, default="",
+                                        choices=[("yes", "ДА"), ("no", "НЕТ"), ("cancel", "Отменить рынок")])
+    evidence = models.FileField("доказательство", upload_to="evidence/%Y/%m/", blank=True)
+    evidence_file_id = models.CharField(max_length=200, blank=True, default="")
+    evidence_note = models.CharField("подпись или ссылка", max_length=500, blank=True, default="")
+    proposed_at = models.DateTimeField(null=True, blank=True)
+    dispute_until = models.DateTimeField("окно спора до", null=True, blank=True)
+    creator_at_fault = models.BooleanField("создатель ошибся", default=False)
+    # Bot bookkeeping, so the worker never repeats a message.
+    asked_at = models.DateTimeField(null=True, blank=True)
+    reminders_sent = models.PositiveSmallIntegerField(default=0)
+    results_sent_at = models.DateTimeField(null=True, blank=True)
     conflicted_traders = models.ManyToManyField(
         Trader, blank=True, related_name="conflicted_questions", verbose_name="конфликт интересов"
     )
@@ -437,3 +458,17 @@ class Event(models.Model):
         verbose_name = "событие"
         verbose_name_plural = "события"
         ordering = ["-created_at", "-id"]
+
+
+class Dispute(models.Model):
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="disputes")
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="disputes")
+    stake = models.DecimalField(max_digits=14, decimal_places=2)
+    reason = models.CharField(max_length=500, blank=True)
+    upheld = models.BooleanField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "спор"
+        verbose_name_plural = "споры"
+        constraints = [models.UniqueConstraint(fields=["question", "trader"], name="one_dispute_per_trader")]
