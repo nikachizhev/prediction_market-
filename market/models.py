@@ -26,6 +26,13 @@ class Trader(models.Model):
     balance = models.DecimalField(
         "баланс", max_digits=14, decimal_places=2, default=Decimal(settings.START_BALANCE)
     )
+    # Mini App profile. telegram_chat_id doubles as the Telegram user id (equal in private chats).
+    telegram_username = models.CharField(max_length=64, blank=True)
+    photo_url = models.URLField(max_length=500, blank=True)
+    referral_code = models.CharField(max_length=16, unique=True, null=True, blank=True)
+    referred_by = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="referrals")
+    onboarded_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(null=True, blank=True, auto_now_add=True)
 
     class Meta:
         verbose_name = "участник"
@@ -138,6 +145,15 @@ class Notification(models.Model):
         ordering = ["-created_at", "-pk"]
 
 
+CATEGORIES = [
+    ("games", "Игры"),
+    ("study", "Учёба"),
+    ("weather", "Погода"),
+    ("tech", "Технологии"),
+    ("sport", "Спорт"),
+]
+
+
 class Question(models.Model):
     tracks_deadline = models.BooleanField("ДА означает выполнение в срок", default=False, help_text="Включает вопрос в панель рисков. Используйте, только если ДА означает выполнение задачи к дедлайну.")
     resolved_at = models.DateTimeField(null=True, blank=True)
@@ -225,6 +241,13 @@ class Question(models.Model):
     q_yes = models.FloatField(default=0.0)
     q_no = models.FloatField(default=0.0)
     initial_prob = models.FloatField("начальная вероятность", default=0.5)
+    category = models.CharField("категория", max_length=20, blank=True, default="")
+    resolves_at = models.DateTimeField("итог станет известен", null=True, blank=True)
+    # Money the creator put into the market maker; settled at resolution.
+    subsidy = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal(0))
+    # Fees held in the market; split between the creator and burning at resolution, refunded on cancel.
+    fee_pool = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal(0))
+    hidden_at = models.DateTimeField("скрыт до решения модератора", null=True, blank=True)
     conflicted_traders = models.ManyToManyField(
         Trader, blank=True, related_name="conflicted_questions", verbose_name="конфликт интересов"
     )
@@ -294,7 +317,9 @@ class Trade(models.Model):
     side = models.CharField(max_length=3, choices=Side.choices)
     # Negative shares/cost mean a sale.
     shares = models.DecimalField(max_digits=16, decimal_places=6)
+    # Coins that left (+) or reached (-) the trader's balance, fee included.
     cost = models.DecimalField(max_digits=14, decimal_places=2)
+    fee = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal(0))
     prob_before = models.FloatField()
     prob_after = models.FloatField()
     created_at = models.DateTimeField(auto_now_add=True)
@@ -350,3 +375,40 @@ class Payout(models.Model):
     class Meta:
         verbose_name = "выплата"
         verbose_name_plural = "выплаты"
+
+
+class LedgerEntry(models.Model):
+    """Every balance change, for the operation history and the economy dashboard."""
+
+    class Kind(models.TextChoices):
+        STARTER = "starter", "Стартовый пакет"
+        DAILY = "daily", "Бонус дня"
+        INSURANCE = "insurance", "Страховка"
+        REFERRAL = "referral", "Награда за друга"
+        BUY = "buy", "Прогноз"
+        SELL = "sell", "Продажа"
+        PAYOUT = "payout", "Выплата"
+        REFUND = "refund", "Возврат"
+        CREATION = "creation", "Создание рынка"
+        SUBSIDY_RETURN = "subsidy_return", "Возврат за создание рынка"
+        CREATOR_FEE = "creator_fee", "Комиссия создателю"
+        DISPUTE = "dispute", "Спор"
+        DISPUTE_REFUND = "dispute_refund", "Спор признан"
+
+    # Coins that appear from nothing; excluded from profit in the rating.
+    BONUS_KINDS = (Kind.STARTER, Kind.DAILY, Kind.INSURANCE, Kind.REFERRAL)
+
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="ledger")
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    balance_after = models.DecimalField(max_digits=14, decimal_places=2)
+    question = models.ForeignKey(Question, null=True, blank=True, on_delete=models.SET_NULL, related_name="ledger")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "операция"
+        verbose_name_plural = "операции"
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["trader"], condition=Q(kind="starter"), name="one_starter_pack"),
+        ]

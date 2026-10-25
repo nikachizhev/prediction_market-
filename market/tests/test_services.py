@@ -44,7 +44,7 @@ def test_buy_updates_balance_position_trade(q, anya):
     assert anya.balance == D(1000) - t.cost
     assert D(99) <= t.cost <= D(100)
     assert t.prob_before == pytest.approx(0.5) and t.prob_after == pytest.approx(q.prob)
-    assert q.prob == pytest.approx(0.70, abs=0.02)
+    assert q.prob == pytest.approx(0.75, abs=0.02)
     pos = Position.objects.get(trader=anya, question=q)
     assert pos.yes_shares == t.shares and pos.spent == t.cost
 
@@ -64,7 +64,7 @@ def test_balance_never_negative(q, anya):
         services.buy(anya, q, "yes", 60)
     with pytest.raises(MarketError):
         services.buy(anya, q, "yes", 0)
-    services.buy(anya, q, "yes", 50)
+    services.buy(anya, q, "yes", 10)
     anya.refresh_from_db()
     assert anya.balance >= 0
 
@@ -123,7 +123,8 @@ def test_sell_roundtrip_not_profitable(q, anya):
     s = services.sell(anya, q, "yes", t.shares)
     anya.refresh_from_db()
     assert anya.balance <= D(1000)
-    assert D(1000) - anya.balance <= D("0.02")
+    # Only the two fees are lost (plus at most a cent of rounding each way).
+    assert D(1000) - anya.balance - t.fee - s.fee <= D("0.02")
     assert Position.objects.get(trader=anya, question=q).yes_shares == 0
     with pytest.raises(MarketError):
         services.sell(anya, q, "yes", 1)

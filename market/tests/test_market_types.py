@@ -26,7 +26,8 @@ def test_trade_roundtrip_and_payout(kind, side):
     q.refresh_from_db()
     t.refresh_from_db()
     assert q.prob == pytest.approx(.5)
-    assert Decimal("999.98") <= t.balance <= 1000
+    # Round trip costs the 2% fee on the purchase and on the sale.
+    assert Decimal("995.50") <= t.balance < 1000
     services.buy(t, q, side, 20)
     services.resolve(q, side)
     assert t.payouts.count() == 1

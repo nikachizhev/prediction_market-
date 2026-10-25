@@ -10,7 +10,7 @@ from django.db import transaction
 from . import lmsr
 from . import mechanisms
 from django.utils import timezone
-from .models import Payout, Position, Question, Trade, Trader
+from .models import LedgerEntry, Payout, Position, Question, Trade, Trader
 
 CENT = Decimal("0.01")
 SHARE_Q = Decimal("0.000001")
@@ -31,6 +31,48 @@ def _d(x: float | Decimal | int | str) -> Decimal:
 def check_open(question):
     if question.status != Question.Status.OPEN or (question.deadline and question.deadline <= timezone.now()):
         raise MarketError("Участие в этом вопросе закрыто.")
+    if question.hidden_at:
+        raise MarketError("Рынок скрыт до решения модератора.")
+
+
+def fee_rate() -> Decimal:
+    return Decimal(settings.TRADE_FEE)
+
+
+def _record(trader: Trader, kind: str, amount: Decimal, question: Question | None = None) -> LedgerEntry:
+    """Ledger line for a balance change already applied to `trader` (in memory or saved)."""
+    return LedgerEntry.objects.create(
+        trader=trader, kind=kind, amount=amount, balance_after=trader.balance, question=question,
+    )
+
+
+def _credit(trader: Trader, amount: Decimal, kind: str, question: Question | None = None) -> None:
+    trader.balance += amount
+    trader.save(update_fields=["balance"])
+    _record(trader, kind, amount, question)
+
+
+def trade_limit(trader: Trader) -> Decimal:
+    """Largest single purchase: a share of the balance, capped."""
+    share = (trader.balance * Decimal(settings.TRADE_LIMIT_SHARE)).quantize(CENT, rounding=ROUND_FLOOR)
+    return max(Decimal(0), min(share, Decimal(settings.MAX_TRADE)))
+
+
+def invested(trader: Trader, question: Question) -> Decimal:
+    pos = Position.objects.filter(trader=trader, question=question).first()
+    return pos.spent if pos else Decimal(0)
+
+
+def max_buy_amount(trader: Trader, question: Question) -> Decimal:
+    room = Decimal(settings.MARKET_CAP) - invested(trader, question)
+    return max(Decimal(0), min(trade_limit(trader), room, trader.balance))
+
+
+def check_can_trade(trader: Trader, question: Question) -> None:
+    if question.creator_id is not None and question.creator_id == trader.pk:
+        raise MarketError("Создатель рынка не может делать прогнозы на свой рынок.")
+    if question.conflicted_traders.filter(pk=trader.pk).exists():
+        raise MarketError("Конфликт интересов: вы не можете ставить на этот вопрос.")
 
 
 def check_access(trader, question):
@@ -71,12 +113,18 @@ def quote(question: Question, side: str, amount: Decimal | float | int | str) ->
         raise MarketError("Сумма ставки должна быть положительной.")
     if question.status != Question.Status.OPEN:
         raise MarketError("Ставки на этот вопрос закрыты.")
-    shares_f = mechanisms.shares_for_amount(question, side, float(amount))
+    # The fee is withheld from the stake; the rest buys shares.
+    fee = _ceil_cent(amount * fee_rate())
+    net = amount - fee
+    if net <= 0:
+        raise MarketError("Сумма слишком мала.")
+    shares_f = mechanisms.shares_for_amount(question, side, float(net))
     shares = _floor_shares(shares_f)
     if shares <= 0:
         raise MarketError("Сумма слишком мала.")
     real = mechanisms.trade_cost(question, side, float(shares))
-    cost = min(_ceil_cent(_d(real)), amount.quantize(CENT, rounding=ROUND_CEILING))
+    maker_cost = min(_ceil_cent(_d(real)), net.quantize(CENT, rounding=ROUND_CEILING))
+    cost = maker_cost + fee
     dq = float(shares)
     new_q_yes = question.q_yes + (dq if side == "yes" else 0.0)
     new_q_no = question.q_no + (dq if side == "no" else 0.0)
@@ -87,6 +135,7 @@ def quote(question: Question, side: str, amount: Decimal | float | int | str) ->
         "side": side,
         "shares": shares,
         "cost": cost,
+        "fee": fee,
         "prob_before": question.prob,
         "new_prob": mechanisms.probability(preview, new_q_yes, new_q_no),
         "pool_cost": real,
@@ -120,15 +169,17 @@ def buy(trader: Trader, question: Question, side: str, amount: Decimal | float |
             return previous
     if question.status != Question.Status.OPEN:
         raise MarketError("Ставки на этот вопрос закрыты.")
-    if question.conflicted_traders.filter(pk=trader.pk).exists():
-        raise MarketError("Конфликт интересов: вы не можете ставить на этот вопрос.")
-    max_bet = min(trader.balance, Decimal(settings.MAX_BET))
+    check_can_trade(trader, question)
     if amount <= 0:
         raise MarketError("Сумма ставки должна быть положительной.")
     if amount > trader.balance:
         raise MarketError("Недостаточно средств на балансе.")
-    if amount > max_bet:
-        raise MarketError(f"Максимальная ставка за сделку — {settings.MAX_BET}.")
+    limit = trade_limit(trader)
+    if amount > limit:
+        raise MarketError(f"Максимум за одну сделку — {_fmt(limit)}: 20% баланса, но не больше {settings.MAX_TRADE}.")
+    room = Decimal(settings.MARKET_CAP) - invested(trader, question)
+    if amount > room:
+        raise MarketError(f"В один рынок можно вложить не больше {settings.MARKET_CAP}. Осталось {_fmt(max(room, Decimal(0)))}.")
     if amount != amount.quantize(CENT):
         raise MarketError("Укажите сумму не более чем с двумя знаками после запятой.")
     q = quote(question, side, amount)
@@ -145,15 +196,17 @@ def buy(trader: Trader, question: Question, side: str, amount: Decimal | float |
         pos.no_spent += q["cost"]
     pos.spent = pos.yes_spent + pos.no_spent
     mechanisms.move_pool(question, side, float(q["shares"]), q["pool_cost"])
+    question.fee_pool += q["fee"]
     trader.balance -= q["cost"]
     trade = Trade.objects.create(
-        trader=trader, question=question, side=side, shares=q["shares"], cost=q["cost"],
+        trader=trader, question=question, side=side, shares=q["shares"], cost=q["cost"], fee=q["fee"],
         prob_before=q["prob_before"], prob_after=q["new_prob"],
         request_key=request_key, requested_amount=amount,
     )
-    question.save(update_fields=["q_yes", "q_no", "pool_yes", "pool_no"])
+    question.save(update_fields=["q_yes", "q_no", "pool_yes", "pool_no", "fee_pool"])
     pos.save()
     trader.save(update_fields=["balance"])
+    _record(trader, LedgerEntry.Kind.BUY, -q["cost"], question)
     from .subscriptions import price_changed
     price_changed(question)
     return trade
@@ -180,7 +233,9 @@ def sell(trader: Trader, question: Question, side: str, shares: Decimal | float 
         raise MarketError("Нельзя продать больше акций, чем у вас есть.")
     before = question.prob
     real_cost = mechanisms.trade_cost(question, side, -float(shares))
-    proceeds = _floor_cent(_d(-real_cost))
+    gross = _floor_cent(_d(-real_cost))
+    fee = min(_ceil_cent(gross * fee_rate()), gross)
+    proceeds = gross - fee
     mechanisms.move_pool(question, side, -float(shares), real_cost)
     if side == "yes":
         question.q_yes -= float(shares)
@@ -194,13 +249,15 @@ def sell(trader: Trader, question: Question, side: str, shares: Decimal | float 
     setattr(pos, cost_field, basis - (basis * shares / held).quantize(CENT, rounding=ROUND_FLOOR))
     pos.spent = pos.yes_spent + pos.no_spent
     trader.balance += proceeds
+    question.fee_pool += fee
     trade = Trade.objects.create(
-        trader=trader, question=question, side=side, shares=-shares, cost=-proceeds,
+        trader=trader, question=question, side=side, shares=-shares, cost=-proceeds, fee=fee,
         prob_before=before, prob_after=question.prob,
     )
-    question.save(update_fields=["q_yes", "q_no", "pool_yes", "pool_no"])
+    question.save(update_fields=["q_yes", "q_no", "pool_yes", "pool_no", "fee_pool"])
     pos.save()
     trader.save(update_fields=["balance"])
+    _record(trader, LedgerEntry.Kind.SELL, proceeds, question)
     from .subscriptions import price_changed
     price_changed(question)
     return trade
@@ -215,15 +272,42 @@ def close_betting(question: Question) -> Question:
     return question
 
 
-def _lock_positions(question: Question) -> list[Position]:
+def _lock_positions(question: Question) -> tuple[list[Position], dict[int, Trader]]:
+    """Lock positions, their holders and the creator (in pk order, one object per trader)."""
     positions = list(Position.objects.select_for_update().filter(question=question).order_by("trader_id"))
-    traders = {
-        t.pk: t
-        for t in Trader.objects.select_for_update().filter(pk__in=[p.trader_id for p in positions]).order_by("pk")
-    }
+    ids = {p.trader_id for p in positions}
+    if question.creator_id:
+        ids.add(question.creator_id)
+    traders = {t.pk: t for t in Trader.objects.select_for_update().filter(pk__in=ids).order_by("pk")}
     for p in positions:
         p.trader = traders[p.trader_id]
-    return positions
+    return positions, traders
+
+
+def _settle_creator(question: Question, traders: dict[int, Trader], *, cancelled: bool, refund_subsidy: bool = True) -> None:
+    """Return the unused subsidy and pay the creator's share of fees; the rest burns."""
+    creator = traders.get(question.creator_id) if question.creator_id else None
+    if creator is None:
+        return
+    if cancelled:
+        if refund_subsidy and question.subsidy > 0:
+            _credit(creator, question.subsidy, LedgerEntry.Kind.SUBSIDY_RETURN, question)
+        return
+    from django.db.models import Sum
+    from django.db.models.functions import Coalesce
+    zero = Decimal(0)
+    trades = Trade.objects.filter(question=question).aggregate(
+        cost=Coalesce(Sum("cost"), zero), fee=Coalesce(Sum("fee"), zero))
+    paid = Payout.objects.filter(question=question, kind=Payout.Kind.PAYOUT).aggregate(
+        total=Coalesce(Sum("amount"), zero))["total"]
+    # What the market maker holds: the subsidy plus net stakes (fees excluded) minus payouts.
+    maker = question.subsidy + trades["cost"] - trades["fee"] - paid
+    subsidy_back = _floor_cent(min(max(maker, zero), question.subsidy))
+    if subsidy_back > 0:
+        _credit(creator, subsidy_back, LedgerEntry.Kind.SUBSIDY_RETURN, question)
+    creator_fee = _floor_cent(question.fee_pool * Decimal(settings.CREATOR_FEE_SHARE))
+    if creator_fee > 0:
+        _credit(creator, creator_fee, LedgerEntry.Kind.CREATOR_FEE, question)
 
 
 @transaction.atomic
@@ -236,13 +320,14 @@ def resolve(question: Question, outcome: str) -> Question:
         raise MarketError("Используйте форму результата для этого типа вопроса.")
     if question.status in (Question.Status.RESOLVED, Question.Status.ANNULLED):
         raise MarketError("Вопрос уже разрешён или аннулирован.")
-    for pos in _lock_positions(question):
+    positions, traders = _lock_positions(question)
+    for pos in positions:
         shares = pos.yes_shares if outcome == "yes" else pos.no_shares
         amount = _floor_cent(shares)
         if amount > 0:
-            pos.trader.balance += amount
-            pos.trader.save(update_fields=["balance"])
+            _credit(pos.trader, amount, LedgerEntry.Kind.PAYOUT, question)
             Payout.objects.create(trader=pos.trader, question=question, amount=amount, kind=Payout.Kind.PAYOUT)
+    _settle_creator(question, traders, cancelled=False)
     question.status = Question.Status.RESOLVED
     question.resolved_at = timezone.now()
     question.outcome = outcome
@@ -253,16 +338,17 @@ def resolve(question: Question, outcome: str) -> Question:
 
 
 @transaction.atomic
-def annul(question: Question) -> Question:
-    """Refund each trader's `spent` on this question."""
+def annul(question: Question, *, refund_subsidy: bool = True) -> Question:
+    """Refund each trader's `spent` (fees included) and, unless the creator is at fault, the subsidy."""
     question = Question.objects.select_for_update().get(pk=question.pk)
     if question.status in (Question.Status.RESOLVED, Question.Status.ANNULLED):
         raise MarketError("Вопрос уже разрешён или аннулирован.")
-    for pos in _lock_positions(question):
+    positions, traders = _lock_positions(question)
+    for pos in positions:
         if pos.spent > 0:
-            pos.trader.balance += pos.spent
-            pos.trader.save(update_fields=["balance"])
+            _credit(pos.trader, pos.spent, LedgerEntry.Kind.REFUND, question)
             Payout.objects.create(trader=pos.trader, question=question, amount=pos.spent, kind=Payout.Kind.REFUND)
+    _settle_creator(question, traders, cancelled=True, refund_subsidy=refund_subsidy)
     question.status = Question.Status.ANNULLED
     question.resolved_at = timezone.now()
     question.outcome = None
@@ -283,6 +369,7 @@ def create_question(
     b: float | None = None,
     conflicted_traders=(),
     group_id=None,
+    **extra,
 ) -> Question:
     b = float(b if b is not None else settings.LMSR_DEFAULT_B)
     q_yes, q_no = lmsr.initial_q(initial_prob, b)
@@ -291,6 +378,7 @@ def create_question(
             title=title, resolution_criteria=resolution_criteria, source_type=source_type,
             source_ref=source_ref, deadline=deadline, initial_prob=initial_prob, b=b,
             q_yes=q_yes, q_no=q_no, group_id=group_id, tracks_deadline=source_type == Question.Source.GITHUB,
+            **extra,
         )
         if conflicted_traders:
             question.conflicted_traders.set(conflicted_traders)
@@ -310,10 +398,16 @@ def portfolio_value(trader: Trader) -> Decimal:
 
 
 def profit(trader: Trader) -> Decimal:
+    """Wealth gained by forecasting and running markets; bonus coins do not count."""
     trader.refresh_from_db(fields=["balance"])
     from django.db.models import Sum
-    bonuses = trader.daily_rewards.aggregate(total=Sum("coins"))["total"] or Decimal(0)
-    return trader.balance + portfolio_value(trader) - Decimal(settings.START_BALANCE) - bonuses
+    daily = trader.daily_rewards.aggregate(total=Sum("coins"))["total"] or Decimal(0)
+    # Daily bonuses are counted via DailyReward (it predates the ledger); the starter pack via START_BALANCE.
+    other = trader.ledger.filter(kind__in=[LedgerEntry.Kind.INSURANCE, LedgerEntry.Kind.REFERRAL]).aggregate(
+        total=Sum("amount"))["total"] or Decimal(0)
+    locked = trader.created_questions.exclude(
+        status__in=[Question.Status.RESOLVED, Question.Status.ANNULLED]).aggregate(total=Sum("subsidy"))["total"] or Decimal(0)
+    return trader.balance + portfolio_value(trader) + locked - Decimal(settings.START_BALANCE) - daily - other
 
 
 @transaction.atomic
@@ -323,11 +417,94 @@ def claim_daily_reward(trader):
     from .models import DailyReward
     trader = Trader.objects.select_for_update().get(pk=trader.pk)
     day = timezone.localdate(timezone=ZoneInfo("Europe/Moscow"))
-    reward, created = DailyReward.objects.get_or_create(trader=trader, day=day)
+    reward, created = DailyReward.objects.get_or_create(
+        trader=trader, day=day, defaults={"coins": Decimal(settings.DAILY_BONUS)})
     if created:
-        trader.balance += reward.coins
-        trader.save(update_fields=["balance"])
+        _credit(trader, reward.coins, LedgerEntry.Kind.DAILY)
     return reward if created else None
+
+
+def _fmt(value: Decimal) -> str:
+    return f"{value.normalize():f}".replace(".", ",")
+
+
+@transaction.atomic
+def grant_starter_pack(trader: Trader) -> LedgerEntry | None:
+    """Starter coins, once per account (enforced by a unique constraint too)."""
+    trader = Trader.objects.select_for_update().get(pk=trader.pk)
+    if trader.ledger.filter(kind=LedgerEntry.Kind.STARTER).exists():
+        return None
+    amount = Decimal(settings.START_BALANCE)
+    trader.balance += amount
+    trader.save(update_fields=["balance"])
+    return _record(trader, LedgerEntry.Kind.STARTER, amount)
+
+
+def has_open_positions(trader: Trader) -> bool:
+    from django.db.models import Q
+    return trader.positions.filter(
+        Q(yes_shares__gt=0) | Q(no_shares__gt=0),
+        question__status__in=[Question.Status.OPEN, Question.Status.CLOSED],
+    ).exists()
+
+
+@transaction.atomic
+def claim_insurance(trader: Trader) -> LedgerEntry | None:
+    """Weekly top-up for a trader who lost everything and has nothing at stake."""
+    from datetime import timedelta
+    trader = Trader.objects.select_for_update().get(pk=trader.pk)
+    if trader.balance >= Decimal(settings.INSURANCE_THRESHOLD) or has_open_positions(trader):
+        return None
+    since = timezone.now() - timedelta(days=settings.INSURANCE_PERIOD_DAYS)
+    if trader.ledger.filter(kind=LedgerEntry.Kind.INSURANCE, created_at__gt=since).exists():
+        return None
+    amount = Decimal(settings.INSURANCE_AMOUNT)
+    trader.balance += amount
+    trader.save(update_fields=["balance"])
+    return _record(trader, LedgerEntry.Kind.INSURANCE, amount)
+
+
+@transaction.atomic
+def create_market(trader: Trader, *, title: str, criteria: str, category: str, closes_at, resolves_at) -> Question:
+    """User-created YES/NO market: the creator pays the market maker's subsidy."""
+    from datetime import timedelta
+    from .models import CATEGORIES
+    trader = Trader.objects.select_for_update().get(pk=trader.pk)
+    title = (title or "").strip()
+    criteria = (criteria or "").strip()
+    if not title:
+        raise MarketError("Напишите вопрос.")
+    if len(title) > 120:
+        raise MarketError("Вопрос — не длиннее 120 символов.")
+    if not criteria:
+        raise MarketError("Опишите, как определяем результат.")
+    if category not in dict(CATEGORIES):
+        raise MarketError("Выберите категорию.")
+    now = timezone.now()
+    if closes_at is None or resolves_at is None:
+        raise MarketError("Укажите, до какого момента принимаем прогнозы и когда станет известен итог.")
+    if closes_at < now + timedelta(hours=settings.MARKET_MIN_HOURS):
+        raise MarketError("Приём прогнозов — хотя бы час.")
+    if closes_at > now + timedelta(days=settings.MARKET_MAX_DAYS):
+        raise MarketError("Приём прогнозов — не дольше года.")
+    if resolves_at < closes_at:
+        raise MarketError("Итог не может стать известен раньше конца приёма прогнозов.")
+    if resolves_at > closes_at + timedelta(days=settings.MARKET_MAX_DAYS):
+        raise MarketError("Итог должен стать известен не позже чем через год после конца приёма.")
+    recent = Question.objects.filter(creator=trader, created_at__gte=now - timedelta(days=1)).count()
+    if recent >= settings.MARKETS_PER_DAY:
+        raise MarketError(f"Не больше {settings.MARKETS_PER_DAY} новых рынков в день.")
+    cost = Decimal(settings.MARKET_CREATION_COST)
+    if trader.balance < cost:
+        raise MarketError(f"Создание рынка стоит {settings.MARKET_CREATION_COST} монет — на балансе не хватает.")
+    question = create_question(
+        title=title, resolution_criteria=criteria, deadline=closes_at, initial_prob=0.5,
+        b=settings.LMSR_DEFAULT_B, creator=trader, category=category, resolves_at=resolves_at, subsidy=cost,
+    )
+    trader.balance -= cost
+    trader.save(update_fields=["balance"])
+    _record(trader, LedgerEntry.Kind.CREATION, -cost, question)
+    return question
 
 
 def purchase_snapshot(question):
@@ -340,10 +517,9 @@ def prepare_purchase(trader, question, side, amount):
     from datetime import timedelta
     from .models import PurchaseConfirmation
     check_access(trader, question)
-    if question.conflicted_traders.filter(pk=trader.pk).exists():
-        raise MarketError("Конфликт интересов: вы не можете ставить на этот вопрос.")
+    check_can_trade(trader, question)
     amount = _d(amount)
-    if amount > min(trader.balance, Decimal(settings.MAX_BET)):
+    if amount > max_buy_amount(trader, question):
         raise MarketError("Недостаточно средств или превышена максимальная ставка.")
     if amount <= 0 or amount != amount.quantize(CENT):
         raise MarketError("Укажите положительную сумму, не более двух знаков после запятой.")

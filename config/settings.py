@@ -83,14 +83,33 @@ USE_TZ = True
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Market settings
-LMSR_DEFAULT_B = 200
-START_BALANCE = 1000
-MAX_BET = 300
+# Economy (spec E5). The only place these numbers live; screens read them from the API.
+START_BALANCE = 1000            # starter pack, once per Telegram ID
+DAILY_BONUS = 20                # first open of the day (Moscow date)
+INSURANCE_AMOUNT = 200          # once a week if balance < threshold and no open positions
+INSURANCE_THRESHOLD = 50
+INSURANCE_PERIOD_DAYS = 7
+TRADE_LIMIT_SHARE = "0.20"      # one trade: at most 20% of balance...
+MAX_TRADE = 200                 # ...and at most this
+MARKET_CAP = 500                # invested in one market at most
+MARKET_CREATION_COST = 100      # subsidy for the market maker, covers b*ln2
+LMSR_DEFAULT_B = 144            # 144 * ln 2 ~= 99.8 <= MARKET_CREATION_COST
+TRADE_FEE = "0.02"              # of every trade; held in the market until it is settled
+CREATOR_FEE_SHARE = "0.5"       # the creator's part of the fee; the rest burns
+DISPUTE_COST = 20               # refunded if the dispute is upheld
+DISPUTE_WINDOW_HOURS = 24
+RESOLUTION_TIMEOUT_HOURS = 72   # creator silent this long after resolves_at -> market is cancelled
+MARKETS_PER_DAY = 3
+MARKET_MIN_HOURS = 1
+MARKET_MAX_DAYS = 365
+COMPLAINTS_TO_HIDE = 3
+MAX_BET = MAX_TRADE             # legacy name used by the old server-rendered pages
 AB_BASE_RATE = 0.25
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "").lstrip("@")
+TELEGRAM_APP_NAME = os.environ.get("TELEGRAM_APP_NAME", "app")  # short name of the Mini App in BotFather
+TELEGRAM_INIT_DATA_MAX_AGE = 24 * 3600
 SITE_URL = os.environ.get("SITE_URL", "http://127.0.0.1:8000").rstrip("/")
 EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
@@ -101,3 +120,6 @@ EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "1") == "1"
 EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "0") == "1"
 EMAIL_TIMEOUT = 15
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@localhost")
+
+MEDIA_URL = "/media/"
+MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT", BASE_DIR / "media"))
