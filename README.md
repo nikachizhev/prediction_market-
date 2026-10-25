@@ -55,10 +55,62 @@ docker compose up -d --wait
 | `SITE_URL` | Адрес сайта в письмах и Telegram-ссылках |
 | `GITHUB_TOKEN` | Необязательный токен GitHub API |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` | Токен и имя бота без `@` |
+| `TELEGRAM_APP_NAME` | Short name Mini App из BotFather (`t.me/<бот>/<app>`), по умолчанию `app` |
+| `MEDIA_ROOT` | Папка для фото-доказательств, по умолчанию `media/` |
 
 Приложение использует PostgreSQL. Модели описаны в `market/models.py`, изменения схемы — в `market/migrations/`. Миграции хранятся в Git; после обновления проекта выполняйте `manage.py migrate`.
 
 Если открываете письма или Telegram на телефоне, `SITE_URL=http://127.0.0.1:8000` не подойдёт: укажите доступный этому устройству адрес. `runserver` — сервер разработки, для публикации нужен отдельный сервер приложения и настройка HTTPS.
+
+## Mini App в Telegram
+
+Mini App — это SPA из папки `miniapp/` (React + Vite + TypeScript). Django отдаёт собранное приложение по адресу `SITE_URL/app/`, API — по `/api/` (контракт — [docs/api.md](docs/api.md)). Нужен Node.js 18+.
+
+**1. Сборка и данные.**
+
+```powershell
+cd miniapp
+npm install
+npm run build
+cd ..
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py seed_miniapp --reset
+```
+
+`seed_miniapp` создаёт 7 демо-рынков с недельной историей сделок. После изменений во фронтенде снова выполните `npm run build`.
+
+**2. HTTPS-туннель.** Telegram открывает Mini App только по HTTPS. Для разработки подойдёт туннель к локальному серверу, например:
+
+```powershell
+ssh -R 80:localhost:8000 nokey@localhost.run
+```
+
+Туннель печатает адрес вида `https://xxxx.lhr.life`. Укажите его в `.env` как `SITE_URL` и перезапустите сервер. Бесплатный адрес меняется при каждом перезапуске туннеля.
+
+**3. BotFather.** Используйте отдельного тестового бота, не боевого. Команда `/newapp` → ваш бот → название, описание, картинка 640×360 → Web App URL `https://<адрес>/app/` → short name `app` (как `TELEGRAM_APP_NAME`). При смене адреса: `/myapps` → бот → Edit Web App URL.
+
+**4. Запуск** — каждая команда в своём терминале:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py runserver
+.\.venv\Scripts\python.exe manage.py setup_bot
+.\.venv\Scripts\python.exe manage.py run_telegram_bot
+.\.venv\Scripts\python.exe manage.py run_worker
+```
+
+`setup_bot` достаточно выполнить один раз после смены `SITE_URL`. `run_worker` раз в минуту закрывает приём прогнозов, спрашивает создателей об итоге, шлёт напоминания, отменяет рынки без итога через 72 часа, завершает окно спора и рассылает выплаты.
+
+Откройте бота, нажмите `/start` → «Открыть приложение» или откройте ссылку `t.me/<бот>/app`.
+
+**Разработка без Telegram.** Сервер принимает только подписанные Telegram данные, поэтому для браузера подпишите тестовые данные токеном из `.env` и запустите Vite (он проксирует `/api` на `127.0.0.1:8000`):
+
+```powershell
+.\.venv\Scripts\python.exe manage.py make_init_data --first-name Тест
+```
+
+Выведенную строку положите в `miniapp/.env.local` как `VITE_DEV_INIT_DATA=...`, затем в папке `miniapp` выполните `npm run dev`. Строка действует 24 часа.
+
+**Модерация.** Споры решаются в админке (`/admin/`): раздел «Вопросы», фильтр «Разрешение: Спор у модератора», действия «Решение по спору: ДА / НЕТ / отменить рынок». Рынок, скрытый после трёх жалоб, возвращается действием «Вернуть скрытый жалобами рынок в ленту».
 
 ## Почта Mail.ru
 
