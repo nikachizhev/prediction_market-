@@ -18,7 +18,7 @@ def message(text, chat_id=456):
 def test_register_in_bot_then_login_and_replay(client, mailoutbox):
     with patch("market.telegram.send") as send:
         handle_update(message("/start"))
-        assert "Зарегистрироваться" in str(send.call_args)
+        assert send.call_args.kwargs["reply_markup"]["inline_keyboard"][0][0]["web_app"]
         handle_update(message("Зарегистрироваться"))
         handle_update(message("Катя"))
         handle_update(message("invalid"))
