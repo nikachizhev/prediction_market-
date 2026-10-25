@@ -123,3 +123,4 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "no
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT", BASE_DIR / "media"))
+MINIAPP_DIST = Path(os.environ.get("MINIAPP_DIST", BASE_DIR / "miniapp" / "dist"))
