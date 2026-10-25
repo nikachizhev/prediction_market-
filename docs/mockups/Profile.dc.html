@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Профиль и статистика</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; display: flex; flex-direction: column; background: {{t.bg}}; color: {{t.ink}}; font-family: Inter, system-ui, -apple-system, sans-serif">
+
+  <main style="flex: 1; overflow-y: auto; scrollbar-width: none; padding: 16px 16px 16px; display: flex; flex-direction: column; gap: 12px">
+    <header style="display: flex; align-items: center; gap: 14px; padding: 4px 0 4px">
+      <span style="width: 64px; height: 64px; border-radius: 999px; background: {{t.yesTint}}; color: {{t.yes}}; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700">СМ</span>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1 style="margin: 0; font-size: 22px; font-weight: 700">Саша М.</h1>
+        <span style="font-size: 13px; color: {{t.sub}}">В рейтинге: Капибара · с октября 2026</span>
+      </div>
+    </header>
+
+    <section aria-label="Баланс" style="background: {{t.card}}; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between">
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="font-size: 13px; color: {{t.sub}}">Баланс</span>
+          <span style="display: flex; align-items: center; gap: 8px; font-size: 32px; line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="{{t.gold}}" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4"></circle></svg>
+            {{balShown}}
+          </span>
+        </div>
+        <span style="font-size: 13px; font-weight: 600; color: {{t.sub}}">{{balWhen}}</span>
+      </div>
+      <svg width="358" height="140" viewBox="0 0 358 140" role="img" aria-label="Баланс за 30 дней: с 1 000 до 1 240" onPointerMove="{{onScrub}}" onPointerLeave="{{endScrub}}" style="display: block; max-width: 100%; height: auto; touch-action: none">
+        <line x1="0" y1="92.5" x2="318" y2="92.5" stroke="{{t.line}}" stroke-width="1"></line>
+        <line x1="0" y1="65" x2="318" y2="65" stroke="{{t.line}}" stroke-width="1"></line>
+        <line x1="0" y1="37.5" x2="318" y2="37.5" stroke="{{t.line}}" stroke-width="1"></line>
+        <text x="358" y="96.5" text-anchor="end" font-size="11" fill="{{t.sub}}">1 000</text>
+        <text x="358" y="69" text-anchor="end" font-size="11" fill="{{t.sub}}">1 100</text>
+        <text x="358" y="41.5" text-anchor="end" font-size="11" fill="{{t.sub}}">1 200</text>
+        <path d="{{balLine}}" fill="none" stroke="{{t.yes}}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+        <circle cx="{{balEndX}}" cy="{{balEndY}}" r="4" fill="{{t.yes}}" stroke="{{t.card}}" stroke-width="2" opacity="{{balEndOp}}"></circle>
+        <g opacity="{{bh.op}}">
+          <line x1="{{bh.x}}" y1="6" x2="{{bh.x}}" y2="120" stroke="{{t.sub}}" stroke-width="1" stroke-dasharray="3 3"></line>
+          <circle cx="{{bh.x}}" cy="{{bh.y}}" r="4" fill="{{t.yes}}" stroke="{{t.card}}" stroke-width="2"></circle>
+        </g>
+        <text x="0" y="136" font-size="11" fill="{{t.sub}}">30 дней назад</text>
+        <text x="318" y="136" text-anchor="end" font-size="11" fill="{{t.sub}}">сегодня</text>
+      </svg>
+    </section>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+      <div style="background: {{t.card}}; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 12px; color: {{t.sub}}">Прибыль</span>
+        <span style="font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums">+312</span>
+        <span style="font-size: 12px; color: {{t.sub}}">без бонусов</span>
+      </div>
+      <div style="background: {{t.card}}; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 12px; color: {{t.sub}}">Точность</span>
+        <span style="font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums">64%</span>
+        <span style="font-size: 12px; color: {{t.sub}}">30 из 47 верно</span>
+      </div>
+      <div style="background: {{t.card}}; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 12px; color: {{t.sub}}">Место</span>
+        <span style="font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums">18</span>
+        <span style="font-size: 12px; color: {{t.sub}}">по прибыли</span>
+      </div>
+      <div style="background: {{t.card}}; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 12px; color: {{t.sub}}">Создано рынков</span>
+        <span style="font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums">3</span>
+        <span style="font-size: 12px; color: {{t.sub}}">0 проигранных споров</span>
+      </div>
+    </div>
+
+    <section aria-label="Калибровка" style="background: {{t.card}}; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600">Насколько точны твои вероятности</h2>
+      <p style="margin: 0; font-size: 13px; line-height: 1.4; color: {{t.sub}}">Чем ближе точки к пунктиру, тем честнее твои оценки. Выше пунктира — ты недооцениваешь, ниже — переоцениваешь.</p>
+      <svg width="358" height="232" viewBox="0 0 358 232" role="img" aria-label="Калибровка: покупки по 10% сбылись в 13%, по 30% — в 25%, по 50% — в 50%, по 70% — в 67%, по 90% — в 90%" style="display: block; max-width: 100%; height: auto">
+        <line x1="36" y1="145" x2="340" y2="145" stroke="{{t.line}}" stroke-width="1"></line>
+        <line x1="36" y1="100" x2="340" y2="100" stroke="{{t.line}}" stroke-width="1"></line>
+        <line x1="36" y1="55" x2="340" y2="55" stroke="{{t.line}}" stroke-width="1"></line>
+        <line x1="36" y1="190" x2="340" y2="190" stroke="{{t.sub}}" stroke-width="1"></line>
+        <text x="28" y="194" text-anchor="end" font-size="11" fill="{{t.sub}}">0%</text>
+        <text x="28" y="104" text-anchor="end" font-size="11" fill="{{t.sub}}">50%</text>
+        <text x="28" y="14" text-anchor="end" font-size="11" fill="{{t.sub}}">100%</text>
+        <text x="36" y="206" text-anchor="middle" font-size="11" fill="{{t.sub}}">0%</text>
+        <text x="188" y="206" text-anchor="middle" font-size="11" fill="{{t.sub}}">50%</text>
+        <text x="340" y="206" text-anchor="end" font-size="11" fill="{{t.sub}}">100%</text>
+        <text x="188" y="226" text-anchor="middle" font-size="11" fill="{{t.sub}}">цена, по которой покупал → как часто сбывалось</text>
+        <line x1="36" y1="190" x2="340" y2="10" stroke="{{t.sub}}" stroke-width="1" stroke-dasharray="4 4"></line>
+        <path d="{{calLine}}" fill="none" stroke="{{t.yes}}" stroke-width="2" stroke-linejoin="round" stroke-opacity="0.5"></path>
+        <sc-for list="{{cal}}" as="c" hint-placeholder-count="5">
+          <circle cx="{{c.x}}" cy="{{c.y}}" r="5" fill="{{t.yes}}" stroke="{{t.card}}" stroke-width="2"></circle>
+          <circle cx="{{c.x}}" cy="{{c.y}}" r="16" fill="transparent" onPointerEnter="{{c.enter}}" onPointerLeave="{{c.leave}}" style="cursor: pointer"></circle>
+        </sc-for>
+        <g opacity="{{ch.op}}" pointer-events="none">
+          <rect x="{{ch.boxX}}" y="{{ch.boxY}}" width="164" height="40" rx="8" fill="{{t.ink}}"></rect>
+          <text x="{{ch.textX}}" y="{{ch.l1Y}}" font-size="12" font-weight="700" fill="{{t.card}}">{{ch.l1}}</text>
+          <text x="{{ch.textX}}" y="{{ch.l2Y}}" font-size="11" fill="{{t.card}}">{{ch.l2}}</text>
+        </g>
+      </svg>
+    </section>
+
+    <section aria-label="Лучший прогноз" style="background: {{t.card}}; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.02em; color: {{t.sub}}">ЛУЧШИЙ ПРОГНОЗ</span>
+      <span style="font-size: 15px; line-height: 1.3; font-weight: 600">Отменят ли пары 31 октября?</span>
+      <div style="display: flex; align-items: center; justify-content: space-between; font-size: 14px">
+        <span style="color: {{t.sub}}">Купил ДА по 12% — сбылось</span>
+        <span style="font-weight: 700; color: {{t.yes}}">+218</span>
+      </div>
+      <button style="height: 40px; margin-top: 4px; border: 1px solid {{t.line}}; border-radius: 12px; background: transparent; color: {{t.ink}}; font: 600 14px/1 Inter, system-ui, sans-serif; cursor: pointer">Поделиться в истории</button>
+    </section>
+
+    <section aria-label="Пригласить друга" style="background: {{t.card}}; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600">Пригласи друга</h2>
+      <p style="margin: 0; font-size: 13px; line-height: 1.4; color: {{t.sub}}">По 300 монет вам обоим, когда друг сделает 5 прогнозов. Приглашено 3 · получено 600.</p>
+      <div style="display: flex; gap: 8px">
+        <label for="ref-link" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap">Твоя ссылка</label>
+        <input id="ref-link" readonly value="t.me/[бот]/app?startapp=ref_7Q2K" style="flex: 1; min-width: 0; box-sizing: border-box; height: 44px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.bg}}; color: {{t.ink}}; font: 400 14px/1 Inter, system-ui, sans-serif">
+        <button onClick="{{copy}}" style="height: 44px; padding: 0 16px; border: none; border-radius: 12px; background: {{t.ink}}; color: {{t.card}}; font: 600 14px/1 Inter, system-ui, sans-serif; cursor: pointer">{{copyLabel}}</button>
+      </div>
+    </section>
+
+    <nav aria-label="Настройки" style="background: {{t.card}}; border-radius: 16px; padding: 0 16px; display: flex; flex-direction: column">
+      <sc-for list="{{settings}}" as="st" hint-placeholder-count="3">
+        <button style="display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 0; border: none; border-top: 1px solid {{st.line}}; background: transparent; color: {{t.ink}}; text-align: left; cursor: pointer; font-family: Inter, system-ui, sans-serif">
+          <span style="flex: 1; font-size: 15px; font-weight: 500">{{st.label}}</span>
+          <span style="font-size: 14px; color: {{t.sub}}">{{st.value}}</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{t.sub}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"></path></svg>
+        </button>
+      </sc-for>
+    </nav>
+  </main>
+
+  <div style="flex: 0 0 auto">
+    <dc-import name="TabBar" active="profile" dark="{{dark}}" hint-size="390px,72px"></dc-import>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Тема"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { bhi: null, chi: null, copied: false };
+  }
+
+  componentWillUnmount() {
+    clearTimeout(this.copyTimer);
+  }
+
+  theme() {
+    if (this.props.dark ?? false) {
+      return { bg: '#0E1014', card: '#181B21', ink: '#F1F3F5', sub: '#9AA3AE', line: '#2A2E36', yes: '#7DB0FF', yesTint: '#1E2A3C', gold: '#F2B632' };
+    }
+    return { bg: '#F2F3F5', card: '#FFFFFF', ink: '#111418', sub: '#5F6672', line: '#E3E5E8', yes: '#1A5FB8', yesTint: '#E7EFFA', gold: '#D99A00' };
+  }
+
+  renderVals() {
+    const t = this.theme();
+    const s = this.state;
+
+    const bal = [1000, 1000, 980, 1010, 1035, 1020, 990, 1040, 1065, 1050, 1080, 1110, 1095, 1060, 1090, 1120, 1150, 1130, 1170, 1160, 1195, 1180, 1210, 1190, 1225, 1250, 1230, 1215, 1245, 1240];
+    const n = bal.length;
+    const BX = (i) => i * 318 / (n - 1);
+    const BY = (v) => 120 - (v - 900) / 400 * 110;
+    const balLine = 'M' + bal.map((v, i) => BX(i).toFixed(1) + ' ' + BY(v).toFixed(1)).join(' L');
+    const hasB = s.bhi !== null;
+    const bi = hasB ? s.bhi : n - 1;
+    const daysAgo = n - 1 - bi;
+
+    const cal = [
+      { x: 10, hit: 1, n: 8 }, { x: 30, hit: 2, n: 8 }, { x: 50, hit: 6, n: 12 }, { x: 70, hit: 6, n: 9 }, { x: 90, hit: 9, n: 10 }
+    ];
+    const CX = (x) => 36 + x / 100 * 304;
+    const CY = (r) => 190 - r * 180;
+    const calPts = cal.map((c) => ({ x: CX(c.x), y: CY(c.hit / c.n) }));
+    let ch = { op: 0, boxX: 0, boxY: 0, textX: 0, l1Y: 0, l2Y: 0, l1: '', l2: '' };
+    if (s.chi !== null) {
+      const c = cal[s.chi];
+      const px = calPts[s.chi].x, py = calPts[s.chi].y;
+      const boxX = Math.min(Math.max(px - 82, 0), 358 - 164);
+      const boxY = py - 52 < 0 ? py + 14 : py - 52;
+      ch = {
+        op: 1, boxX: boxX, boxY: boxY, textX: boxX + 10, l1Y: boxY + 16, l2Y: boxY + 31,
+        l1: 'Покупал по ~' + c.x + '%',
+        l2: 'сбылось ' + c.hit + ' из ' + c.n + ' (' + Math.round(c.hit / c.n * 100) + '%)'
+      };
+    }
+
+    return {
+      t: t, dark: this.props.dark ?? false,
+      balShown: bal[bi].toLocaleString('ru-RU'),
+      balWhen: hasB ? (daysAgo === 0 ? 'сегодня' : daysAgo + ' дн. назад') : '+240 за 30 дней',
+      balLine: balLine,
+      balEndX: BX(n - 1), balEndY: BY(bal[n - 1]), balEndOp: hasB ? 0 : 1,
+      bh: hasB ? { op: 1, x: BX(bi), y: BY(bal[bi]) } : { op: 0, x: 0, y: 0 },
+      onScrub: (e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        const fx = (e.clientX - r.left) / r.width * 358;
+        const i = Math.max(0, Math.min(n - 1, Math.round(fx / 318 * (n - 1))));
+        if (i !== this.state.bhi) this.setState({ bhi: i });
+      },
+      endScrub: () => this.setState({ bhi: null }),
+      calLine: 'M' + calPts.map((p) => p.x.toFixed(1) + ' ' + p.y.toFixed(1)).join(' L'),
+      cal: calPts.map((p, i) => ({ x: p.x, y: p.y, enter: () => this.setState({ chi: i }), leave: () => this.setState({ chi: null }) })),
+      ch: ch,
+      copyLabel: s.copied ? 'Скопировано' : 'Копировать',
+      copy: () => {
+        clearTimeout(this.copyTimer);
+        this.setState({ copied: true });
+        this.copyTimer = setTimeout(() => this.setState({ copied: false }), 1800);
+      },
+      settings: [
+        { label: 'Уведомления', value: '4 из 5' },
+        { label: 'Как меня видят в рейтинге', value: 'Псевдоним' },
+        { label: 'История операций', value: '' }
+      ].map((x, i) => Object.assign({}, x, { line: i === 0 ? 'transparent' : t.line }))
+    };
+  }
+}
+</script>
+</body>
+</html>

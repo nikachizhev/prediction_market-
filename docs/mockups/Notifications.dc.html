@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Уведомления</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; display: flex; flex-direction: column; background: {{t.bg}}; color: {{t.ink}}; font-family: Inter, system-ui, -apple-system, sans-serif">
+
+  <header style="flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 6px 8px">
+    <a href="Main.dc.html" aria-label="Назад к ленте" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: {{t.ink}}">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+    </a>
+    <span style="font-size: 16px; font-weight: 600">Уведомления</span>
+    <button onClick="{{readAll}}" disabled="{{readAllDisabled}}" style="height: 44px; padding: 0 8px; border: none; background: transparent; color: {{readAllInk}}; font: 600 14px/1 Inter, system-ui, sans-serif; cursor: pointer">Прочитать все</button>
+  </header>
+
+  <nav aria-label="Фильтр" style="flex: 0 0 auto; display: flex; gap: 8px; overflow-x: auto; padding: 4px 16px 12px; scrollbar-width: none">
+    <sc-for list="{{filters}}" as="f" hint-placeholder-count="4">
+      <button onClick="{{f.pick}}" aria-pressed="{{f.pressed}}" style="flex: 0 0 auto; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid {{f.border}}; background: {{f.bg}}; color: {{f.ink}}; font: 500 14px/1 Inter, system-ui, sans-serif; cursor: pointer">{{f.label}}</button>
+    </sc-for>
+  </nav>
+
+  <main style="flex: 1; overflow-y: auto; scrollbar-width: none; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 8px">
+    <sc-for list="{{groups}}" as="g" hint-placeholder-count="2">
+      <h2 style="margin: 8px 4px 0; font-size: 13px; font-weight: 600; color: {{t.sub}}">{{g.title}}</h2>
+      <div style="background: {{t.card}}; border-radius: 16px; display: flex; flex-direction: column">
+        <sc-for list="{{g.items}}" as="it" hint-placeholder-count="3">
+          <div style="display: flex; gap: 12px; padding: 14px 16px; border-top: 1px solid {{it.line}}; background: {{it.bg}}; border-radius: {{it.radius}}">
+            <span style="width: 36px; height: 36px; flex: 0 0 auto; border-radius: 999px; background: {{it.iconBg}}; color: {{it.iconInk}}; display: flex; align-items: center; justify-content: center">
+              <sc-if value="{{it.isWin}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></sc-if>
+              <sc-if value="{{it.isMove}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l5-5 4 3 7-8"></path><path d="M15 7h5v5"></path></svg></sc-if>
+              <sc-if value="{{it.isTask}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path></svg></sc-if>
+              <sc-if value="{{it.isPeople}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="8.5" r="3.5"></circle><path d="M3 19c1-3.2 3.3-5 6-5s5 1.8 6 5"></path><path d="M16 5.5a3.5 3.5 0 0 1 0 6.5M18 14.5c1.5.7 2.5 2.2 3 4.5"></path></svg></sc-if>
+              <sc-if value="{{it.isCoin}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4"></circle></svg></sc-if>
+            </span>
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px">
+              <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px">
+                <span style="font-size: 14px; line-height: 1.4"><b>{{it.title}}</b> {{it.text}}</span>
+                <sc-if value="{{it.unread}}" hint-placeholder-val="{{ false }}">
+                  <span aria-label="Не прочитано" style="width: 8px; height: 8px; margin-top: 6px; flex: 0 0 auto; border-radius: 999px; background: {{t.yesFill}}"></span>
+                </sc-if>
+              </div>
+              <span style="font-size: 12px; color: {{t.sub}}">{{it.time}}</span>
+              <sc-if value="{{it.hasAction}}" hint-placeholder-val="{{ false }}">
+                <a href="{{it.href}}" style="align-self: flex-start; height: 36px; padding: 0 14px; border-radius: 10px; background: {{it.actionBg}}; color: {{it.actionInk}}; display: flex; align-items: center; text-decoration: none; font-size: 14px; font-weight: 600">{{it.action}}</a>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-for>
+    <sc-if value="{{empty}}" hint-placeholder-val="{{ false }}">
+      <div style="padding: 48px 24px; text-align: center; font-size: 15px; color: {{t.sub}}">Здесь пока пусто</div>
+    </sc-if>
+    <p style="margin: 8px 4px 0; font-size: 13px; line-height: 1.4; color: {{t.sub}}">Самое важное — выигрыши, итоги и напоминания — приходит ещё и в бота. Что присылать, настраивается в профиле.</p>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Тема"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { filter: 'all', read: {} };
+  }
+
+  theme() {
+    if (this.props.dark ?? false) {
+      return { bg: '#0E1014', card: '#181B21', ink: '#F1F3F5', sub: '#9AA3AE', line: '#2A2E36', yes: '#7DB0FF', yesTint: '#1E2A3C', no: '#FF9E6B', noTint: '#33241D', yesFill: '#1F6FD6', gold: '#F2B632', goldTint: '#3A3020', unreadBg: '#1B212B' };
+    }
+    return { bg: '#F2F3F5', card: '#FFFFFF', ink: '#111418', sub: '#5F6672', line: '#E3E5E8', yes: '#1A5FB8', yesTint: '#E7EFFA', no: '#B23A0B', noTint: '#FBEDE6', yesFill: '#1F6FD6', gold: '#8A6100', goldTint: '#FBF1D9', unreadBg: '#F6F9FE' };
+  }
+
+  renderVals() {
+    const t = this.theme();
+    const s = this.state;
+    const all = [
+      { id: 'n1', day: 'Сегодня', kind: 'mine', icon: 'task', unread: true, title: 'Пора указать итог:', text: '«Пройдёт ли хакатон без ночёвки в универе?» Осталось 52 ч, 41 участник ждёт.', time: '12:00', action: 'Указать итог в боте', href: 'Bot.dc.html', strong: true },
+      { id: 'n2', day: 'Сегодня', kind: 'pay', icon: 'win', unread: true, title: 'Ты угадал! +218', text: '«Отменят ли пары 31 октября?» закрылся с итогом ДА.', time: '10:15' },
+      { id: 'n3', day: 'Сегодня', kind: 'markets', icon: 'move', unread: true, title: 'Снег до 1 декабря:', text: 'вероятность выросла до 64% (▲ 9 за сутки). У тебя НЕТ на 120.', time: '09:40', action: 'Открыть рынок', href: 'Market.dc.html' },
+      { id: 'n4', day: 'Сегодня', kind: 'chats', icon: 'people', unread: false, title: 'Группа ПИ-24:', text: 'новый рынок «Перенесут ли коллоквиум по алгоритмам?»', time: '08:02', action: 'Перейти в чат', href: 'Chat.dc.html' },
+      { id: 'n5', day: 'Вчера', kind: 'pay', icon: 'people', unread: false, title: 'Енот сделал 5 прогнозов —', text: 'вам обоим по +300 монет за приглашение.', time: '21:30' },
+      { id: 'n6', day: 'Вчера', kind: 'markets', icon: 'task', unread: false, title: 'Через 24 часа', text: 'закрывается приём прогнозов: «Сдадим матан всей группой без пересдач?»', time: '18:00' },
+      { id: 'n7', day: 'Вчера', kind: 'mine', icon: 'move', unread: false, title: 'Итог оспорили:', text: '«Сдадим лабы до дедлайна?» — модератор разберёт спор до завтра.', time: '14:12' },
+      { id: 'n8', day: 'Вчера', kind: 'pay', icon: 'coin', unread: false, title: 'Бонус дня +20', text: 'зачислен. Серия: 4 дня подряд.', time: '09:05' }
+    ];
+    const kinds = { all: null, mine: 'mine', pay: 'pay', markets: 'markets', chats: 'chats' };
+    const list = all.filter((n) => !kinds[s.filter] || n.kind === kinds[s.filter]);
+    const iconStyle = {
+      win: { bg: t.yesTint, ink: t.yes }, move: { bg: t.yesTint, ink: t.yes }, task: { bg: t.goldTint, ink: t.gold },
+      people: { bg: t.bg, ink: t.ink }, coin: { bg: t.goldTint, ink: t.gold }
+    };
+    const days = ['Сегодня', 'Вчера'];
+    const groups = days.map((day) => {
+      const items = list.filter((n) => n.day === day);
+      return {
+        title: day,
+        items: items.map((n, i) => {
+          const unread = n.unread && !s.read[n.id];
+          const first = i === 0, last = i === items.length - 1;
+          return {
+            title: n.title, text: n.text, time: n.time, unread: unread,
+            isWin: n.icon === 'win', isMove: n.icon === 'move', isTask: n.icon === 'task', isPeople: n.icon === 'people', isCoin: n.icon === 'coin',
+            iconBg: iconStyle[n.icon].bg, iconInk: iconStyle[n.icon].ink,
+            hasAction: !!n.action, action: n.action || '', href: n.href || '#',
+            actionBg: n.strong ? t.ink : t.bg, actionInk: n.strong ? t.card : t.ink,
+            line: first ? 'transparent' : t.line,
+            bg: unread ? t.unreadBg : 'transparent',
+            radius: (first ? '16px 16px ' : '0 0 ') + (last ? '16px 16px' : '0 0')
+          };
+        })
+      };
+    }).filter((g) => g.items.length > 0);
+    const unreadCount = all.filter((n) => n.unread && !s.read[n.id]).length;
+
+    return {
+      t: t,
+      filters: [['all', 'Все'], ['mine', 'Мои рынки'], ['pay', 'Выплаты'], ['markets', 'Слежу'], ['chats', 'Чаты']].map(([k, label]) => {
+        const on = k === s.filter;
+        return { label: label, pressed: on ? 'true' : 'false', bg: on ? t.ink : t.card, ink: on ? t.card : t.ink, border: on ? t.ink : t.line, pick: () => this.setState({ filter: k }) };
+      }),
+      groups: groups, empty: groups.length === 0,
+      readAll: () => {
+        const read = {};
+        all.forEach((n) => { read[n.id] = true; });
+        this.setState({ read: read });
+      },
+      readAllDisabled: unreadCount === 0,
+      readAllInk: unreadCount === 0 ? t.sub : t.yes
+    };
+  }
+}
+</script>
+</body>
+</html>
