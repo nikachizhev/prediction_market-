@@ -112,6 +112,31 @@ ngrok http --url=<ваш-домен>.ngrok-free.dev 8000
 
 **Модерация.** Споры решаются в админке (`/admin/`): раздел «Вопросы», фильтр «Разрешение: Спор у модератора», действия «Решение по спору: ДА / НЕТ / отменить рынок». Рынок, скрытый после трёх жалоб, возвращается действием «Вернуть скрытый жалобами рынок в ленту».
 
+## Деплой на сервер
+
+Продакшен работает на VPS с Ubuntu 26.04. Caddy выпускает HTTPS-сертификат и проксирует запросы в gunicorn, Postgres запущен в Docker, бот и фоновый воркер — сервисы systemd. Все файлы лежат в `deploy/`, код сервер берёт из ветки `miniapp` на GitHub.
+
+Первая настройка (на сервере, под root). Вместо `<host>` подставьте имя сервера: подойдёт бесплатное `<ip-через-дефисы>.sslip.io`, например `91-108-241-25.sslip.io`.
+
+```bash
+apt-get update && apt-get install -y git
+git clone -b miniapp https://github.com/nikachizhev/prediction_market-.git /opt/prediction_market/app
+bash /opt/prediction_market/app/deploy/setup-server.sh <host>
+nano /opt/prediction_market/app/.env          # TELEGRAM_BOT_TOKEN и TELEGRAM_BOT_USERNAME
+bash /opt/prediction_market/app/deploy/update.sh
+sudo -u pm /opt/prediction_market/venv/bin/python /opt/prediction_market/app/manage.py setup_bot
+```
+
+`setup-server.sh` сам создаёт `.env` со случайными `DJANGO_SECRET_KEY` и паролем Postgres. В BotFather для Mini App указывается `https://<host>/app/`.
+
+Обновление: запушьте изменения в `miniapp`, затем выполните (из Windows — в PowerShell, там тоже есть `ssh`):
+
+```bash
+ssh root@<ip> bash /opt/prediction_market/app/deploy/update.sh
+```
+
+Логи: `journalctl -u pm-web -u pm-bot -u pm-worker -f`.
+
 ## Почта Mail.ru
 
 В настройках Mail.ru разрешите доступ внешних приложений и создайте пароль приложения. В `.env` задайте:

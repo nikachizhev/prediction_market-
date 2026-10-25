@@ -1,0 +1,14 @@
+[Unit]
+Description=Prediction market: PostgreSQL (docker compose)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/prediction_market/app
+ExecStart=/usr/bin/docker compose -p prediction_market up -d --wait
+ExecStop=/usr/bin/docker compose -p prediction_market stop
+
+[Install]
+WantedBy=multi-user.target

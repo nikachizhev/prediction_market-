@@ -1,0 +1,15 @@
+[Unit]
+Description=Prediction market: Django (gunicorn)
+Requires=pm-db.service
+After=pm-db.service network-online.target
+
+[Service]
+User=pm
+Group=pm
+WorkingDirectory=/opt/prediction_market/app
+ExecStart=/opt/prediction_market/venv/bin/gunicorn config.wsgi --bind 127.0.0.1:8000 --workers 3 --timeout 60 --access-logfile -
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

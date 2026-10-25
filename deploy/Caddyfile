@@ -1,0 +1,17 @@
+# Installed to /etc/caddy/Caddyfile by setup-server.sh; SITE_HOST is replaced with the real host name.
+# Caddy obtains and renews the Let's Encrypt certificate on its own.
+SITE_HOST {
+	encode gzip
+
+	handle_path /static/* {
+		root * /opt/prediction_market/app/staticfiles
+		file_server
+	}
+	handle_path /media/* {
+		root * /opt/prediction_market/media
+		file_server
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8000
+	}
+}
