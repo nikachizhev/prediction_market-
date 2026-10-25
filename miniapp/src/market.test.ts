@@ -217,6 +217,7 @@ describe('links', () => {
     expect(botChatLink(ref)).toBe('https://t.me/predict_bot');
     expect(botUsername('')).toBeNull();
     expect(botChatLink(undefined)).toBeNull();
+    expect(botChatLink(ref, 'dispute_7')).toBe('https://t.me/predict_bot?start=dispute_7');
   });
 });
 

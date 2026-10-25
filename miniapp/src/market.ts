@@ -303,10 +303,11 @@ export function botUsername(referralLink: string | null | undefined): string | n
   return m ? m[1] : null;
 }
 
-/** Chat with the bot, where the dispute button lives. */
-export function botChatLink(referralLink: string | null | undefined): string | null {
+/** Chat with the bot; with `start`, the bot opens that dialog (e.g. `dispute_<id>`). */
+export function botChatLink(referralLink: string | null | undefined, start?: string): string | null {
   const bot = botUsername(referralLink);
-  return bot ? `https://t.me/${bot}` : null;
+  if (!bot) return null;
+  return start ? `https://t.me/${bot}?start=${encodeURIComponent(start)}` : `https://t.me/${bot}`;
 }
 
 /** Telegram share dialog with the invite link to the app and the question as text. */

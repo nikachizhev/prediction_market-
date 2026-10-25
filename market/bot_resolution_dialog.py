@@ -98,6 +98,11 @@ def start(chat_id, question_id: str) -> None:
     telegram.send(chat_id, f"Рынок «{question.title}»\nЧем закончилось?", reply_markup=outcome_keyboard(question))
 
 
+def start_dispute(chat_id, question_id: str) -> None:
+    """/start dispute_<id> — «Оспорить итог» from the Mini App market card."""
+    _on_dispute(chat_id, None, _question(question_id), None)
+
+
 def handle_message(message: dict) -> bool:
     """Evidence for an active draft. Returns False when the message isn't part of this dialog."""
     user_id = message.get("from", {}).get("id")

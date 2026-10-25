@@ -34,7 +34,7 @@ interface MarketCard {
   change_24h: number;                // в процентных пунктах, со знаком
   spark: number[];                   // вероятность ДА, 7 точек — по одной на день
   participants: number; volume: Money;
-  closes_at: string; status: MarketStatus; outcome: Side | null;
+  closes_at: string; resolves_at: string | null; status: MarketStatus; outcome: Side | null;
   starred: boolean;
   my_side: Side | null;              // куда склоняется моя позиция — «Твой прогноз» в ленте
 }
@@ -46,7 +46,8 @@ interface MarketDetail extends MarketCard {
   author: { display_name: string; photo_url: string | null; resolved: number; disputes_lost: number };
   is_creator: boolean; can_trade: boolean; trade_block: string | null;   // причина, почему ставить нельзя max_amount: Money;   // сколько можно поставить сейчас (лимит сделки, 500 на рынок, баланс)
   my_position: Position | null;
-  trades: { side: Side; amount: Money; prob_after: number; at: string; sell: boolean }[];   // анонимная лента, последние 20
+  b: number;                         // глубина рынка LMSR
+  trades: { side: Side; amount: Money; prob_before: number; prob_after: number; at: string; sell: boolean }[];   // анонимная лента, последние 20
   resolution: { proposed_outcome: Side | "cancel" | null; evidence_url: string | null; note: string; dispute_until: string | null; can_dispute: boolean } | null;
 }
 
@@ -79,4 +80,4 @@ interface LedgerEntry { kind: string; label: string; amount: Money; at: string; 
 | `GET /api/profile` | — | `{me: Me, stats: {profit: Money, accuracy: number \| null, predictions: number, markets_created: number}, balance_history: {t, balance}[], ledger: LedgerEntry[]}` |
 | `POST /api/events` | `{name: "share" \| "onboarding_done" \| "onboarding_skip" \| "open_bot", props?: object}` | `{ok: true}` |
 
-«Указать итог» в «Моих» открывает бота: `https://t.me/<бот>?start=resolve_<id>`.
+«Указать итог» в «Моих» открывает бота: `https://t.me/<бот>?start=resolve_<id>`; «Оспорить итог» — `https://t.me/<бот>?start=dispute_<id>`.

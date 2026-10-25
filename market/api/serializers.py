@@ -140,7 +140,8 @@ def card(question: Question, *, starred: set[int] | None = None, now: datetime |
         "change_24h": round((question.prob - history.at(now - timedelta(days=1))) * 100, 1),
         "spark": [round(p, 4) for p in spark],
         "participants": stats["traders"] or 0, "volume": money(stats["volume"]),
-        "closes_at": iso(question.deadline), "status": market_status(question),
+        "closes_at": iso(question.deadline), "resolves_at": iso(question.resolves_at),
+        "status": market_status(question),
         "outcome": question.outcome, "starred": question.pk in (starred or set()), "my_side": my_side,
     }
 
@@ -188,7 +189,9 @@ def detail(question: Question, trader: Trader) -> dict:
         "max_amount": money(services.max_buy_amount(trader, question)),
         "my_position": position(pos, question),
         # Anonymous: no trader, only side, size and the price it moved to.
-        "trades": [{"side": t.side, "amount": money(abs(t.cost)), "prob_after": round(t.prob_after, 4),
+        "b": question.b,
+        "trades": [{"side": t.side, "amount": money(abs(t.cost)), "prob_before": round(t.prob_before, 4),
+                    "prob_after": round(t.prob_after, 4),
                     "at": iso(t.created_at), "sell": t.cost < 0} for t in trades],
         "resolution": resolution(question, trader),
     })
