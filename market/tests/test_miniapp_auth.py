@@ -91,7 +91,7 @@ def test_existing_bot_account_is_reused_without_second_pack():
 @pytest.mark.django_db
 @override_settings(TELEGRAM_BOT_TOKEN=TOKEN)
 def test_api_view_requires_signed_header():
-    view = api_view(lambda request: JsonResponse({"id": request.trader.telegram_chat_id}))
+    view = api_view(lambda request: JsonResponse({"id": request.trader.telegram_chat_id}), create=True)
     rf = RequestFactory()
     assert view(rf.get("/api/me")).status_code == 401
     # A bare Telegram id without a signature is never accepted.

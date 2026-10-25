@@ -27,11 +27,11 @@ class BadRequest(Exception):
     pass
 
 
-def endpoint(*methods):
+def endpoint(*methods, create: bool = False):
     """Authenticated JSON view; MarketError/BadRequest become 400, unknown market 404."""
     def decorate(view):
         @csrf_exempt
-        @api_view
+        @api_view(create=create)
         def wrapper(request, *args, **kwargs):
             if request.method not in methods:
                 return JsonResponse({"error": "Метод не поддерживается."}, status=405)
@@ -84,7 +84,7 @@ def get_market(trader: Trader, pk: int) -> Question:
 
 # --- account -------------------------------------------------------------------------
 
-@endpoint("POST")
+@endpoint("POST", create=True)
 def session(request):
     trader = request.trader
     granted = []
@@ -160,10 +160,12 @@ def markets(request):
         page = max(1, int(request.GET.get("page", 1)))
     except ValueError:
         page = 1
-    items = list(qs[(page - 1) * PAGE: page * PAGE + 1])
+    total = qs.count()
+    items = list(qs[(page - 1) * PAGE: page * PAGE])
     starred = s.starred_ids(trader)
-    return {"items": [s.card(q, starred=starred, now=now) for q in items[:PAGE]],
-            "next_page": page + 1 if len(items) > PAGE else None}
+    sides = s.my_sides(trader, [q.pk for q in items])
+    return {"items": [s.card(q, starred=starred, now=now, my_side=sides.get(q.pk)) for q in items],
+            "next_page": page + 1 if page * PAGE < total else None, "total": total}
 
 
 def create_market(request):

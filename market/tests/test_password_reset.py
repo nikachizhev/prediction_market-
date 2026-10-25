@@ -46,7 +46,7 @@ def test_unknown_inactive_and_passwordless_accounts_do_not_get_mail(client, mail
 def test_reset_link_expires(client, mailoutbox):
     user = User.objects.create_user("expired", "expired@example.com", "OldPassword-8492!")
     client.post(reverse("market:password_reset"), {"email": user.email})
-    link = re.search(r"http://[^/]+(/password/reset/\S+)", mailoutbox[0].body).group(1)
+    link = re.search(r"https?://[^/]+(/password/reset/\S+)", mailoutbox[0].body).group(1)
     with patch.object(default_token_generator, "_now", return_value=default_token_generator._now() + timedelta(hours=2)):
         assert not client.get(link).context["validlink"]
 

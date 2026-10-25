@@ -69,6 +69,24 @@ def market_by(creator_id, **kw):
     return services.create_market(trader(creator_id), **args)
 
 
+def test_only_session_creates_accounts(client):
+    api = Api(client, 4242)
+    code, data = api.get("me")
+    assert code == 401 and not Trader.objects.filter(telegram_chat_id=4242).exists()
+    assert api.post("session")[0] == 200 and api.get("me")[0] == 200
+
+
+def test_trade_block_reason_and_my_side(anya, boris):
+    m = market_by(1002)
+    _, mine = boris.get(f"markets/{m.pk}")
+    assert not mine["can_trade"] and "Создатель" in mine["trade_block"]
+    anya.post(f"markets/{m.pk}/buy", {"side": "no", "amount": 20, "request_key": str(uuid.uuid4())})
+    _, feed = anya.get("markets")
+    assert feed["total"] == 1 and feed["items"][0]["my_side"] == "no"
+    _, detail = anya.get(f"markets/{m.pk}")
+    assert detail["can_trade"] and detail["trade_block"] is None and detail["my_side"] == "no"
+
+
 def test_unsigned_requests_rejected(client):
     assert client.get("/api/me").status_code == 401
     assert client.get("/api/me", HTTP_AUTHORIZATION="tma user=%7B%22id%22%3A1%7D").status_code == 401
@@ -187,7 +205,9 @@ def test_star_and_mine(anya, boris):
 def test_three_complaints_hide_market(client, boris):
     m = market_by(1002)
     for uid in (2001, 2002, 2002, 2003):
-        Api(client, uid).post(f"markets/{m.pk}/report", {"reason": "спам"})
+        reporter = Api(client, uid)
+        reporter.post("session")
+        reporter.post(f"markets/{m.pk}/report", {"reason": "спам"})
     m.refresh_from_db()
     assert m.hidden_at and m.complaints.count() == 3
     assert boris.get("markets")[1]["items"] == []
