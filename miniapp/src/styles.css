@@ -1,0 +1,302 @@
+/* Theme tokens from theme() in docs/mockups/Main.dc.html. theme.ts sets them at
+   runtime from Telegram's colorScheme; these defaults avoid a flash before JS runs. */
+:root {
+  --bg: #F2F3F5;
+  --card: #FFFFFF;
+  --ink: #111418;
+  --sub: #5F6672;
+  --line: #E3E5E8;
+  --yes: #1A5FB8;
+  --yes-tint: #E7EFFA;
+  --no: #B23A0B;
+  --no-tint: #FBEDE6;
+  --yes-fill: #1F6FD6;
+  --no-fill: #C2410C;
+  --gold: #D99A00;
+  --overlay: rgba(17, 20, 24, 0.45);
+  --tab: #FFFFFF;
+
+  --font: Inter, system-ui, -apple-system, sans-serif;
+  --radius-card: 16px;
+  --radius-control: 12px;
+  --gutter: 16px;
+  --tabbar-height: 72px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0E1014;
+    --card: #181B21;
+    --ink: #F1F3F5;
+    --sub: #9AA3AE;
+    --line: #2A2E36;
+    --yes: #7DB0FF;
+    --yes-tint: #1E2A3C;
+    --no: #FF9E6B;
+    --no-tint: #33241D;
+    --gold: #F2B632;
+    --overlay: rgba(0, 0, 0, 0.6);
+    --tab: #14171C;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+h1 {
+  margin: 0;
+}
+
+.sub {
+  color: var(--sub);
+}
+
+/* ---- Layout ---- */
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.screen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px var(--gutter) 8px;
+}
+
+.screen-title {
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.screen-body {
+  padding: 12px var(--gutter) 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  background: var(--card);
+  border-radius: var(--radius-card);
+  padding: 14px 16px 16px;
+}
+
+.session-error {
+  padding: 48px var(--gutter);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.button-primary {
+  height: 52px;
+  padding: 0 24px;
+  border: none;
+  border-radius: 14px;
+  background: var(--yes-fill);
+  color: #FFFFFF;
+  font-weight: 600;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+/* ---- Balance ---- */
+
+.balance-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px 0 10px;
+  border-radius: 999px;
+  background: var(--card);
+  font-weight: 700;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Tab bar (docs/mockups/TabBar.dc.html) ---- */
+
+.tabbar {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
+  height: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
+  padding: 0 8px calc(8px + env(safe-area-inset-bottom));
+  background: var(--tab);
+  border-top: 1px solid var(--line);
+}
+
+.tab {
+  height: 56px;
+  text-decoration: none;
+  color: var(--sub);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tab.active {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.tab-create {
+  width: 40px;
+  height: 32px;
+  border-radius: 12px;
+  background: var(--ink);
+  color: var(--card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- Skeleton ---- */
+
+.skeleton {
+  display: block;
+  background: linear-gradient(90deg, var(--line) 0%, var(--bg) 50%, var(--line) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* ---- Bottom sheet ---- */
+
+.sheet-root {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+
+.sheet-overlay {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  background: var(--overlay);
+  cursor: pointer;
+  transition: opacity 220ms ease;
+}
+
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 90%;
+  overflow-y: auto;
+  background: var(--card);
+  border-radius: 20px 20px 0 0;
+  padding: 0 20px calc(24px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sheet-grip {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+  touch-action: none;
+  cursor: grab;
+}
+
+.sheet-grip span {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+/* ---- Toast ---- */
+
+.toast {
+  position: fixed;
+  top: 12px;
+  left: var(--gutter);
+  right: var(--gutter);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--ink);
+  color: var(--card);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  animation: toast-in 200ms ease;
+}
+
+.toast svg {
+  flex: 0 0 auto;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .toast {
+    animation: none;
+  }
+}
