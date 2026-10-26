@@ -160,7 +160,7 @@ export function RatingScreen() {
               return (
                 <li key={`${item.rank}-${item.display_name}`} className={`rating-row ${item.is_me ? 'is-me' : ''}`}>
                   <span className={`rating-rank ${medal ? `is-${medal}` : ''}`}>{item.rank}</span>
-                  <Avatar name={item.display_name} photo={item.photo_url} label={item.is_me ? 'Ты' : undefined} />
+                  <Avatar name={item.display_name} photo={item.photo_url} />
                   <span className="rating-name">{item.is_me ? 'Ты' : item.display_name}</span>
                   <span className="rating-value">{formatRatingValue(item.value, by)}</span>
                 </li>
@@ -177,9 +177,6 @@ export function RatingScreen() {
       {state === 'ready' && data && !friendsEmpty && (
         <section aria-label="Твоё место" className="rating-me">
           <span className="rating-rank is-me">{data.me ? data.me.rank : '—'}</span>
-          <span className="avatar is-me" aria-hidden="true">
-            Ты
-          </span>
           <span className="rating-me-text">
             <span className="rating-name">Ты</span>
             {!data.me && <span className="sub rating-me-sub">Пока не в рейтинге</span>}

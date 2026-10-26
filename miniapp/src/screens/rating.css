@@ -62,12 +62,12 @@
 
 .rating-periods {
   display: flex;
-  gap: 2px;
+  gap: 16px;
 }
 
-.rating-period {
+.sort-tab.rating-period {
   height: 36px;
-  padding: 0 6px;
+  padding: 0 4px;
   font-size: 13px;
   white-space: nowrap;
 }
