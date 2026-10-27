@@ -188,6 +188,16 @@ def test_history_counts_market_lines_when_settled_including_annulled(story):
     assert [p["balance"] for p in points][-2] == 1060
 
 
+def test_history_of_new_account_starts_at_starter_pack():
+    """The starter line is written a moment after the account: the chart must not start at 0."""
+    now = timezone.now()
+    t = Trader.objects.create(name="Новичок", pseudonym="Новичок", balance=Decimal(1000))
+    Trader.objects.filter(pk=t.pk).update(created_at=now - timedelta(hours=1))
+    t.refresh_from_db()
+    ledger_line(t, LedgerEntry.Kind.STARTER, 1000, 1000, now - timedelta(hours=1) + timedelta(milliseconds=5))
+    assert {p["balance"] for p in balance_profit_history(t, "m", now=now)} == {1000}
+
+
 def test_history_is_thinned_to_200_points(story):
     t, now = story
     for i in range(300):
