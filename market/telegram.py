@@ -16,13 +16,14 @@ class TelegramError(Exception):
     pass
 
 
-def api(method, **data):
+def api(method, *, http_timeout=40, **data):
+    """Bot API call. `http_timeout` is ours (seconds); `data` goes to Telegram as is."""
     if not settings.TELEGRAM_BOT_TOKEN:
         raise TelegramError("Токен Telegram-бота не настроен.")
     try:
         response = requests.post(
             f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/{method}",
-            json=data, timeout=40,
+            json=data, timeout=http_timeout,
         )
         result = response.json()
         if not response.ok or not result.get("ok"):

@@ -212,11 +212,16 @@ def create_market(request):
         request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
         category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
         request_key=data.get("request_key") or None)
+    # null on a replayed request: the message went out with the first one.
+    bot_notified = None
     if not question.replayed:
+        from ..bot_resolution import announce_created
         from ..events import log_event
         log_event(request.trader, "market_create", {"market": question.pk, "category": question.category})
+        bot_notified = announce_created(question)
     request.trader.refresh_from_db()
-    return {"market": s.detail(question, request.trader), "balance": s.money(request.trader.balance)}
+    return {"market": s.detail(question, request.trader), "balance": s.money(request.trader.balance),
+            "bot_notified": bot_notified}
 
 
 @endpoint("GET")

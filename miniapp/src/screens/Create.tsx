@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError, newRequestKey, type Category } from '../api';
+import { BottomSheet } from '../components/BottomSheet';
 import { MainAction } from '../components/MainAction';
 import { MarketCardView } from '../components/MarketCardView';
 import { useToast } from '../components/Toast';
@@ -15,6 +16,8 @@ import {
   errorField,
   loadDraft,
   previewCard,
+  resolutionRule,
+  resolvesAtIso,
   saveDraft,
   stepOfField,
   TITLE_MAX,
@@ -22,19 +25,15 @@ import {
   type CreateField,
   type CreateStep,
 } from '../create';
-import { formatMoney } from '../format';
+import { formatDayMonth, formatMoney } from '../format';
 import { useSession } from '../session';
 import { isTelegram, tg } from '../telegram';
 import './create.css';
 
 const EXAMPLES = ['Сдам ли я сессию без троек?', 'Будет ли дождь в Москве в субботу?', 'Отменят ли пары 31 октября?'];
 
-const RULES = [
-  'Ты не сможешь делать прогнозы на свой рынок',
-  'Итог укажешь в боте и приложишь фото или скриншот',
-  'У участников будет 24 часа, чтобы оспорить итог',
-  'Половина комиссии со всех сделок — твоя',
-];
+const OWN_RULE = 'Ты не сможешь делать прогнозы на свой рынок';
+const LATER_RULES = ['У участников будет 24 часа, чтобы оспорить итог', 'Половина комиссии со всех сделок — твоя'];
 
 const noop = () => {};
 
@@ -49,6 +48,8 @@ export function CreateScreen() {
   const [categories, setCategories] = useState<Category[]>(cachedCategories);
   const [serverErrors, setServerErrors] = useState<Partial<Record<CreateField, string>>>({});
   const [busy, setBusy] = useState(false);
+  // «Разреши боту писать тебе» before publishing, when the bot cannot reach the creator yet.
+  const [askWrite, setAskWrite] = useState(false);
   const submitting = useRef(false);
   // One key per submission: a retry of the same payload after a lost response reuses it,
   // so the server returns the market already created instead of charging again.
@@ -130,9 +131,13 @@ export function CreateScreen() {
       attempt.current = null;
       setBalance(res.balance);
       tg.HapticFeedback.notification('success');
+      if (typeof res.bot_notified === 'boolean') tg.setBotCanWrite(res.bot_notified);
       clearDraft();
-      toast('Рынок опубликован');
-      navigate(`/market/${res.market.id}`);
+      // Replace the wizard: Back from «Рынок опубликован» must not reopen it.
+      navigate(`/market/${res.market.id}/created`, {
+        replace: true,
+        state: { market: res.market, botNotified: res.bot_notified ?? null },
+      });
     } catch (err) {
       tg.HapticFeedback.notification('error');
       // A 4xx refusal created nothing; after a lost connection or a 5xx the retry keeps the key.
@@ -155,7 +160,19 @@ export function CreateScreen() {
     if (!ready) return;
     tg.HapticFeedback.impact('light');
     if (step < 3) goTo((step + 1) as CreateStep);
+    else if (tg.canRequestWriteAccess && !tg.botCanWrite) setAskWrite(true);
     else void submit();
+  };
+
+  const allowAndPublish = async () => {
+    await tg.requestWriteAccess();
+    setAskWrite(false);
+    void submit();
+  };
+
+  const publishQuietly = () => {
+    setAskWrite(false);
+    void submit();
   };
 
   const close = () => {
@@ -168,6 +185,8 @@ export function CreateScreen() {
   const labels = new Map(categories.map((c) => [c.slug, c.label]));
   const notEnough = step === 3 && !!me && rest === null;
   const nextLabel = step === 3 ? `Опубликовать за ${formatMoney(cost)}` : 'Далее';
+  const resolves = resolvesAtIso(draft);
+  const resolutionDay = resolves ? formatDayMonth(resolves, now) : 'В дату итога';
 
   return (
     <div className="screen create" ref={mainRef}>
@@ -361,7 +380,7 @@ export function CreateScreen() {
               </div>
             )}
             <ul className="create-rules">
-              {RULES.map((r) => (
+              {[OWN_RULE, resolutionRule(draft, now), ...LATER_RULES].map((r) => (
                 <li key={r}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--yes)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M5 12.5l4.5 4.5L19 7.5" />
@@ -381,15 +400,40 @@ export function CreateScreen() {
           </button>
         )}
         <div className="create-next">
-          <MainAction
-            text={nextLabel}
-            onClick={next}
-            disabled={!ready || notEnough || !me}
-            busy={busy}
-            variant="ink"
-          />
+          {/* Hidden while the sheet is open: Telegram's MainButton would sit under it. */}
+          {!askWrite && (
+            <MainAction
+              text={nextLabel}
+              onClick={next}
+              disabled={!ready || notEnough || !me}
+              busy={busy}
+              variant="ink"
+            />
+          )}
         </div>
       </div>
+
+      <BottomSheet open={askWrite} onClose={() => setAskWrite(false)} label="Разреши боту писать тебе">
+        <div className="create-ask">
+          <span className="create-ask-icon" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" />
+              <path d="M10 20.5a2 2 0 0 0 4 0" />
+            </svg>
+          </span>
+          <h2 className="create-ask-title">Разреши боту писать тебе</h2>
+          <p className="create-ask-text sub">
+            {resolutionDay} бот спросит, чем закончился рынок. Если итог не указать за 72 часа, рынок отменится и всем
+            вернутся монеты.
+          </p>
+          <button type="button" className="button-primary is-ink button-block" onClick={allowAndPublish} disabled={busy}>
+            Разрешить и опубликовать
+          </button>
+          <button type="button" className="create-ask-skip" onClick={publishQuietly} disabled={busy}>
+            Опубликовать без напоминаний
+          </button>
+        </div>
+      </BottomSheet>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 // Pure logic of the market creation wizard (docs/mockups/Create.dc.html, spec E3).
 // The server re-checks everything; these checks only give feedback before the request.
 import type { MarketCard } from './api';
+import { formatDayMonth } from './format';
 
 export type CreateStep = 1 | 2 | 3;
 
@@ -214,4 +215,11 @@ export function clearDraft(): void {
   } catch {
     // Nothing to clear.
   }
+}
+
+/** «16 ноября бот спросит, чем закончилось…» for the review step; the date is the result date. */
+export function resolutionRule(draft: CreateDraft, now: Date = new Date()): string {
+  const resolves = resolvesAtIso(draft);
+  const when = resolves ? formatDayMonth(resolves, now) : 'В дату итога';
+  return `${when} бот спросит, чем закончилось: нажмёшь ДА или НЕТ и пришлёшь фото или скриншот`;
 }

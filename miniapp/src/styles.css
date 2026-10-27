@@ -18,6 +18,11 @@
   --unread-bg: #F6F9FE;
   --overlay: rgba(17, 20, 24, 0.45);
   --tab: #FFFFFF;
+  --chat-bg: #E6EBF0;
+  --bubble-in: #FFFFFF;
+  --bubble-out: #D7E8FF;
+  --bot-key: #F3F5F8;
+  --bot-key-on: #E1EBF8;
 
   --font: Inter, system-ui, -apple-system, sans-serif;
   --radius-card: 16px;
@@ -43,6 +48,11 @@
     --unread-bg: #1B212B;
     --overlay: rgba(0, 0, 0, 0.6);
     --tab: #14171C;
+    --chat-bg: #0E1014;
+    --bubble-in: #1E2229;
+    --bubble-out: #1F3A5C;
+    --bot-key: #242931;
+    --bot-key-on: #2F3A4B;
   }
 }
 

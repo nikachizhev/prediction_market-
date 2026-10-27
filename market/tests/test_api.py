@@ -2,12 +2,14 @@ import json
 import uuid
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from django.test import override_settings
 from django.utils import timezone
 
 from market import services
+from market.telegram import TelegramError
 from market.models import Event, Group, GroupMembership, LedgerEntry, Question, Trader
 from market.tests.test_miniapp_auth import TOKEN, init_data
 
@@ -18,6 +20,13 @@ pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("bot_token")]
 def bot_token():
     with override_settings(TELEGRAM_BOT_TOKEN=TOKEN, TELEGRAM_BOT_USERNAME="predbot"):
         yield
+
+
+@pytest.fixture(autouse=True)
+def bot_send():
+    """Bot messages the API sends on its own (the note after creating a market) never reach Telegram."""
+    with patch("market.telegram.send", return_value={"message_id": 1}) as send:
+        yield send
 
 
 class Api:
@@ -226,6 +235,32 @@ def test_create_market_key_of_another_trader_rejected(anya, boris):
     assert code == 400 and "market" not in data and first["market"]["title"] not in data["error"]
     b = trader(1002)
     assert b.balance == Decimal("1000.00") and not Question.objects.filter(creator=b).exists()
+
+
+def test_create_market_tells_the_creator_in_the_bot(anya, bot_send):
+    resolves = timezone.make_aware(timezone.datetime(2026, 11, 16, 12, 0))
+    key = str(uuid.uuid4())
+    code, data = anya.post("markets", create_payload(request_key=key, title="Сдам сессию без троек?",
+                                                     closes_at=(resolves - timedelta(days=1)).isoformat(),
+                                                     resolves_at=resolves.isoformat()))
+    assert code == 200 and data["bot_notified"] is True
+    chat_id, text = bot_send.call_args.args
+    assert chat_id == 1001
+    assert "«Сдам сессию без троек?»" in text and "16 ноября напишу тебе здесь" in text and "фото или скриншот" in text
+    button = bot_send.call_args.kwargs["reply_markup"]["inline_keyboard"][0][0]
+    assert button["text"] == "Открыть рынок" and button["web_app"]["url"].endswith(f"/app/market/{data['market']['id']}")
+    # The repeat of a lost response does not write again.
+    code, again = anya.post("markets", create_payload(request_key=key, title="Сдам сессию без троек?",
+                                                      closes_at=(resolves - timedelta(days=1)).isoformat(),
+                                                      resolves_at=resolves.isoformat()))
+    assert code == 200 and again["bot_notified"] is None and bot_send.call_count == 1
+
+
+def test_create_market_when_the_bot_cannot_write(anya, bot_send):
+    bot_send.side_effect = TelegramError("Telegram отклонил запрос.")
+    code, data = anya.post("markets", create_payload())
+    assert code == 200 and data["bot_notified"] is False and data["balance"] == "900.00"
+    assert Question.objects.filter(creator=trader(1001)).count() == 1
 
 
 def test_create_market_bad_key(anya):
