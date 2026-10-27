@@ -30,7 +30,7 @@ flowchart LR
 |---|---|
 | `accounts`, `identity`, `forms` | Регистрация, профиль и связь Django User с Trader |
 | `email_verification`, встроенные auth views | Подтверждение почты, восстановление пароля |
-| `telegram`, `telegram_auth`, `bot_registration`, `telegram_menu` | Привязка Telegram, одноразовый вход и кнопочное меню |
+| `telegram`, `telegram_auth`, `bot_registration` | Привязка Telegram и одноразовый вход на сайт; в чате бот ведёт только в Mini App и `/my` |
 | `services`, `mechanisms`, `lmsr` | Сделки, балансы, позиции, выплаты и математические модели |
 | `participation` | Опросы, числа, множественные ответы и их результаты |
 | `groups`, `access` | Членство, приглашения, заявки, приватность рынков |

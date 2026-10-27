@@ -54,6 +54,9 @@ def upload(method, files, **data):
         raise TelegramError("Не удалось связаться с Telegram.") from None
 
 
+APP_ONLY = "Всё теперь в приложении — открой его кнопкой «Открыть приложение» слева от поля ввода. Твои рынки — /my."
+
+
 def send(chat_id, text, **kwargs):
     return api("sendMessage", chat_id=chat_id, text=text, **kwargs)
 
@@ -141,45 +144,19 @@ def handle_update(update):
             send(chat_id, "Telegram подтверждён. Вернитесь в браузер, обновите страницу и нажмите «Продолжить». Подтверждайте только свой запрос входа." if ok else "Ссылка истекла или уже использована. Начните вход на сайте заново.")
             return
         ok = consume_link(parts[1], chat_id)
-        send(chat_id, "Аккаунт привязан. /balance — баланс, /markets — рынки, /unlink — отключить." if ok else "Ссылка недействительна или Telegram уже привязан. Создайте новую ссылку на сайте.")
+        send(chat_id, "Аккаунт привязан. " + APP_ONLY if ok else "Ссылка недействительна или Telegram уже привязан. Создайте новую ссылку на сайте.")
         return
-    trader = Trader.objects.select_related("user").filter(telegram_chat_id=chat_id).first()
-    from .telegram_menu import BUTTONS, handle_menu, keyboard
-    text = message.get("text", "")
-    text = BUTTONS.get(text, text)
-    command = text.split(maxsplit=1)[0].split("@")[0] if text else ""
+    from .bot_resolution import welcome
     if command == "/start":
-        # Everything lives in the Mini App now; the old site menu stays reachable via /menu.
-        from .bot_resolution import welcome
         welcome(chat_id)
         return
     if command == "/my":
         from .bot_markets import show
         show(chat_id)
         return
-    if trader and (not trader.user or trader.user.is_active) and command in ("/menu", "/help"):
-        handle_menu(trader, command, send)
-        return
-    from .bot_registration import handle_dialog
-    if handle_dialog(chat_id, text):
-        return
-    if trader and trader.user and not trader.user.is_active:
-        send(chat_id, "Сначала подтвердите почту. /resend — повторить отправку письма.")
-        return
-    if not trader:
-        from .bot_resolution import welcome
-        welcome(chat_id)
-    elif handle_menu(trader, command, send):
-        return
-    elif command == "/unlink":
-        if trader.user and not trader.user.has_usable_password():
-            send(chat_id, "Это ваш единственный способ входа. Отключение доступно после настройки пароля аккаунта.")
-            return
-        from .models import TelegramSiteLink
-        TelegramSiteLink.objects.filter(trader=trader).delete()
-        trader.telegram_chat_id = None
-        trader.save(update_fields=["telegram_chat_id"])
-        TelegramLink.objects.filter(trader=trader).delete()
-        send(chat_id, "Telegram отключён.", reply_markup={"remove_keyboard": True})
+    # For now the bot only leads to the Mini App. Any other text, including taps on the old
+    # site menu, gets a pointer there and clears that menu's keyboard from the chat.
+    if Trader.objects.filter(telegram_chat_id=chat_id).exists():
+        send(chat_id, APP_ONLY, reply_markup={"remove_keyboard": True})
     else:
-        send(chat_id, "Выберите раздел в меню. /help — помощь.", reply_markup=keyboard())
+        welcome(chat_id)

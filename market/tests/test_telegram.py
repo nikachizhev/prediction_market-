@@ -30,12 +30,37 @@ def test_group_cannot_link_account():
         send.assert_not_called()
 
 
+def private(text, chat_id=123):
+    return {"message": {"chat": {"id": chat_id, "type": "private"}, "from": {"id": chat_id}, "text": text}}
+
+
 @pytest.mark.django_db
-def test_balance_and_disconnect():
+def test_start_offers_the_app_and_my_markets():
+    Trader.objects.create(name="Test", pseudonym="Test", telegram_chat_id=123)
+    with patch("market.telegram.send") as send:
+        handle_update(private("/start"))
+    keyboard = send.call_args.kwargs["reply_markup"]["inline_keyboard"]
+    assert keyboard[0][0]["web_app"]
+    assert keyboard[1][0]["text"] == "Мои рынки"
+
+
+@pytest.mark.django_db
+@override_settings(SITE_URL="https://site.example")
+def test_old_menu_only_points_to_the_app():
     trader = Trader.objects.create(name="Test", pseudonym="Test", telegram_chat_id=123)
     with patch("market.telegram.send") as send:
-        handle_update({"message": {"chat": {"id": 123, "type": "private"}, "text": "/balance"}})
-        assert "1000" in send.call_args.args[1]
-        handle_update({"message": {"chat": {"id": 123, "type": "private"}, "text": "/unlink"}})
+        for text in ("💰 Баланс", "🌐 Войти на сайт", "📊 Рынки", "/balance", "/login", "/register", "/unlink", "привет"):
+            handle_update(private(text))
+            assert send.call_args.kwargs["reply_markup"] == {"remove_keyboard": True}
+            assert "/my" in send.call_args.args[1]
+    assert "site.example" not in str(send.call_args_list)
     trader.refresh_from_db()
-    assert trader.telegram_chat_id is None
+    assert trader.telegram_chat_id == 123
+
+
+@pytest.mark.django_db
+def test_stranger_gets_the_welcome_without_registration():
+    with patch("market.telegram.send") as send:
+        handle_update(private("Зарегистрироваться", chat_id=456))
+    assert send.call_args.kwargs["reply_markup"]["inline_keyboard"][0][0]["web_app"]
+    assert not Trader.objects.exists()
