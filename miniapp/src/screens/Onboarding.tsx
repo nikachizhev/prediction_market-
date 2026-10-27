@@ -65,6 +65,7 @@ export function Onboarding() {
   const [buying, setBuying] = useState(false);
   const [trade, setTrade] = useState<FirstTrade | null>(null);
   const [showRealName, setShowRealName] = useState(false);
+  const [interests, setInterests] = useState<string[]>(() => me?.interests ?? []);
   const [botAllowed, setBotAllowed] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [coins, setCoins] = useState(0);
@@ -122,7 +123,16 @@ export function Onboarding() {
   const finish = async (skipped: boolean) => {
     if (finishing) return;
     setFinishing(true);
-    const patch = skipped ? { onboarded: true } : { onboarded: true, show_real_name: showRealName };
+    const patch = skipped
+      ? { onboarded: true }
+      : {
+          onboarded: true,
+          show_real_name: showRealName,
+          // Sent only when the picker was shown; kept in the categories' order.
+          ...(categories.length > 0 && {
+            interests: categories.map((c) => c.slug).filter((slug) => interests.includes(slug)),
+          }),
+        };
     api
       .event(skipped ? 'onboarding_skip' : 'onboarding_done', { step, traded: trade !== null })
       .catch(() => {});
@@ -161,6 +171,11 @@ export function Onboarding() {
       // A refused purchase is final; the next attempt is a new request.
       if (!(outcome.error instanceof ApiError && outcome.error.status === 0)) requestKey.current = newRequestKey();
     }
+  };
+
+  const toggleInterest = (slug: string) => {
+    tg.HapticFeedback.selection();
+    setInterests((prev) => (prev.includes(slug) ? prev.filter((x) => x !== slug) : [...prev, slug]));
   };
 
   const allowBot = async () => {
@@ -370,6 +385,28 @@ export function Onboarding() {
                 >
                   {botAllowed ? 'Готово' : 'Разрешить'}
                 </button>
+              </section>
+            )}
+
+            {categories.length > 0 && (
+              <section className="card name-choice" aria-label="Что интересно">
+                <span className="name-choice-title">Что тебе интересно?</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {categories.map((c) => {
+                    const on = interests.includes(c.slug);
+                    return (
+                      <button
+                        key={c.slug}
+                        type="button"
+                        aria-pressed={on}
+                        className={on ? 'chip is-active' : 'chip'}
+                        onClick={() => toggleInterest(c.slug)}
+                      >
+                        {c.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </section>
             )}
 

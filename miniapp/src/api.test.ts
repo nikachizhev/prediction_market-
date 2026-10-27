@@ -39,6 +39,24 @@ describe('api client', () => {
     expect(JSON.parse(init.body as string).request_key).toBe('generated-uuid');
   });
 
+  it('sends the create request_key in the body', async () => {
+    const fetch = mockFetch(200, {});
+    const data = { title: 'Q?', criteria: 'c', category: 'games', closes_at: 'a', resolves_at: 'b' };
+    await api.createMarket(data, 'create-key');
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/markets');
+    expect(JSON.parse(init.body as string)).toEqual({ ...data, request_key: 'create-key' });
+  });
+
+  it('sends onboarding interests with PATCH /me', async () => {
+    const fetch = mockFetch(200, {});
+    await api.updateMe({ onboarded: true, interests: ['games', 'sport'] });
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/me');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body as string)).toEqual({ onboarded: true, interests: ['games', 'sport'] });
+  });
+
   it('builds query strings without empty params', async () => {
     const fetch = mockFetch(200, { items: [], next_page: null });
     await api.markets({ category: 'games', q: '', sort: 'hot' });

@@ -1,7 +1,7 @@
 // Market creation wizard from docs/mockups/Create.dc.html (spec E3, three steps).
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, ApiError, type Category } from '../api';
+import { api, ApiError, newRequestKey, type Category } from '../api';
 import { MainAction } from '../components/MainAction';
 import { MarketCardView } from '../components/MarketCardView';
 import { useToast } from '../components/Toast';
@@ -50,6 +50,9 @@ export function CreateScreen() {
   const [serverErrors, setServerErrors] = useState<Partial<Record<CreateField, string>>>({});
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
+  // One key per submission: a retry of the same payload after a lost response reuses it,
+  // so the server returns the market already created instead of charging again.
+  const attempt = useRef<{ key: string; payload: string } | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const [now, setNow] = useState(() => new Date());
 
@@ -120,8 +123,11 @@ export function CreateScreen() {
     if (!payload || submitting.current) return;
     submitting.current = true;
     setBusy(true);
+    const signature = JSON.stringify(payload);
+    if (attempt.current?.payload !== signature) attempt.current = { key: newRequestKey(), payload: signature };
     try {
-      const res = await api.createMarket(payload);
+      const res = await api.createMarket(payload, attempt.current.key);
+      attempt.current = null;
       setBalance(res.balance);
       tg.HapticFeedback.notification('success');
       clearDraft();
@@ -129,6 +135,8 @@ export function CreateScreen() {
       navigate(`/market/${res.market.id}`);
     } catch (err) {
       tg.HapticFeedback.notification('error');
+      // A 4xx refusal created nothing; after a lost connection or a 5xx the retry keeps the key.
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500) attempt.current = null;
       const message = err instanceof ApiError ? err.message : 'Что-то пошло не так. Попробуйте ещё раз.';
       const field = err instanceof ApiError && err.status === 400 ? errorField(message) : null;
       if (field) {

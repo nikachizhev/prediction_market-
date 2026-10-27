@@ -186,6 +186,75 @@ def test_create_market(anya):
     assert code == 400
 
 
+def create_payload(**kw):
+    now = timezone.now()
+    data = {"title": "Сдадим матан?", "criteria": "Ведомость", "category": "study",
+            "closes_at": (now + timedelta(days=5)).isoformat(), "resolves_at": (now + timedelta(days=6)).isoformat()}
+    data.update(kw)
+    return data
+
+
+def test_create_market_idempotent(anya):
+    key = str(uuid.uuid4())
+    code, first = anya.post("markets", create_payload(request_key=key))
+    assert code == 200 and first["balance"] == "900.00"
+    code, again = anya.post("markets", create_payload(request_key=key))
+    assert code == 200 and again["market"]["id"] == first["market"]["id"] and again["balance"] == "900.00"
+    t = trader(1001)
+    assert Question.objects.filter(creator=t).count() == 1
+    assert t.ledger.filter(kind=LedgerEntry.Kind.CREATION).count() == 1
+    assert Event.objects.filter(name="market_create").count() == 1
+    # Same key with another question is a client bug, not a second market.
+    code, data = anya.post("markets", create_payload(request_key=key, title="Другой вопрос?"))
+    assert code == 400 and Question.objects.filter(creator=t).count() == 1
+
+
+@override_settings(MARKETS_PER_DAY=1)
+def test_create_market_repeat_ignores_daily_limit(anya):
+    key = str(uuid.uuid4())
+    assert anya.post("markets", create_payload(request_key=key))[0] == 200
+    code, data = anya.post("markets", create_payload(request_key=key))
+    assert code == 200 and data["balance"] == "900.00"
+    code, data = anya.post("markets", create_payload(request_key=str(uuid.uuid4())))
+    assert code == 400 and "в день" in data["error"]
+
+
+def test_create_market_key_of_another_trader_rejected(anya, boris):
+    key = str(uuid.uuid4())
+    _, first = anya.post("markets", create_payload(request_key=key))
+    code, data = boris.post("markets", create_payload(request_key=key))
+    assert code == 400 and "market" not in data and first["market"]["title"] not in data["error"]
+    b = trader(1002)
+    assert b.balance == Decimal("1000.00") and not Question.objects.filter(creator=b).exists()
+
+
+def test_create_market_bad_key(anya):
+    code, _ = anya.post("markets", create_payload(request_key="not-a-uuid"))
+    assert code == 400 and not Question.objects.exists()
+
+
+def test_interests(anya, client):
+    _, data = anya.get("me")
+    assert data["interests"] == []
+    code, data = anya.patch("me", {"interests": ["sport", "games", "sport"], "onboarded": True})
+    assert code == 200 and data["interests"] == ["games", "sport"] and data["onboarded"]
+    assert trader(1001).interests == ["games", "sport"]
+    assert anya.get("me")[1]["interests"] == ["games", "sport"]
+    assert anya.post("session")[1]["me"]["interests"] == ["games", "sport"]
+    for bad in (["politics"], "games", [1], None):
+        assert anya.patch("me", {"interests": bad})[0] == 400
+    assert trader(1001).interests == ["games", "sport"]
+    assert anya.patch("me", {"interests": []})[1]["interests"] == []
+
+
+def test_interests_need_signed_init_data(client, anya):
+    response = client.patch("/api/me", json.dumps({"interests": ["games"]}), content_type="application/json")
+    assert response.status_code == 401
+    response = client.patch("/api/me", json.dumps({"interests": ["games"]}), content_type="application/json",
+                            HTTP_AUTHORIZATION="tma user=%7B%22id%22%3A1001%7D")
+    assert response.status_code == 401 and trader(1001).interests == []
+
+
 def test_star_and_mine(anya, boris):
     m = market_by(1002)
     other = market_by(1002, title="Другой")
