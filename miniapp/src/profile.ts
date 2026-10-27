@@ -65,6 +65,8 @@ export interface ChartBox {
 
 export interface BalanceChart {
   path: string;
+  /** Closed path under the line, down to the bottom of the plot. */
+  area: string;
   points: { x: number; y: number; t: number; v: number }[];
   /** Three horizontal grid lines with round values. */
   ticks: { y: number; value: number }[];
@@ -87,8 +89,11 @@ export function balanceChart(series: BalancePoint[], box: ChartBox): BalanceChar
   const y = (v: number) => box.bottom - ((v - floor) / (top - floor)) * (box.bottom - box.top);
   const points = series.map((p) => ({ x: round1(x(p.t)), y: round1(y(p.v)), t: p.t, v: p.v }));
   const path = points.length ? 'M' + points.map((p) => `${p.x} ${p.y}`).join(' L') : '';
+  const area = points.length
+    ? `${path} L${points[points.length - 1].x} ${box.bottom} L${points[0].x} ${box.bottom} Z`
+    : '';
   const ticks = [0, 1, 2].map((i) => ({ y: round1(y(floor + i * step)), value: floor + i * step }));
-  return { path, points, ticks };
+  return { path, area, points, ticks };
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;

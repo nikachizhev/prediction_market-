@@ -18,7 +18,9 @@ import { BottomSheet } from '../components/BottomSheet';
 import { NotificationBell } from '../components/NotificationBell';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { Avatar } from '../components/Avatar';
+import { lineYAt } from '../chartMotion';
 import { CoinIcon } from '../components/CoinIcon';
+import { LiveLine } from '../components/LiveLine';
 import { Skeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
 import { formatDayMonth, formatMoney, formatSigned, formatSince, pluralize } from '../format';
@@ -196,6 +198,9 @@ function BalanceCard({ fallback, balance }: { fallback: ProfileResponse['balance
     [series, frame],
   );
   useEffect(() => setScrub(null), [chart]);
+  const values = useMemo(() => (chart ? chart.points.map((p) => ({ x: p.x, y: p.v })) : []), [chart]);
+  // While the line draws itself the big number runs along with its tip.
+  const [headX, setHeadX] = useState<number | null>(null);
 
   const point = chart && scrub !== null ? (chart.points[scrub] ?? null) : null;
   const last = chart ? chart.points[chart.points.length - 1] : null;
@@ -206,7 +211,7 @@ function BalanceCard({ fallback, balance }: { fallback: ProfileResponse['balance
     period === 'all' && frame ? formatDayMonth(new Date(frame.start).toISOString(), now) : PERIOD_START_LABEL[period];
 
   const onMove = (e: PointerEvent<SVGSVGElement>) => {
-    if (!chart) return;
+    if (!chart || headX !== null) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * CHART.w;
     const i = nearestPoint(chart.points, x);
@@ -250,7 +255,15 @@ function BalanceCard({ fallback, balance }: { fallback: ProfileResponse['balance
           <span className="sub small">{label}</span>
           <span className="profile-balance-value">
             {!profit && <CoinIcon size={26} />}
-            {point ? format(point.v) : profit ? (last ? format(last.v) : '—') : <AnimatedNumber value={balance} />}
+            {point
+              ? format(point.v)
+              : headX !== null && values.length > 0
+                ? format(Math.round(lineYAt(values, headX, 'linear')))
+                : profit
+                  ? last
+                    ? format(last.v)
+                    : '—'
+                  : <AnimatedNumber value={balance} />}
           </span>
           {profit && <span className="sub small">без бонусов</span>}
         </div>
@@ -265,7 +278,7 @@ function BalanceCard({ fallback, balance }: { fallback: ProfileResponse['balance
           viewBox={`0 0 ${CHART.w} ${CHART.h}`}
           role="img"
           aria-label={`${label} ${periodWord(period)}: с ${format(series[0].v)} до ${format(series[series.length - 1].v)}`}
-          className="profile-chart"
+          className="profile-chart live-chart"
           onPointerMove={onMove}
           onPointerDown={onMove}
           onPointerLeave={() => setScrub(null)}
@@ -278,14 +291,20 @@ function BalanceCard({ fallback, balance }: { fallback: ProfileResponse['balance
               </text>
             </g>
           ))}
-          <path d={chart.path} fill="none" stroke="var(--yes)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-          {point ? (
+          <LiveLine
+            points={chart.points}
+            line={chart.path}
+            area={chart.area}
+            curve="linear"
+            showEnd={!point}
+            replayKey={`${metric}-${period}`}
+            onDraw={setHeadX}
+          />
+          {point && (
             <g>
               <line x1={point.x} y1={CHART.top} x2={point.x} y2={CHART.bottom} stroke="var(--sub)" strokeWidth="1" strokeDasharray="3 3" />
               <circle cx={point.x} cy={point.y} r="4" fill="var(--yes)" stroke="var(--card)" strokeWidth="2" />
             </g>
-          ) : (
-            last && <circle cx={last.x} cy={last.y} r="4" fill="var(--yes)" stroke="var(--card)" strokeWidth="2" />
           )}
           <text x="0" y="136" fontSize="11" fill="var(--sub)">
             {startLabel}

@@ -76,6 +76,7 @@ describe('balanceChart', () => {
     expect(chart.ticks.map((t) => t.value)).toEqual([1000, 1100, 1200]);
     expect(chart.ticks.map((t) => t.y)).toEqual([100, 50, 0]);
     expect(chart.path).toBe('M0 100 L150 50 L300 0');
+    expect(chart.area).toBe('M0 100 L150 50 L300 0 L300 100 L0 100 Z');
   });
 
   it('keeps every value inside the grid', () => {
