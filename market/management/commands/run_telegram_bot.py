@@ -17,7 +17,7 @@ class Command(BaseCommand):
         try:
             while True:
                 try:
-                    updates = api("getUpdates", offset=offset, timeout=25, allowed_updates=["message", "callback_query"])
+                    updates = api("getUpdates", offset=offset, timeout=25, allowed_updates=["message", "callback_query", "inline_query"])
                     for update in updates:
                         handle_update(update)
                         offset = update["update_id"] + 1
