@@ -1,6 +1,7 @@
 // Feed screen from docs/mockups/Main.dc.html.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, type Category, type MarketCard, type MarketSort, type Position, type Side } from '../api';
+import { cascadeDelay } from '../chartMotion';
 import { BalancePill } from '../components/BalancePill';
 import { NotificationBell } from '../components/NotificationBell';
 import { MarketCardView } from '../components/MarketCardView';
@@ -238,13 +239,14 @@ export function FeedScreen() {
         )}
 
         {state === 'ready' &&
-          items.map((m) => (
+          items.map((m, i) => (
             <MarketCardView
               key={m.id}
               market={m}
               categoryLabel={labels.get(m.category) ?? m.category}
               position={positions[m.id]}
               pending={pendingId === m.id}
+              drawDelay={cascadeDelay(i)}
               onTrade={onTrade}
               onStar={onStar}
             />

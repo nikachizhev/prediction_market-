@@ -13,6 +13,8 @@ interface MarketCardViewProps {
   /** Own position learned from a trade in this session, if any. */
   position?: Position | null;
   pending?: boolean;
+  /** Pause before the sparkline draws, ms (the feed cascade). */
+  drawDelay?: number;
   onTrade: (market: MarketCard, side: Side) => void;
   onStar: (market: MarketCard) => void;
 }
@@ -22,6 +24,7 @@ export const MarketCardView = memo(function MarketCardView({
   categoryLabel,
   position,
   pending = false,
+  drawDelay = 0,
   onTrade,
   onStar,
 }: MarketCardViewProps) {
@@ -71,7 +74,7 @@ export const MarketCardView = memo(function MarketCardView({
             {up ? '▲' : '▼'} {Math.abs(delta)} за сутки
           </span>
         </div>
-        <Sparkline points={market.spark} color={up ? 'var(--yes)' : 'var(--no)'} />
+        <Sparkline points={market.spark} color={up ? 'var(--yes)' : 'var(--no)'} delay={drawDelay} />
       </div>
 
       <div className="sub market-people">

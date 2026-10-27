@@ -384,6 +384,68 @@ h1 {
   }
 }
 
+/* ---- Live chart line (components/LiveLine.tsx) ---- */
+
+.live-chart {
+  /* The pulse around the end dot may reach past the plot. */
+  overflow: visible;
+}
+
+.live-line {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.live-head circle {
+  fill: currentColor;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.live-dot {
+  stroke: var(--card);
+}
+
+.live-glow {
+  opacity: 0.2;
+}
+
+/* The ring starts after the landing bounce and repeats every 2.2 s. */
+.live-halo {
+  opacity: 0;
+  animation: live-pulse 2.2s ease-out 0.45s infinite;
+}
+
+.live-head.is-live .live-dot {
+  animation: live-land 420ms ease-in-out;
+}
+
+@keyframes live-pulse {
+  0% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(3.4);
+  }
+}
+
+@keyframes live-land {
+  50% {
+    transform: scale(1.4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-halo,
+  .live-head.is-live .live-dot {
+    animation: none;
+  }
+}
+
 /* ---- Shared controls ---- */
 
 .visually-hidden {

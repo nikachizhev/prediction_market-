@@ -311,19 +311,6 @@
   fill: var(--sub);
 }
 
-.mk-area {
-  fill: var(--yes);
-  fill-opacity: 0.08;
-}
-
-.mk-line {
-  fill: none;
-  stroke: var(--yes);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-}
-
 .mk-dot {
   fill: var(--yes);
   stroke: var(--card);

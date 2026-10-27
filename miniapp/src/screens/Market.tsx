@@ -2,8 +2,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, type HistoryPeriod, type MarketDetail, type Side } from '../api';
+import { lineYAt } from '../chartMotion';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { BottomSheet } from '../components/BottomSheet';
+import { LiveLine } from '../components/LiveLine';
 import { useSell } from '../components/SellSheet';
 import { Skeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
@@ -596,7 +598,10 @@ function ChartSection({
   onPeriod: (p: HistoryPeriod) => void;
 }) {
   const chart = useMemo(() => buildChart(history ?? []), [history]);
+  const probs = useMemo(() => chart.points.map((pt) => ({ x: pt.x, y: pt.p })), [chart]);
   const [hover, setHover] = useState<number | null>(null);
+  // While the line draws itself the big number runs along with its tip.
+  const [headX, setHeadX] = useState<number | null>(null);
   useEffect(() => setHover(null), [history]);
 
   const word = periodWord(period);
@@ -605,7 +610,7 @@ function ChartSection({
   const last = history?.[history.length - 1];
 
   const onMove = (e: PointerEvent<SVGSVGElement>) => {
-    if (chart.points.length === 0) return;
+    if (chart.points.length === 0 || headX !== null) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * CHART.width;
     const i = pointIndexAt(chart.points, Math.min(x, CHART.plotWidth));
@@ -619,7 +624,13 @@ function ChartSection({
     <section className="card mk-section mk-chart" aria-label="Вероятность во времени">
       <div className="mk-row is-end">
         <div className="mk-prob">
-          <AnimatedNumber value={prob * 100} format={(n) => Math.round(n) + '%'} className="mk-pct" />
+          {headX !== null && probs.length > 0 ? (
+            <span className="mk-pct" style={{ fontVariantNumeric: 'tabular-nums' }}>
+              {formatPercent(lineYAt(probs, headX, 'step'))}
+            </span>
+          ) : (
+            <AnimatedNumber value={prob * 100} format={(n) => Math.round(n) + '%'} className="mk-pct" />
+          )}
           <span className="sub small">вероятность ДА</span>
         </div>
         {change !== null && <span className={`mk-delta ${change >= 0 ? 'is-up' : 'is-down'}`}>{changeLabel(change, word)}</span>}
@@ -629,7 +640,7 @@ function ChartSection({
         <Skeleton height={180} radius={12} />
       ) : (
         <svg
-          className="mk-chart-svg"
+          className="mk-chart-svg live-chart"
           viewBox={`0 0 ${CHART.width} ${CHART.height}`}
           role="img"
           aria-label={
@@ -649,13 +660,14 @@ function ChartSection({
               {Math.round(p * 100)}%
             </text>
           ))}
-          {chart.line && (
-            <>
-              <path d={chart.area} className="mk-area" />
-              <path d={chart.line} className="mk-line" />
-            </>
-          )}
-          {chart.end && hp === null && <circle cx={chart.end.x} cy={chart.end.y} r="4" className="mk-dot" />}
+          <LiveLine
+            points={chart.points}
+            line={chart.line}
+            area={chart.area}
+            curve="step"
+            showEnd={hp === null}
+            onDraw={setHeadX}
+          />
           {hp && (
             <g>
               <line x1={hp.x} y1="10" x2={hp.x} y2={CHART.bottom} className="mk-cursor" />
