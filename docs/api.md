@@ -24,6 +24,7 @@ interface Limits { max_trade: Money; market_cap: Money; fee_rate: number; creati
 interface Me {
   id: number; name: string; pseudonym: string; show_real_name: boolean; display_name: string;
   photo_url: string | null; balance: Money; onboarded: boolean;
+  interests: string[];                                  // ключи категорий из онбординга
   referral_link: string; referred_by: string | null;     // display_name пригласившего
   invested: { [marketId: number]: Money };               // сколько вложено в открытые рынки (для лимита 500)
   limits: Limits;
@@ -64,7 +65,7 @@ interface LedgerEntry { kind: string; label: string; amount: Money; at: string; 
 | --- | --- | --- |
 | `POST /api/session` | `{start_param?: string}` — вызывается при каждом открытии. Создаёт аккаунт (стартовый пакет, пригласивший по `ref_<код>`), начисляет бонус дня, пишет событие `app_open` | `{me: Me, new_account: boolean, granted: {kind: "starter" \| "daily" \| "insurance", amount: Money}[]}` — в день регистрации бонуса дня нет |
 | `GET /api/me` | — | `Me` |
-| `PATCH /api/me` | `{pseudonym?, show_real_name?, onboarded?}` | `Me` |
+| `PATCH /api/me` | `{pseudonym?, show_real_name?, onboarded?, interests?: string[]}` — `interests` только из ключей категорий | `Me` |
 | `GET /api/categories` | — | `{slug, label}[]`: games «Игры», study «Учёба», weather «Погода», tech «Технологии», sport «Спорт» |
 | `GET /api/markets` | `?category=&q=&sort=hot\|new\|soon&page=` (20 на страницу) | `{items: MarketCard[], next_page: number \| null, total: number}` |
 | `GET /api/markets/{id}` | — | `MarketDetail` |
@@ -74,10 +75,10 @@ interface LedgerEntry { kind: string; label: string; amount: Money; at: string; 
 | `POST /api/markets/{id}/sell` | `{side, shares}` | `TradeResult` |
 | `POST /api/markets/{id}/star` | `{starred: boolean}` | `{starred}` |
 | `POST /api/markets/{id}/report` | `{reason?: string}` | `{ok: true}` |
-| `POST /api/markets` | `{title, criteria, category, closes_at, resolves_at}` | `{market: MarketDetail, balance: Money}` |
+| `POST /api/markets` | `{title, criteria, category, closes_at, resolves_at, request_key?: uuid}` — повтор с тем же ключом возвращает уже созданный рынок и не списывает 100 второй раз | `{market: MarketDetail, balance: Money}` |
 | `GET /api/mine` | — | `{positions: (MarketCard & {position: Position})[], watched: MarketCard[], created: (MarketCard & {fee_expected: Money, needs_resolution: boolean, resolve_link: string})[]}` |
-| `GET /api/rating` | `?scope=all\|friends&by=profit\|accuracy&period=week\|month\|all` | `{items: {rank, display_name, photo_url, value: string, is_me}[], me: {rank, value} \| null}`; `value` — прибыль (`"123.45"`) или доля верных (`"0.6300"`). Прибыль за неделю/месяц — по рынкам, завершённым за период |
-| `GET /api/profile` | — | `{me: Me, stats: {profit: Money, accuracy: number \| null, predictions: number, markets_created: number}, balance_history: {t, balance}[], ledger: LedgerEntry[]}` |
+| `GET /api/rating` | `?scope=all\|friends&by=profit\|accuracy&period=week\|month\|all` | `{items: {rank, display_name, photo_url, value: string, is_me, predictions: number, accuracy: number \| null, profit: Money}[], me: {rank, value, predictions, accuracy, profit} \| null, min_resolved: number}`; `value` — прибыль (`"123.45"`) или доля верных (`"0.6300"`). Прибыль за неделю/месяц — по рынкам, завершённым за период. `predictions` — завершённые прогнозы за период; в рейтинг по точности среди всех попадают те, у кого их не меньше `min_resolved` (20) |
+| `GET /api/profile` | — | `{me: Me, stats: {profit: Money, accuracy: number \| null, correct: number, evaluated: number, rank: number \| null, predictions: number, markets_created: number, disputes_lost: number}, joined_at: string \| null, invited: number, calibration: {price: number, count: number, hits: number}[], best_prediction: {market: {id, title}, side: Side, price: number, gain: Money} \| null, balance_history: {t, balance}[], ledger: LedgerEntry[]}` |
 | `POST /api/events` | `{name: "share" \| "onboarding_done" \| "onboarding_skip" \| "open_bot", props?: object}` | `{ok: true}` |
 
 «Указать итог» в «Моих» открывает бота: `https://t.me/<бот>?start=resolve_<id>`; «Оспорить итог» — `https://t.me/<бот>?start=dispute_<id>`.
