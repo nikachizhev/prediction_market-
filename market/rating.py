@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.db.models import Q, Sum
 from django.utils import timezone
 
@@ -54,35 +55,45 @@ def participants():
 
 
 def leaderboard(me: Trader, *, scope: str = "all", by: str = "profit", period: str = "all") -> dict:
+    """Rows carry only aggregates: rank, value, resolved predictions, accuracy and profit."""
     since = _since(period)
     people = friends(me) if scope == "friends" else participants()
+    # Among friends everyone with a result is shown; the overall accuracy board needs a track record.
+    min_resolved = 1 if scope == "friends" else max(1, settings.RATING_ACCURACY_MIN_RESOLVED)
     rows = []
     for t in people:
+        correct, evaluated = accuracy(t, since)
+        share = correct / evaluated if evaluated else None
+        profit = services.profit(t) if since is None else realized_profit(t, since)
         if by == "accuracy":
-            correct, evaluated = accuracy(t, since)
-            if not evaluated:
+            if evaluated < min_resolved:
                 continue
-            rows.append((correct / evaluated, evaluated, t))
+            rows.append((share, evaluated, t, evaluated, share, profit))
         else:
-            value = services.profit(t) if since is None else realized_profit(t, since)
-            rows.append((value, 0, t))
+            rows.append((profit, 0, t, evaluated, share, profit))
     rows.sort(key=lambda r: (-r[0], -r[1], r[2].pk))
     items, mine = [], None
-    for rank, (value, _, t) in enumerate(rows, start=1):
+    for rank, (value, _, t, evaluated, share, profit) in enumerate(rows, start=1):
         shown = f"{value:.4f}" if by == "accuracy" else f"{value:.2f}"
+        row = {"rank": rank, "value": shown, "predictions": evaluated,
+               "accuracy": round(share, 4) if share is not None else None, "profit": f"{profit:.2f}"}
         if t.pk == me.pk:
-            mine = {"rank": rank, "value": shown}
+            mine = row
         if rank <= TOP:
-            items.append({"rank": rank, "display_name": t.display_name, "photo_url": t.photo_url or None,
-                          "value": shown, "is_me": t.pk == me.pk})
-    return {"items": items, "me": mine}
+            items.append({**row, "display_name": t.display_name, "photo_url": t.photo_url or None,
+                          "is_me": t.pk == me.pk})
+    return {"items": items, "me": mine, "min_resolved": settings.RATING_ACCURACY_MIN_RESOLVED}
 
 
 def trader_stats(trader: Trader) -> dict:
     correct, evaluated = accuracy(trader)
+    place = leaderboard(trader)["me"]
     return {
         "profit": f"{services.profit(trader):.2f}",
         "accuracy": round(correct / evaluated, 4) if evaluated else None,
+        "correct": correct, "evaluated": evaluated,
+        "rank": place["rank"] if place else None,
         "predictions": Trade.objects.filter(trader=trader, cost__gt=0).count(),
         "markets_created": trader.created_questions.count(),
+        "disputes_lost": trader.created_questions.filter(creator_at_fault=True).count(),
     }

@@ -85,6 +85,13 @@ export function formatDayMonth(iso: string, now: Date = new Date()): string {
   return date.getFullYear() === now.getFullYear() ? base : `${base} ${date.getFullYear()}`;
 }
 
+/** Since when, as in the profile mockup: "с октября 2026". */
+export function formatSince(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return `с ${MONTHS_GENITIVE[date.getMonth()]} ${date.getFullYear()}`;
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**

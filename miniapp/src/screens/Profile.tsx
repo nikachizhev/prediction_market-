@@ -1,19 +1,31 @@
 // Profile screen from docs/mockups/Profile.dc.html.
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { api, ApiError, type LedgerEntry, type ProfileResponse } from '../api';
+import {
+  api,
+  ApiError,
+  type BestPrediction,
+  type CalibrationBucket,
+  type LedgerEntry,
+  type ProfileResponse,
+} from '../api';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { Avatar } from '../components/Avatar';
 import { CoinIcon } from '../components/CoinIcon';
 import { Skeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
-import { formatMoney, formatSigned } from '../format';
+import { formatMoney, formatSigned, formatSince, pluralize } from '../format';
 import { shareInvite } from '../invite';
 import {
   amountTone,
   balanceChangeLabel,
   balanceChart,
   balanceSeries,
+  bestPredictionLabel,
+  CALIBRATION_BOX,
+  calibrationLabel,
+  calibrationPoints,
+  calibrationTip,
   daysAgo,
   formatLedgerDate,
   nearestPoint,
@@ -66,7 +78,10 @@ export function ProfileScreen() {
         <Avatar name={me.name} photo={me.photo_url} size={64} />
         <div className="profile-who">
           <h1 className="profile-name">{me.name}</h1>
-          <span className="sub small">В рейтинге: {me.display_name}</span>
+          <span className="sub small">
+            В рейтинге: {me.display_name}
+            {state === 'ready' && data?.joined_at ? ` · ${formatSince(data.joined_at)}` : ''}
+          </span>
         </div>
       </header>
 
@@ -96,7 +111,10 @@ export function ProfileScreen() {
         )
       )}
 
-      <InviteCard link={me.referral_link} />
+      {state === 'ready' && data && data.calibration.length > 0 && <Calibration buckets={data.calibration} />}
+      {state === 'ready' && data?.best_prediction && <BestPredictionCard best={data.best_prediction} />}
+
+      <InviteCard link={me.referral_link} invited={state === 'ready' && data ? data.invited : null} />
       <NameCard />
 
       {state === 'ready' && data && <Ledger entries={data.ledger} />}
@@ -199,10 +217,14 @@ function Stats({ stats }: { stats: ProfileResponse['stats'] }) {
     {
       label: 'Точность',
       value: stats.accuracy === null ? '—' : Math.round(stats.accuracy * 100) + '%',
-      sub: stats.accuracy === null ? 'пока нет итогов' : 'верных прогнозов',
+      sub: stats.accuracy === null ? 'пока нет итогов' : `${stats.correct} из ${stats.evaluated} верно`,
     },
-    { label: 'Прогнозов', value: formatMoney(stats.predictions, 0), sub: 'всего' },
-    { label: 'Создано рынков', value: formatMoney(stats.markets_created, 0), sub: '' },
+    { label: 'Место', value: stats.rank === null ? '—' : formatMoney(stats.rank, 0), sub: 'по прибыли' },
+    {
+      label: 'Создано рынков',
+      value: formatMoney(stats.markets_created, 0),
+      sub: pluralize(stats.disputes_lost, 'проигранный спор', 'проигранных спора', 'проигранных споров'),
+    },
   ];
   return (
     <div className="profile-stats">
@@ -217,7 +239,103 @@ function Stats({ stats }: { stats: ProfileResponse['stats'] }) {
   );
 }
 
-function InviteCard({ link }: { link: string }) {
+const CAL = { w: 358, h: 232, tipW: 164, tipH: 40 };
+
+function Calibration({ buckets }: { buckets: CalibrationBucket[] }) {
+  const [active, setActive] = useState<number | null>(null);
+  const points = useMemo(() => calibrationPoints(buckets), [buckets]);
+  const { left, right, top, bottom } = CALIBRATION_BOX;
+  const mid = (top + bottom) / 2;
+  const line = 'M' + points.map((p) => `${p.x} ${p.y}`).join(' L');
+  const point = active !== null ? points[active] : null;
+  const tip = point && calibrationTip(point);
+  const tipX = point ? Math.min(Math.max(point.x - CAL.tipW / 2, 0), CAL.w - CAL.tipW) : 0;
+  const tipY = point ? (point.y - 52 < 0 ? point.y + 14 : point.y - 52) : 0;
+
+  const show = (i: number) => {
+    if (i === active) return;
+    setActive(i);
+    tg.HapticFeedback.selection();
+  };
+
+  return (
+    <section aria-label="Калибровка" className="card profile-calibration">
+      <h2 className="profile-section-title">Насколько точны твои вероятности</h2>
+      <p className="sub small profile-text">
+        Чем ближе точки к пунктиру, тем честнее твои оценки. Выше пунктира — ты недооцениваешь, ниже — переоцениваешь.
+      </p>
+      <svg
+        width={CAL.w}
+        height={CAL.h}
+        viewBox={`0 0 ${CAL.w} ${CAL.h}`}
+        role="img"
+        aria-label={calibrationLabel(points)}
+        className="profile-chart"
+      >
+        {[(mid + bottom) / 2, mid, (top + mid) / 2].map((y) => (
+          <line key={y} x1={left} y1={y} x2={right} y2={y} stroke="var(--line)" strokeWidth="1" />
+        ))}
+        <line x1={left} y1={bottom} x2={right} y2={bottom} stroke="var(--sub)" strokeWidth="1" />
+        <text x="28" y={bottom + 4} textAnchor="end" fontSize="11" fill="var(--sub)">0%</text>
+        <text x="28" y={mid + 4} textAnchor="end" fontSize="11" fill="var(--sub)">50%</text>
+        <text x="28" y={top + 4} textAnchor="end" fontSize="11" fill="var(--sub)">100%</text>
+        <text x={left} y="206" textAnchor="middle" fontSize="11" fill="var(--sub)">0%</text>
+        <text x={(left + right) / 2} y="206" textAnchor="middle" fontSize="11" fill="var(--sub)">50%</text>
+        <text x={right} y="206" textAnchor="end" fontSize="11" fill="var(--sub)">100%</text>
+        <text x={(left + right) / 2} y="226" textAnchor="middle" fontSize="11" fill="var(--sub)">
+          цена, по которой покупал → как часто сбывалось
+        </text>
+        <line x1={left} y1={bottom} x2={right} y2={top} stroke="var(--sub)" strokeWidth="1" strokeDasharray="4 4" />
+        {points.length > 1 && (
+          <path d={line} fill="none" stroke="var(--yes)" strokeWidth="2" strokeLinejoin="round" strokeOpacity="0.5" />
+        )}
+        {points.map((p, i) => (
+          <g key={p.price}>
+            <circle cx={p.x} cy={p.y} r="5" fill="var(--yes)" stroke="var(--card)" strokeWidth="2" />
+            <circle
+              cx={p.x}
+              cy={p.y}
+              r="16"
+              fill="transparent"
+              className="profile-calibration-hit"
+              onPointerEnter={() => show(i)}
+              onPointerDown={() => show(i)}
+              onPointerLeave={() => setActive(null)}
+            />
+          </g>
+        ))}
+        {point && tip && (
+          <g pointerEvents="none">
+            <rect x={tipX} y={tipY} width={CAL.tipW} height={CAL.tipH} rx="8" fill="var(--ink)" />
+            <text x={tipX + 10} y={tipY + 16} fontSize="12" fontWeight="700" fill="var(--card)">
+              {tip[0]}
+            </text>
+            <text x={tipX + 10} y={tipY + 31} fontSize="11" fill="var(--card)">
+              {tip[1]}
+            </text>
+          </g>
+        )}
+      </svg>
+    </section>
+  );
+}
+
+function BestPredictionCard({ best }: { best: BestPrediction }) {
+  return (
+    <section aria-label="Лучший прогноз" className="card profile-best">
+      <span className="sub profile-best-label">ЛУЧШИЙ ПРОГНОЗ</span>
+      <Link to={`/market/${best.market.id}`} className="profile-best-title">
+        {best.market.title}
+      </Link>
+      <div className="profile-best-row">
+        <span className="sub">{bestPredictionLabel(best)}</span>
+        <span className={`profile-best-gain is-${amountTone(best.gain)}`}>{formatSigned(best.gain, 0)}</span>
+      </div>
+    </section>
+  );
+}
+
+function InviteCard({ link, invited }: { link: string; invited: number | null }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef(0);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -237,7 +355,10 @@ function InviteCard({ link }: { link: string }) {
   return (
     <section aria-label="Пригласить друга" className="card profile-invite">
       <h2 className="profile-section-title">Пригласи друга</h2>
-      <p className="sub small profile-text">Вы оба получите монеты, когда друг начнёт делать прогнозы.</p>
+      <p className="sub small profile-text">
+        Вы оба получите монеты, когда друг начнёт делать прогнозы.
+        {invited !== null && ` Приглашено ${formatMoney(invited, 0)}.`}
+      </p>
       <div className="profile-link-row">
         <label htmlFor="ref-link" className="visually-hidden">
           Твоя ссылка

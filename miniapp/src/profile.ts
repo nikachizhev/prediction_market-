@@ -1,5 +1,5 @@
 // Pure helpers of the profile screen (docs/mockups/Profile.dc.html).
-import type { Money } from './api';
+import type { BestPrediction, CalibrationBucket, Money } from './api';
 import { formatDayMonth, formatSigned, pluralize } from './format';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -123,6 +123,57 @@ export function formatLedgerDate(iso: string, now: Date = new Date()): string {
   const date = new Date(iso);
   const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   return `${formatDayMonth(iso, now)}, ${time}`;
+}
+
+/** Plot area of the calibration chart, as in the mockup (358×232). */
+export const CALIBRATION_BOX = { left: 36, right: 340, top: 10, bottom: 190 };
+
+export interface CalibrationPoint {
+  x: number;
+  y: number;
+  price: number;
+  count: number;
+  hits: number;
+  /** Share of buys that came true, 0..1. */
+  rate: number;
+}
+
+/** Points of «Насколько точны твои вероятности»: price of the buy → how often it came true. */
+export function calibrationPoints(buckets: CalibrationBucket[]): CalibrationPoint[] {
+  const { left, right, top, bottom } = CALIBRATION_BOX;
+  return buckets
+    .filter((b) => b.count > 0)
+    .map((b) => {
+      const rate = b.hits / b.count;
+      return {
+        x: round1(left + (b.price / 100) * (right - left)),
+        y: round1(bottom - rate * (bottom - top)),
+        price: b.price,
+        count: b.count,
+        hits: b.hits,
+        rate,
+      };
+    });
+}
+
+/** "Калибровка: покупки по 10% сбылись в 13%, по 30% — в 25%". */
+export function calibrationLabel(points: CalibrationPoint[]): string {
+  const parts = points.map((p, i) =>
+    i === 0
+      ? `покупки по ${p.price}% сбылись в ${Math.round(p.rate * 100)}%`
+      : `по ${p.price}% — в ${Math.round(p.rate * 100)}%`,
+  );
+  return 'Калибровка: ' + parts.join(', ');
+}
+
+/** Tooltip lines: "Покупал по ~70%", "сбылось 6 из 9 (67%)". */
+export function calibrationTip(p: CalibrationPoint): [string, string] {
+  return [`Покупал по ~${p.price}%`, `сбылось ${p.hits} из ${p.count} (${Math.round(p.rate * 100)}%)`];
+}
+
+/** "Купил ДА по 12% — сбылось". */
+export function bestPredictionLabel(best: BestPrediction): string {
+  return `Купил ${best.side === 'yes' ? 'ДА' : 'НЕТ'} по ${Math.round(best.price * 100)}% — сбылось`;
 }
 
 export const PSEUDONYM_MIN = 2;
