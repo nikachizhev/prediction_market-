@@ -210,8 +210,18 @@ def detail(question: Question, trader: Trader) -> dict:
                     "prob_after": round(t.prob_after, 4),
                     "at": iso(t.created_at), "sell": t.cost < 0} for t in trades],
         "resolution": resolution(question, trader),
+        "top_moves": top_moves(question),
     })
     return data
+
+
+def top_moves(question: Question, limit: int = 3) -> list[dict]:
+    """The sharpest price moves made by a single trade, anonymous; newest first among equal moves."""
+    from django.db.models import F
+    from django.db.models.functions import Abs
+    moves = (Trade.objects.filter(question=question).annotate(move=Abs(F("prob_after") - F("prob_before")))
+             .filter(move__gt=0).order_by("-move", "-created_at", "-id")[:limit])
+    return [{"at": iso(t.created_at), "from": round(t.prob_before, 4), "to": round(t.prob_after, 4)} for t in moves]
 
 
 def categories() -> list[dict]:

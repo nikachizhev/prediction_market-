@@ -21,5 +21,6 @@ urlpatterns = [
     path("profile", views.profile, name="profile"),
     path("notifications", views.notifications, name="notifications"),
     path("notifications/read", views.notifications_read, name="notifications_read"),
+    path("profile/history", views.profile_history, name="profile_history"),
     path("events", views.events, name="events"),
 ]

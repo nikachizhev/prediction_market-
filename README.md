@@ -57,6 +57,7 @@ docker compose up -d --wait
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` | Токен и имя бота без `@` |
 | `TELEGRAM_APP_NAME` | Short name Mini App из BotFather (`t.me/<бот>/<app>`), по умолчанию `app` |
 | `MEDIA_ROOT` | Папка для фото-доказательств, по умолчанию `media/` |
+| `METABASE_DB_PASSWORD`, `METABASE_PORT` | Пароль роли `metabase_ro` для дашборда и порт Metabase (по умолчанию `3000`) |
 
 Приложение использует PostgreSQL. Модели описаны в `market/models.py`, изменения схемы — в `market/migrations/`. Миграции хранятся в Git; после обновления проекта выполняйте `manage.py migrate`.
 
@@ -136,6 +137,36 @@ ssh root@<ip> bash /opt/prediction_market/app/deploy/update.sh
 ```
 
 Логи: `journalctl -u pm-web -u pm-bot -u pm-worker -f`.
+
+## Дашборд в Metabase
+
+Дашборд для команды (спека, E7) — [Metabase](https://www.metabase.com) в Docker. Он читает только схему `analytics`: представления без имён, псевдонимов, username, Telegram ID и фото. Схему создаёт миграция (только в PostgreSQL), роль `metabase_ro` может читать её и больше ничего.
+
+1. В `.env` задайте `METABASE_DB_PASSWORD` (любой длинный пароль) и при желании `METABASE_PORT`.
+2. Запустите базу и Metabase, примените миграции и создайте роль:
+
+```powershell
+docker compose --profile metabase up -d
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py setup_metabase_role
+```
+
+   `setup_metabase_role` можно запускать повторно: он обновляет пароль и права. Запустите его снова после миграций, которые добавляют представления.
+3. Откройте `http://127.0.0.1:3000` (или ваш `METABASE_PORT`), создайте администратора и добавьте базу: тип PostgreSQL, хост `db`, порт `5432`, имя базы — `POSTGRES_DB` из `.env`, пользователь `metabase_ro`, пароль — `METABASE_DB_PASSWORD`. В настройках подключения ограничьте схемы схемой `analytics`.
+
+Без `--profile metabase` команда `docker compose up -d --wait` по-прежнему запускает только PostgreSQL. Данные Metabase (вопросы, дашборды) лежат в томе `metabase_data`.
+
+| Дашборд | Представления `analytics` |
+| --- | --- |
+| Аудитория: DAU / WAU / MAU, удержание 1/7/30 дней | `active_users`, `retention` (когорты по дню регистрации), `activity`, `signups` |
+| Воронка: открыл → первый прогноз → вернулся на следующий день → создал рынок, отдельно для пришедших по приглашению | `funnel` (колонка `referred`), `funnel_users` — для фильтра по дате регистрации |
+| Экономика: монеты появились и сгорели за день, всего монет, доля балансов меньше 100 | `economy_daily` |
+| Рынки: создано / разрешено / отменено / оспорено, часы от даты итога до разрешения | `markets_daily`, `market_resolution_delays` |
+| Свои графики | `traders`, `markets`, `trades`, `ledger`, `events`, `disputes` |
+
+Дни считаются по Москве. «Сгорело» — то, что ушло из оборота на завершённых в этот день рынках: половина комиссии, потерянная подписка создателя, проигранные споры.
+
+На сервере Metabase не запускается сам (`pm-db` поднимает только базу). Чтобы включить, добавьте `METABASE_DB_PASSWORD` в `/opt/prediction_market/app/.env` и выполните `cd /opt/prediction_market/app && docker compose -p prediction_market --profile metabase up -d`, затем `sudo -u pm /opt/prediction_market/venv/bin/python manage.py setup_metabase_role`. Порт открыт только на `127.0.0.1`, поэтому заходите через SSH-туннель: `ssh -L 3000:127.0.0.1:3000 root@<ip>` и `http://127.0.0.1:3000`.
 
 ## Почта Mail.ru
 
@@ -310,7 +341,7 @@ market/
 sources/             адаптеры GitHub и A/B, их модели и тесты
 abmock/              демонстрационная A/B-платформа
 templates/base.html  общая навигация и подключение оформления
-compose.yaml         локальный PostgreSQL
+compose.yaml         локальный PostgreSQL и Metabase (профиль metabase)
 manage.py            команды Django
 ```
 
