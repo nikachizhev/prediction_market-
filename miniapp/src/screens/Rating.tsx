@@ -1,8 +1,9 @@
 // Rating screen from docs/mockups/Rating.dc.html.
 import { useEffect, useRef, useState } from 'react';
-import { api, ApiError, type RatingResponse } from '../api';
+import { api, ApiError, type RatingResponse, type RatingRow } from '../api';
 import { Avatar } from '../components/Avatar';
 import { Skeleton } from '../components/Skeleton';
+import { formatSigned, plural, pluralize } from '../format';
 import { shareInvite } from '../invite';
 import { formatRatingValue, hasOthers, medalOf, type RatingBy, type RatingPeriod, type RatingScope } from '../rating';
 import { useSession } from '../session';
@@ -29,6 +30,13 @@ const PERIODS: { key: RatingPeriod; label: string }[] = [
 let lastFilters: { scope: RatingScope; by: RatingBy; period: RatingPeriod } = { scope: 'all', by: 'profit', period: 'all' };
 
 type LoadState = 'loading' | 'ready' | 'error';
+
+/** "47 прогнозов · точность 64%" or, in the accuracy rating, "47 прогнозов · прибыль +312". */
+function rowSub(row: RatingRow, by: RatingBy): string {
+  const count = pluralize(row.predictions, 'прогноз', 'прогноза', 'прогнозов');
+  if (by === 'accuracy') return `${count} · прибыль ${formatSigned(row.profit, 0)}`;
+  return row.accuracy === null ? count : `${count} · точность ${Math.round(row.accuracy * 100)}%`;
+}
 
 export function RatingScreen() {
   const { me } = useSession();
@@ -161,7 +169,10 @@ export function RatingScreen() {
                 <li key={`${item.rank}-${item.display_name}`} className={`rating-row ${item.is_me ? 'is-me' : ''}`}>
                   <span className={`rating-rank ${medal ? `is-${medal}` : ''}`}>{item.rank}</span>
                   <Avatar name={item.display_name} photo={item.photo_url} />
-                  <span className="rating-name">{item.is_me ? 'Ты' : item.display_name}</span>
+                  <span className="rating-text">
+                    <span className="rating-name">{item.is_me ? 'Ты' : item.display_name}</span>
+                    <span className="sub rating-sub">{rowSub(item, by)}</span>
+                  </span>
                   <span className="rating-value">{formatRatingValue(item.value, by)}</span>
                 </li>
               );
@@ -169,8 +180,17 @@ export function RatingScreen() {
           </ol>
         )}
 
-        {state === 'ready' && !friendsEmpty && (
-          <p className="sub rating-footnote">Прибыль считается без бонусов.</p>
+        {state === 'ready' && data && !friendsEmpty && (
+          <p className="sub rating-footnote">
+            Прибыль считается без бонусов.
+            {scope === 'all' &&
+              ` В рейтинг по точности попадают те, у кого от ${data.min_resolved} ${plural(
+                data.min_resolved,
+                'завершённого прогноза',
+                'завершённых прогнозов',
+                'завершённых прогнозов',
+              )}.`}
+          </p>
         )}
       </div>
 
@@ -179,7 +199,7 @@ export function RatingScreen() {
           <span className="rating-rank is-me">{data.me ? data.me.rank : '—'}</span>
           <span className="rating-me-text">
             <span className="rating-name">Ты</span>
-            {!data.me && <span className="sub rating-me-sub">Пока не в рейтинге</span>}
+            <span className="sub rating-me-sub">{data.me ? rowSub(data.me, by) : 'Пока не в рейтинге'}</span>
           </span>
           <span className="rating-value">{data.me ? formatRatingValue(data.me.value, by) : '—'}</span>
         </section>

@@ -104,6 +104,7 @@ MARKETS_PER_DAY = 3
 MARKET_MIN_HOURS = 1
 MARKET_MAX_DAYS = 365
 COMPLAINTS_TO_HIDE = 3
+RATING_ACCURACY_MIN_RESOLVED = 20  # accuracy rating counts traders with at least this many resolved predictions
 MAX_BET = MAX_TRADE             # legacy name used by the old server-rendered pages
 AB_BASE_RATE = 0.25
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")

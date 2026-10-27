@@ -137,14 +137,57 @@ export interface MineResponse {
   created: (MarketCard & { fee_expected: Money; needs_resolution: boolean; resolve_link: string })[];
 }
 
+/** Aggregates only: nobody's trades are exposed. */
+export interface RatingRow {
+  rank: number;
+  value: string;
+  /** Resolved predictions in the period. */
+  predictions: number;
+  /** Share of correct ones, 0..1; null without resolved predictions. */
+  accuracy: number | null;
+  /** Profit in the period, bonuses excluded. */
+  profit: Money;
+}
+
 export interface RatingResponse {
-  items: { rank: number; display_name: string; photo_url: string | null; value: string; is_me: boolean }[];
-  me: { rank: number; value: string } | null;
+  items: (RatingRow & { display_name: string; photo_url: string | null; is_me: boolean })[];
+  me: RatingRow | null;
+  /** Resolved predictions needed for the overall accuracy rating. */
+  min_resolved: number;
+}
+
+export interface CalibrationBucket {
+  /** Middle of the price bucket, percent: 10, 30, 50, 70, 90. */
+  price: number;
+  count: number;
+  hits: number;
+}
+
+export interface BestPrediction {
+  market: { id: number; title: string };
+  side: 'yes' | 'no';
+  /** Price of the bought side at purchase, 0..1. */
+  price: number;
+  gain: Money;
 }
 
 export interface ProfileResponse {
   me: Me;
-  stats: { profit: Money; accuracy: number | null; predictions: number; markets_created: number };
+  stats: {
+    profit: Money;
+    accuracy: number | null;
+    correct: number;
+    evaluated: number;
+    /** Place in the all-time profit rating. */
+    rank: number | null;
+    predictions: number;
+    markets_created: number;
+    disputes_lost: number;
+  };
+  joined_at: string | null;
+  invited: number;
+  calibration: CalibrationBucket[];
+  best_prediction: BestPrediction | null;
   balance_history: { t: string; balance: Money }[];
   ledger: LedgerEntry[];
 }

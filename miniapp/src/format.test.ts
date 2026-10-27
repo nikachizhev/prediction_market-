@@ -6,6 +6,7 @@ import {
   formatPercent,
   formatPoints,
   formatSigned,
+  formatSince,
   plural,
   pluralize,
 } from './format';
@@ -118,5 +119,16 @@ describe('formatEnds', () => {
 
   it('marks closed markets', () => {
     expect(formatEnds(new Date(2026, 9, 1).toISOString(), now)).toBe('приём закрыт');
+  });
+});
+
+describe('formatSince', () => {
+  it('names the month and year of registration', () => {
+    expect(formatSince(new Date(2026, 9, 25).toISOString())).toBe('с октября 2026');
+    expect(formatSince(new Date(2027, 0, 1, 12).toISOString())).toBe('с января 2027');
+  });
+
+  it('is empty for a broken date', () => {
+    expect(formatSince('nope')).toBe('');
   });
 });

@@ -37,11 +37,12 @@ describe('initials', () => {
 });
 
 describe('hasOthers', () => {
-  const item = (is_me: boolean) => ({ rank: 1, display_name: 'X', photo_url: null, value: '0.00', is_me });
+  const row = { rank: 1, value: '0.00', predictions: 0, accuracy: null, profit: '0.00' };
+  const item = (is_me: boolean) => ({ ...row, display_name: 'X', photo_url: null, is_me });
   it('treats a friends list with only me as empty', () => {
-    expect(hasOthers({ items: [item(true)], me: { rank: 1, value: '0.00' } } as RatingResponse)).toBe(false);
-    expect(hasOthers({ items: [], me: null })).toBe(false);
-    expect(hasOthers({ items: [item(true), item(false)], me: null })).toBe(true);
+    expect(hasOthers({ items: [item(true)], me: row, min_resolved: 20 } as RatingResponse)).toBe(false);
+    expect(hasOthers({ items: [], me: null, min_resolved: 20 })).toBe(false);
+    expect(hasOthers({ items: [item(true), item(false)], me: null, min_resolved: 20 })).toBe(true);
   });
 });
 

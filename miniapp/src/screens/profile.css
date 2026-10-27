@@ -229,16 +229,69 @@
   font-variant-numeric: tabular-nums;
 }
 
-.ledger-amount.is-plus {
+.ledger-amount.is-plus,
+.profile-best-gain.is-plus {
   color: var(--yes);
 }
 
-.ledger-amount.is-minus {
+.ledger-amount.is-minus,
+.profile-best-gain.is-minus {
   color: var(--no);
 }
 
-.ledger-amount.is-zero {
+.ledger-amount.is-zero,
+.profile-best-gain.is-zero {
   color: var(--sub);
+}
+
+.profile-calibration {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+}
+
+.profile-calibration .profile-chart {
+  touch-action: manipulation;
+}
+
+.profile-calibration-hit {
+  cursor: pointer;
+}
+
+.profile-best {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+}
+
+.profile-best-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.profile-best-title {
+  font-size: 15px;
+  line-height: 1.3;
+  font-weight: 600;
+  color: inherit;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.profile-best-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.profile-best-gain {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .profile-more {

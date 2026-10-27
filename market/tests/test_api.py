@@ -289,6 +289,9 @@ def test_rating_and_profile(anya, boris):
     _, rating = anya.get("rating")
     assert rating["items"][0]["display_name"] == trader(1001).display_name and rating["me"]["rank"] == 1
     _, acc = anya.get("rating", by="accuracy", period="week")
+    assert acc["items"] == [] and acc["me"] is None  # one resolved prediction is below the threshold
+    with override_settings(RATING_ACCURACY_MIN_RESOLVED=1):
+        _, acc = anya.get("rating", by="accuracy", period="week")
     assert acc["items"][0]["value"] == "1.0000"
     _, friends = anya.get("rating", scope="friends")
     assert [i["is_me"] for i in friends["items"]] == [True]

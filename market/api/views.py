@@ -334,12 +334,21 @@ def rating(request):
 @endpoint("GET")
 def profile(request):
     from ..rating import trader_stats
+    from ..statistics import best_prediction, calibration
     trader = request.trader
     ledger = trader.ledger.select_related("question")[:50]
     history = list(trader.ledger.filter(created_at__gte=timezone.now() - timedelta(days=90))
                    .order_by("created_at", "id").values_list("created_at", "balance_after"))
+    best = best_prediction(trader)
+    if best:
+        best["gain"] = s.money(best["gain"])
+    joined = trader.created_at or (trader.user.date_joined if trader.user_id else None)
     return {
         "me": s.me(trader), "stats": trader_stats(trader),
+        "joined_at": s.iso(joined),
+        # Only a count of the people this trader invited; referral rewards come in phase 2.
+        "invited": trader.referrals.count(),
+        "calibration": calibration(trader), "best_prediction": best,
         "balance_history": [{"t": s.iso(t), "balance": s.money(b)} for t, b in history],
         "ledger": [{"kind": e.kind, "label": e.get_kind_display(), "amount": s.money(e.amount), "at": s.iso(e.created_at),
                     "market": {"id": e.question_id, "title": e.question.title} if e.question_id else None}

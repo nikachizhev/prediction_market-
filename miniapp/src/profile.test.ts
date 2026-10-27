@@ -4,6 +4,10 @@ import {
   balanceChangeLabel,
   balanceChart,
   balanceSeries,
+  bestPredictionLabel,
+  calibrationLabel,
+  calibrationPoints,
+  calibrationTip,
   daysAgo,
   formatLedgerDate,
   nearestPoint,
@@ -157,5 +161,35 @@ describe('pseudonymError', () => {
     expect(pseudonymError('x'.repeat(32))).toBeNull();
     expect(pseudonymError(' a ')).toBe('Псевдоним — от 2 до 32 символов.');
     expect(pseudonymError('x'.repeat(33))).toBe('Псевдоним — от 2 до 32 символов.');
+  });
+});
+
+describe('calibration', () => {
+  const buckets = [
+    { price: 10, count: 8, hits: 1 },
+    { price: 50, count: 0, hits: 0 },
+    { price: 70, count: 9, hits: 6 },
+  ];
+
+  it('places points like the mockup: price on x, hit rate on y', () => {
+    const points = calibrationPoints(buckets);
+    expect(points.map((p) => p.price)).toEqual([10, 70]);
+    expect(points[0]).toMatchObject({ x: 66.4, y: 167.5, count: 8, hits: 1 });
+    expect(points[1].x).toBe(248.8);
+    expect(points[1].y).toBe(70);
+  });
+
+  it('describes the chart and each point in words', () => {
+    const points = calibrationPoints(buckets);
+    expect(calibrationLabel(points)).toBe('Калибровка: покупки по 10% сбылись в 13%, по 70% — в 67%');
+    expect(calibrationTip(points[1])).toEqual(['Покупал по ~70%', 'сбылось 6 из 9 (67%)']);
+  });
+});
+
+describe('bestPredictionLabel', () => {
+  it('names the side and the price', () => {
+    const best = { market: { id: 1, title: 'X' }, side: 'yes' as const, price: 0.12, gain: '218.00' };
+    expect(bestPredictionLabel(best)).toBe('Купил ДА по 12% — сбылось');
+    expect(bestPredictionLabel({ ...best, side: 'no', price: 0.3 })).toBe('Купил НЕТ по 30% — сбылось');
   });
 });
