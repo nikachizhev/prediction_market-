@@ -27,6 +27,8 @@ export interface Me {
   photo_url: string | null;
   balance: Money;
   onboarded: boolean;
+  /** Category slugs picked in onboarding («Что тебе интересно?»). */
+  interests: string[];
   referral_link: string;
   referred_by: string | null;
   invested: { [marketId: number]: Money };
@@ -211,7 +213,7 @@ export const api = {
 
   me: () => request<Me>('GET', '/me'),
 
-  updateMe: (patch: { pseudonym?: string; show_real_name?: boolean; onboarded?: boolean }) =>
+  updateMe: (patch: { pseudonym?: string; show_real_name?: boolean; onboarded?: boolean; interests?: string[] }) =>
     request<Me>('PATCH', '/me', patch),
 
   categories: () => request<Category[]>('GET', '/categories'),
@@ -236,8 +238,11 @@ export const api = {
 
   report: (id: number, reason?: string) => request<{ ok: true }>('POST', `/markets/${id}/report`, { reason }),
 
-  createMarket: (data: { title: string; criteria: string; category: string; closes_at: string; resolves_at: string }) =>
-    request<{ market: MarketDetail; balance: Money }>('POST', '/markets', data),
+  /** request_key makes creation idempotent; pass the same key when retrying the same submission. */
+  createMarket: (
+    data: { title: string; criteria: string; category: string; closes_at: string; resolves_at: string },
+    request_key: string = newRequestKey(),
+  ) => request<{ market: MarketDetail; balance: Money }>('POST', '/markets', { ...data, request_key }),
 
   mine: () => request<MineResponse>('GET', '/mine'),
 

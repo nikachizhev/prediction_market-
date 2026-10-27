@@ -32,6 +32,8 @@ class Trader(models.Model):
     referral_code = models.CharField(max_length=16, unique=True, null=True, blank=True)
     referred_by = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="referrals")
     onboarded_at = models.DateTimeField(null=True, blank=True)
+    # Category slugs picked in onboarding («Что тебе интересно?»), see CATEGORIES.
+    interests = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(null=True, blank=True, auto_now_add=True)
 
     class Meta:
@@ -248,6 +250,8 @@ class Question(models.Model):
     # Fees held in the market; split between the creator and burning at resolution, refunded on cancel.
     fee_pool = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal(0))
     hidden_at = models.DateTimeField("скрыт до решения модератора", null=True, blank=True)
+    # Client-generated key of the create request: a repeated POST /api/markets returns this market.
+    request_key = models.UUIDField(null=True, blank=True, unique=True, editable=False)
 
     # Resolution by the creator in the bot (spec E4).
     class Resolution(models.TextChoices):

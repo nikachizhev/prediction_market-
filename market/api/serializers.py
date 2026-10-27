@@ -58,6 +58,7 @@ def me(trader: Trader) -> dict:
         "show_real_name": trader.show_real_name, "display_name": trader.display_name,
         "photo_url": trader.photo_url or None, "balance": money(trader.balance),
         "onboarded": trader.onboarded_at is not None,
+        "interests": list(trader.interests or []),
         "referral_link": referral_link(trader),
         "referred_by": trader.referred_by.display_name if trader.referred_by_id else None,
         "invested": {str(p.question_id): money(p.spent) for p in open_positions},

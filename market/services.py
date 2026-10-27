@@ -488,13 +488,33 @@ def claim_insurance(trader: Trader) -> LedgerEntry | None:
 
 
 @transaction.atomic
-def create_market(trader: Trader, *, title: str, criteria: str, category: str, closes_at, resolves_at) -> Question:
-    """User-created YES/NO market: the creator pays the market maker's subsidy."""
+def create_market(trader: Trader, *, title: str, criteria: str, category: str, closes_at, resolves_at,
+                  request_key=None) -> Question:
+    """User-created YES/NO market: the creator pays the market maker's subsidy.
+
+    With `request_key` the call is idempotent: a repeat by the same creator returns the market
+    created first (marked `replayed`) without charging again or counting against the daily limit.
+    """
     from datetime import timedelta
+    from uuid import UUID
+    from django.db import IntegrityError
     from .models import CATEGORIES
     trader = Trader.objects.select_for_update().get(pk=trader.pk)
     title = (title or "").strip()
     criteria = (criteria or "").strip()
+    if request_key is not None:
+        try:
+            request_key = UUID(str(request_key))
+        except (ValueError, TypeError, AttributeError):
+            raise MarketError("Недействительный идентификатор запроса.") from None
+        # The trader lock serialises repeats of one creator, so the first market is visible here.
+        previous = Question.objects.filter(request_key=request_key).first()
+        if previous:
+            if (previous.creator_id != trader.pk or previous.title != title
+                    or previous.resolution_criteria != criteria or previous.category != category):
+                raise MarketError("Этот идентификатор уже использован для другого рынка. Обновите страницу.")
+            previous.replayed = True
+            return previous
     if not title:
         raise MarketError("Напишите вопрос.")
     if len(title) > 120:
@@ -520,10 +540,16 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
     cost = Decimal(settings.MARKET_CREATION_COST)
     if trader.balance < cost:
         raise MarketError(f"Создание рынка стоит {settings.MARKET_CREATION_COST} монет — на балансе не хватает.")
-    question = create_question(
-        title=title, resolution_criteria=criteria, deadline=closes_at, initial_prob=0.5,
-        b=settings.LMSR_DEFAULT_B, creator=trader, category=category, resolves_at=resolves_at, subsidy=cost,
-    )
+    try:
+        question = create_question(
+            title=title, resolution_criteria=criteria, deadline=closes_at, initial_prob=0.5,
+            b=settings.LMSR_DEFAULT_B, creator=trader, category=category, resolves_at=resolves_at, subsidy=cost,
+            request_key=request_key,
+        )
+    except IntegrityError:
+        # Another trader raced us with the same key; never reveal their market.
+        raise MarketError("Этот идентификатор уже использован для другого рынка. Обновите страницу.") from None
+    question.replayed = False
     trader.balance -= cost
     trader.save(update_fields=["balance"])
     _record(trader, LedgerEntry.Kind.CREATION, -cost, question)

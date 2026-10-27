@@ -82,6 +82,15 @@ def get_market(trader: Trader, pk: int) -> Question:
     return visible_questions(trader).filter(kind=Question.Kind.LMSR).get(pk=pk)
 
 
+def interests_of(value) -> list[str]:
+    """Category slugs from the onboarding picker, deduplicated, in the categories' order."""
+    from ..models import CATEGORIES
+    slugs = [slug for slug, _ in CATEGORIES]
+    if not isinstance(value, list) or any(not isinstance(v, str) or v not in slugs for v in value):
+        raise BadRequest("Выберите темы из списка.")
+    return [slug for slug in slugs if slug in value]
+
+
 # --- account -------------------------------------------------------------------------
 
 @endpoint("POST", create=True)
@@ -120,6 +129,9 @@ def me(request):
         if "show_real_name" in data:
             trader.show_real_name = bool(data["show_real_name"])
             fields.append("show_real_name")
+        if "interests" in data:
+            trader.interests = interests_of(data["interests"])
+            fields.append("interests")
         if data.get("onboarded") and not trader.onboarded_at:
             trader.onboarded_at = timezone.now()
             fields.append("onboarded_at")
@@ -177,9 +189,11 @@ def create_market(request):
             raise BadRequest("Укажите дату с часовым поясом.")
     question = services.create_market(
         request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
-        category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at)
-    from ..events import log_event
-    log_event(request.trader, "market_create", {"market": question.pk, "category": question.category})
+        category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
+        request_key=data.get("request_key") or None)
+    if not question.replayed:
+        from ..events import log_event
+        log_event(request.trader, "market_create", {"market": question.pk, "category": question.category})
     request.trader.refresh_from_db()
     return {"market": s.detail(question, request.trader), "balance": s.money(request.trader.balance)}
 
