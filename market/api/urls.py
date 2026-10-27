@@ -19,5 +19,6 @@ urlpatterns = [
     path("mine", views.mine, name="mine"),
     path("rating", views.rating, name="rating"),
     path("profile", views.profile, name="profile"),
+    path("profile/history", views.profile_history, name="profile_history"),
     path("events", views.events, name="events"),
 ]
