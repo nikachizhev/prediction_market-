@@ -20,7 +20,7 @@
 ## Стек и запуск
 
 - Python 3.12, Django 5.2, PostgreSQL 17 в Docker, `requests`, `python-dotenv`. Тесты: `pytest` + `pytest-django`.
-- Фронтенд Mini App: SPA (React + Vite + TypeScript) в папке `miniapp/` (ещё не создана). Старое правило «никакого SPA» отменено.
+- Фронтенд Mini App: SPA (React + Vite + TypeScript) в папке `miniapp/`. Старое правило «никакого SPA» отменено.
 - Окружение — в `.env` (образец `.env.example`). Порт PostgreSQL берётся из `POSTGRES_PORT`: на машине Кирилла это **5433**, потому что 5432 занят системным Postgres.
 
 Команды (Linux; в Windows вместо `.venv/bin/python` — `.\.venv\Scripts\python.exe`):
@@ -71,6 +71,20 @@ docker compose up -d --wait                                  # PostgreSQL
 - Тесты не ходят в сеть: Telegram и прочие внешние API мокаем.
 - Новый код покрывается тестами. Обязательно — деньги (сервис, лимиты, комиссия, выплаты, споры) и авторизация.
 - В репозитории работают и с Windows: команды и пути в README должны оставаться рабочими.
+
+## Сервер (прод)
+
+- `root@91.108.241.25`, вход по SSH-ключу. Сайт и Mini App: `https://91-108-241-25.sslip.io` (`/app/` — Mini App), TLS даёт Caddy (`deploy/Caddyfile`).
+- Код — `/opt/prediction_market/app`, ветка **`miniapp`**, владелец пользователь `pm`; venv — `/opt/prediction_market/venv`; `.env` сервера лежит там же и в git не попадает.
+- Сервисы systemd (`deploy/systemd/`): `pm-db` (PostgreSQL в docker compose), `pm-web` (gunicorn), `pm-worker` (`run_worker`), `pm-bot` (`run_telegram_bot`, long polling).
+- **Обновить прод** (после пуша в `miniapp`): `ssh root@91.108.241.25 bash /opt/prediction_market/app/deploy/update.sh` — pull, `npm ci` + сборка Mini App, зависимости, миграции, collectstatic, рестарт всех сервисов.
+- После изменений в `setup_bot` (кнопка меню, команды бота) — ещё `ssh root@91.108.241.25 "cd /opt/prediction_market/app && sudo -u pm /opt/prediction_market/venv/bin/python manage.py setup_bot"`.
+- Логи: `ssh root@91.108.241.25 journalctl -u pm-bot -u pm-worker -u pm-web -n 100 --no-pager`.
+- Git на сервере запускать от `pm` (`sudo -u pm git ...`), иначе «dubious ownership».
+- На сервере нужен ffmpeg (анимация графика в боте) — ставится `apt-get install -y ffmpeg`, `setup-server.sh` его не ставит.
+- **Бот один на токен.** Прод-бот уже опрашивает Telegram — локальный `run_telegram_bot` с тем же токеном даст «Conflict» и будет делить апдейты. Для локальной разработки — отдельный тестовый бот.
+- **Не запускай `setup_bot` локально с прод-токеном**: он перепишет кнопку меню бота на локальный `SITE_URL` (ngrok) у всех пользователей.
+- Пушить и обновлять прод — только по явной просьбе пользователя.
 
 ## Git
 
