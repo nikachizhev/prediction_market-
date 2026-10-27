@@ -1,6 +1,6 @@
 // Pure helpers for the market card and «Мои» (docs/mockups/Market.dc.html, Mine.dc.html).
-import type { HistoryPeriod, MarketStatus, Position, Side } from './api';
-import { formatDayMonth, pluralize } from './format';
+import type { HistoryPeriod, MarketStatus, Position, Side, TopMove } from './api';
+import { dayLabel, formatDayMonth, formatTime, pluralize } from './format';
 
 // ---- Chart ----
 
@@ -293,6 +293,27 @@ export function positionAfterSell(position: Position, side: Side, proceeds: numb
 /** Selling is possible only while the market takes predictions. */
 export function canSell(market: { status: MarketStatus; closes_at: string }, now: Date = new Date()): boolean {
   return market.status === 'open' && new Date(market.closes_at).getTime() > now.getTime();
+}
+
+// ---- Top moves ----
+
+export interface TopMoveView {
+  key: string;
+  /** "Сегодня, 14:05" / "Вчера, 09:40" / "25 октября, 18:00". */
+  when: string;
+  /** "41% → 63%". */
+  move: string;
+  up: boolean;
+}
+
+/** «Самые резкие сдвиги»; empty when the server sent none (or is older). */
+export function topMovesView(moves: TopMove[] | null | undefined, now: Date = new Date()): TopMoveView[] {
+  return (moves ?? []).slice(0, 3).map((m, i) => ({
+    key: `${m.at}-${i}`,
+    when: `${dayLabel(m.at, now)}, ${formatTime(m.at)}`,
+    move: `${Math.round(m.from * 100)}% → ${Math.round(m.to * 100)}%`,
+    up: m.to >= m.from,
+  }));
 }
 
 // ---- Telegram links ----

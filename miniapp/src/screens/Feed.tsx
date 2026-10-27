@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, type Category, type MarketCard, type MarketSort, type Position, type Side } from '../api';
 import { BalancePill } from '../components/BalancePill';
+import { NotificationBell } from '../components/NotificationBell';
 import { MarketCardView } from '../components/MarketCardView';
 import { CardSkeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
@@ -165,6 +166,7 @@ export function FeedScreen() {
     <div className="screen feed">
       <header className="screen-header">
         <BalancePill />
+        <NotificationBell />
       </header>
 
       <div className="feed-search">

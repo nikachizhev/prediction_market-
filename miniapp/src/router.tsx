@@ -4,6 +4,7 @@ import { BalancePill } from './components/BalancePill';
 import { TabBar } from './components/TabBar';
 import { useToast } from './components/Toast';
 import { grantMessage } from './grants';
+import { marketFromStartParam } from './links';
 import { Onboarding } from './screens/Onboarding';
 import { Placeholder } from './screens/Placeholder';
 import { useSession } from './session';
@@ -14,6 +15,7 @@ import {
   MarketScreen,
   MineScreen,
   NotFoundScreen,
+  NotificationsScreen,
   ProfileScreen,
   RatingScreen,
 } from './screens/screens';
@@ -28,6 +30,7 @@ function Layout() {
   const { me, newAccount } = useSession();
   const onboarding = !!me && newAccount && !me.onboarded;
   useGrantToast();
+  useMarketDeepLink(!!me && !onboarding);
 
   useEffect(() => {
     if (!nested) {
@@ -61,6 +64,20 @@ function Layout() {
       {!nested && <TabBar />}
     </div>
   );
+}
+
+// The start_param is the same for the whole launch: open its market only once.
+let deepLinkHandled = false;
+
+/** `startapp=ref_<code>-m<id>` or `m<id>`: opens the market once the session is ready. */
+function useMarketDeepLink(ready: boolean) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!ready || deepLinkHandled) return;
+    deepLinkHandled = true;
+    const id = marketFromStartParam(tg.startParam);
+    if (id !== null) navigate(`/market/${id}`);
+  }, [ready, navigate]);
 }
 
 /** Tells once per launch about the daily bonus or insurance granted by POST /api/session. */
@@ -109,6 +126,7 @@ export const router = createBrowserRouter(
         { path: '/rating', element: <RatingScreen /> },
         { path: '/profile', element: <ProfileScreen /> },
         { path: '/market/:id', element: <MarketScreen /> },
+        { path: '/notifications', element: <NotificationsScreen /> },
         { path: '*', element: <NotFoundScreen /> },
       ],
     },

@@ -17,6 +17,10 @@ interface SessionState {
   adjustBalance: (delta: number) => void;
   /** Replaces `me` (e.g. after PATCH /api/me). */
   setMe: (me: Me) => void;
+  /** Updates `me` from its latest value (no-op while signed out). */
+  patchMe: (update: (prev: Me) => Me) => void;
+  /** Updates the unread notifications count (bell badge). */
+  setUnread: (update: number | ((prev: number) => number)) => void;
   /** Re-fetches `me` from the server. */
   refresh: () => Promise<void>;
   /** Retries the session start after an error. */
@@ -76,6 +80,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setMe((prev) => (prev ? { ...prev, balance: (Number(prev.balance) + delta).toFixed(2) } : prev));
   }, []);
 
+  const patchMe = useCallback((update: (prev: Me) => Me) => {
+    setMe((prev) => (prev ? update(prev) : prev));
+  }, []);
+
+  const setUnread = useCallback((update: number | ((prev: number) => number)) => {
+    setMe((prev) => {
+      if (!prev) return prev;
+      const before = prev.unread_notifications ?? 0;
+      const next = typeof update === 'function' ? update(before) : update;
+      return { ...prev, unread_notifications: Math.max(0, next) };
+    });
+  }, []);
+
   const refresh = useCallback(async () => {
     setMe(await api.me());
   }, []);
@@ -93,10 +110,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setBalance,
       adjustBalance,
       setMe,
+      patchMe,
+      setUnread,
       refresh,
       retry,
     }),
-    [me, granted, newAccount, loading, error, setBalance, adjustBalance, refresh, retry],
+    [me, granted, newAccount, loading, error, setBalance, adjustBalance, patchMe, setUnread, refresh, retry],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

@@ -27,15 +27,16 @@ import {
   positionAfterSell,
   positionStats,
   settledResult,
-  shareLink,
   sharesLabel,
   sharesOf,
   statusView,
   timeAgo,
   timeLeft,
+  topMovesView,
   untilResult,
   type HistoryPoint,
 } from '../market';
+import { shareMarket } from '../links';
 import { useSession } from '../session';
 import { isTelegram, tg } from '../telegram';
 import { applyProbability, sideLabel, splitPercents } from '../trade';
@@ -163,9 +164,7 @@ export function MarketScreen() {
   const share = useCallback(() => {
     const m = marketRef.current;
     if (!m || !me) return;
-    tg.HapticFeedback.impact('light');
-    tg.openTelegramLink(shareLink(me.referral_link, m.title));
-    api.event('share', { market: m.id }).catch(() => {});
+    void shareMarket(m, me.referral_link);
   }, [me]);
 
   const openDispute = useCallback(() => {
@@ -392,6 +391,8 @@ export function MarketScreen() {
           <p className="mk-text sub">{m.criteria}</p>
           <p className="mk-text small sub">{datesLine(m.closes_at, m.resolves_at)}</p>
         </section>
+
+        <TopMovesSection moves={m.top_moves} />
 
         <TradesSection trades={m.trades} />
 
@@ -692,6 +693,27 @@ function ChartSection({
           </button>
         ))}
       </div>
+    </section>
+  );
+}
+
+function TopMovesSection({ moves }: { moves: MarketDetail['top_moves'] }) {
+  const rows = useMemo(() => topMovesView(moves), [moves]);
+  if (rows.length === 0) return null;
+  return (
+    <section className="card mk-section mk-trades" aria-label="Самые резкие сдвиги">
+      <h2 className="mk-section-title">Самые резкие сдвиги</h2>
+      <ul className="mk-trade-list">
+        {rows.map((r) => (
+          <li key={r.key} className="mk-trade">
+            <span className={`mk-move-arrow ${r.up ? 'is-up' : 'is-down'}`} aria-hidden="true">
+              {r.up ? '▲' : '▼'}
+            </span>
+            <span className="mk-trade-text sub small">{r.when}</span>
+            <span className="mk-trade-move">{r.move}</span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

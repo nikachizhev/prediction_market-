@@ -15,6 +15,11 @@ export interface ThemeTokens {
   yesFill: string;
   noFill: string;
   gold: string;
+  /** Gold text and icons on goldTint (Notifications.dc.html). */
+  goldInk: string;
+  goldTint: string;
+  /** Background of an unread notification. */
+  unreadBg: string;
   overlay: string;
   tab: string;
 }
@@ -33,6 +38,9 @@ export const themes: Record<ColorScheme, ThemeTokens> = {
     yesFill: '#1F6FD6',
     noFill: '#C2410C',
     gold: '#D99A00',
+    goldInk: '#8A6100',
+    goldTint: '#FBF1D9',
+    unreadBg: '#F6F9FE',
     overlay: 'rgba(17, 20, 24, 0.45)',
     tab: '#FFFFFF',
   },
@@ -49,6 +57,9 @@ export const themes: Record<ColorScheme, ThemeTokens> = {
     yesFill: '#1F6FD6',
     noFill: '#C2410C',
     gold: '#F2B632',
+    goldInk: '#F2B632',
+    goldTint: '#3A3020',
+    unreadBg: '#1B212B',
     overlay: 'rgba(0, 0, 0, 0.6)',
     tab: '#14171C',
   },

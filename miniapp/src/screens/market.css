@@ -501,6 +501,13 @@
   white-space: nowrap;
 }
 
+.mk-move-arrow {
+  width: 14px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  text-align: center;
+}
+
 .mk-link-button {
   align-self: center;
   height: 44px;
