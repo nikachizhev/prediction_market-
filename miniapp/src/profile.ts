@@ -1,6 +1,15 @@
 // Pure helpers of the profile screen (docs/mockups/Profile.dc.html).
-import type { BestPrediction, CalibrationBucket, Money } from './api';
-import { formatDayMonth, formatSigned, pluralize } from './format';
+import type {
+  BestPrediction,
+  CalibrationBucket,
+  CategoryStat,
+  HistoryPeriod,
+  Money,
+  ProfileHistoryPoint,
+  ReferralSummary,
+} from './api';
+import { formatDayMonth, formatMoney, formatSigned, pluralize } from './format';
+import { periodWord } from './market';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -174,6 +183,136 @@ export function calibrationTip(p: CalibrationPoint): [string, string] {
 /** "Купил ДА по 12% — сбылось". */
 export function bestPredictionLabel(best: BestPrediction): string {
   return `Купил ${best.side === 'yes' ? 'ДА' : 'НЕТ'} по ${Math.round(best.price * 100)}% — сбылось`;
+}
+
+// ---- Balance and profit by period (GET /api/profile/history) ----
+
+export type ChartMetric = 'balance' | 'profit';
+
+/** Length of each period; 'all' starts at the first point. */
+export const PERIOD_DAYS: Record<Exclude<HistoryPeriod, 'all'>, number> = { d: 1, w: 7, m: 30 };
+
+/** Left edge of the chart under the plot. */
+export const PERIOD_START_LABEL: Record<HistoryPeriod, string> = {
+  d: 'сутки назад',
+  w: 'неделю назад',
+  m: 'месяц назад',
+  all: 'с начала',
+};
+
+/** Window of the chart: [start, end] in ms. */
+export function periodWindow(
+  period: HistoryPeriod,
+  points: { t: string }[],
+  now: Date = new Date(),
+): { start: number; end: number } {
+  const end = now.getTime();
+  if (period !== 'all') return { start: end - PERIOD_DAYS[period] * DAY_MS, end };
+  const times = points.map((p) => Date.parse(p.t)).filter((t) => Number.isFinite(t) && t <= end);
+  const first = times.length ? Math.min(...times) : end - DAY_MS;
+  return { start: Math.min(first, end - DAY_MS), end };
+}
+
+/**
+ * Series of the balance or profit chart. Ends at `now` with `current` (the live
+ * balance) or, when `current` is null, with the last known value.
+ */
+export function historySeries(
+  points: ProfileHistoryPoint[],
+  metric: ChartMetric,
+  period: HistoryPeriod,
+  current: number | null,
+  now: Date = new Date(),
+): BalancePoint[] {
+  const { start, end } = periodWindow(period, points, now);
+  const all = points
+    .map((p) => ({ t: Date.parse(p.t), v: Number(metric === 'balance' ? p.balance : p.profit) }))
+    .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v) && p.t <= end)
+    .sort((a, b) => a.t - b.t);
+  const before = all.filter((p) => p.t < start);
+  const inside = all.filter((p) => p.t >= start);
+  const last = all.length ? all[all.length - 1].v : 0;
+  const endValue = current ?? last;
+  const series: BalancePoint[] = [];
+  if (before.length > 0) series.push({ t: start, v: before[before.length - 1].v });
+  else if (inside.length === 0) series.push({ t: start, v: endValue });
+  series.push(...inside);
+  series.push({ t: end, v: endValue });
+  return series;
+}
+
+/** Old server without /api/profile/history: balance from `balance_history`, no profit. */
+export function legacyHistory(history: { t: string; balance: Money }[]): ProfileHistoryPoint[] {
+  return history.map((h) => ({ t: h.t, balance: h.balance, profit: '0.00' }));
+}
+
+/** "+240 за месяц", "−20 за сутки". */
+export function seriesChangeLabel(series: BalancePoint[], period: HistoryPeriod): string {
+  if (series.length === 0) return '';
+  const delta = series[series.length - 1].v - series[0].v;
+  return `${formatSigned(delta, 0)} ${periodWord(period)}`;
+}
+
+/** Scrubbed point: time today for «Д», otherwise "сегодня" / "3 дн. назад". */
+export function scrubLabel(t: number, period: HistoryPeriod, now: Date = new Date()): string {
+  if (period === 'd') {
+    const d = new Date(t);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+  return daysAgo(t, now);
+}
+
+// ---- Categories, best predictions, invites ----
+
+export interface CategoryRow {
+  slug: string;
+  label: string;
+  /** "64%" or "—". */
+  accuracy: string;
+  /** Bar width, 0..1. */
+  bar: number;
+  predictions: string;
+  profit: string;
+  tone: Tone;
+}
+
+/** «По категориям»: most predictions first. */
+export function categoryRows(stats: CategoryStat[] | null | undefined): CategoryRow[] {
+  return [...(stats ?? [])]
+    .filter((c) => c.predictions > 0)
+    .sort((a, b) => b.predictions - a.predictions || a.label.localeCompare(b.label, 'ru'))
+    .map((c) => ({
+      slug: c.slug,
+      label: c.label,
+      accuracy: c.accuracy === null ? '—' : `${Math.round(c.accuracy * 100)}%`,
+      bar: c.accuracy === null ? 0 : Math.min(Math.max(c.accuracy, 0), 1),
+      predictions: pluralize(c.predictions, 'прогноз', 'прогноза', 'прогнозов'),
+      profit: formatSigned(c.profit, 0),
+      tone: amountTone(c.profit),
+    }));
+}
+
+/** Up to 3 best predictions; an older server sends only `best_prediction`. */
+export function bestPredictionsOf(
+  data: { best_predictions?: BestPrediction[]; best_prediction: BestPrediction | null },
+): BestPrediction[] {
+  if (data.best_predictions && data.best_predictions.length > 0) return data.best_predictions.slice(0, 3);
+  return data.best_prediction ? [data.best_prediction] : [];
+}
+
+/** «По 300 монет вам обоим, когда друг сделает 5 прогнозов. Приглашено 3 · получено 600.» */
+export function inviteText(referral: ReferralSummary | null | undefined, invited: number | null): string {
+  if (!referral) {
+    return (
+      'Вы оба получите монеты, когда друг начнёт делать прогнозы.' +
+      (invited !== null ? ` Приглашено ${formatMoney(invited, 0)}.` : '')
+    );
+  }
+  return (
+    `По ${formatMoney(referral.reward, 0)} монет вам обоим, когда друг сделает ` +
+    `${pluralize(referral.predictions_needed, 'прогноз', 'прогноза', 'прогнозов')}. ` +
+    `Приглашено ${formatMoney(referral.invited, 0)} · получено ${formatMoney(referral.earned, 0)}.`
+  );
 }
 
 export const PSEUDONYM_MIN = 2;

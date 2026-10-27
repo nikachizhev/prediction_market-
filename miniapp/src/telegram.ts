@@ -77,6 +77,8 @@ interface TgWebApp {
   openLink(url: string): void;
   isVersionAtLeast(version: string): boolean;
   requestWriteAccess?(cb?: (allowed: boolean) => void): void;
+  /** Bot API 8.0+: shares a message prepared by the bot (savePreparedInlineMessage). */
+  shareMessage?(msgId: string, cb?: (sent: boolean) => void): void;
   onEvent(event: TelegramEvent, cb: () => void): void;
   offEvent(event: TelegramEvent, cb: () => void): void;
 }
@@ -205,6 +207,28 @@ export const tg = {
     const app = webApp();
     if (!app || typeof app.requestWriteAccess !== 'function') return Promise.resolve(false);
     return new Promise((resolve) => app.requestWriteAccess!((allowed) => resolve(allowed)));
+  },
+
+  /** True when the client supports Telegram.WebApp.shareMessage (8.0+). */
+  get canShareMessage(): boolean {
+    const app = webApp();
+    return !!app && typeof app.shareMessage === 'function' && app.isVersionAtLeast('8.0');
+  },
+
+  /**
+   * Opens Telegram's dialog for a prepared message; resolves with whether it was
+   * sent. Rejects when the client cannot do it, so the caller can fall back.
+   */
+  shareMessage(msgId: string): Promise<boolean> {
+    const app = webApp();
+    if (!app || typeof app.shareMessage !== 'function') return Promise.reject(new Error('shareMessage is unavailable'));
+    return new Promise((resolve, reject) => {
+      try {
+        app.shareMessage!(msgId, (sent) => resolve(!!sent));
+      } catch (err) {
+        reject(err);
+      }
+    });
   },
 
   /** Subscribes to a WebApp event; returns an unsubscribe function. */

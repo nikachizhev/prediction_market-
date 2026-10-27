@@ -1,0 +1,202 @@
+/* Notifications (docs/mockups/Notifications.dc.html). */
+
+.nt {
+  display: flex;
+  flex-direction: column;
+}
+
+.nt-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: var(--bg);
+}
+
+.nt-header-side {
+  min-width: 112px;
+  display: flex;
+}
+
+.nt-header-side.is-end {
+  justify-content: flex-end;
+}
+
+.nt-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.nt-icon-button {
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.nt-read-all {
+  height: 44px;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  color: var(--yes);
+  font: 600 14px/1 var(--font);
+  cursor: pointer;
+}
+
+.nt-read-all:disabled {
+  color: var(--sub);
+  cursor: default;
+}
+
+.nt-filters {
+  padding: 4px var(--gutter) 12px;
+}
+
+.nt-chip {
+  height: 36px;
+  padding: 0 14px;
+}
+
+.nt-body {
+  padding: 0 var(--gutter) 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nt-day {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nt-day-title {
+  margin: 8px 4px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.nt-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--card);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.nt-item {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  cursor: default;
+}
+
+.nt-item:first-child {
+  border-top: none;
+}
+
+.nt-item.is-unread {
+  background: var(--unread-bg);
+  cursor: pointer;
+}
+
+.nt-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nt-icon.is-win,
+.nt-icon.is-move {
+  background: var(--yes-tint);
+  color: var(--yes);
+}
+
+.nt-icon.is-task,
+.nt-icon.is-coin {
+  background: var(--gold-tint);
+  color: var(--gold-ink);
+}
+
+.nt-icon.is-people {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.nt-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nt-line {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.nt-text {
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.nt-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--yes-fill);
+}
+
+.nt-time {
+  font-size: 12px;
+}
+
+.nt-action {
+  align-self: flex-start;
+  height: 36px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 600 14px/1 var(--font);
+  cursor: pointer;
+}
+
+.nt-action.is-strong {
+  background: var(--ink);
+  color: var(--card);
+}
+
+.nt-empty {
+  padding: 48px 24px;
+  text-align: center;
+  font-size: 15px;
+}
+
+.nt-note {
+  margin: 8px 4px 0;
+  font-size: 13px;
+  line-height: 1.4;
+}

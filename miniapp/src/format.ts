@@ -106,3 +106,22 @@ export function formatEnds(closesAt: string, now: Date = new Date()): string {
   if (days <= 60) return 'ещё ' + pluralize(days, 'день', 'дня', 'дней');
   return 'до ' + formatDayMonth(closesAt, now);
 }
+
+/** Local "14:05". */
+export function formatTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+const startOfDay = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+/** Calendar day relative to `now` (local time): "Сегодня", "Вчера" or "25 октября". */
+export function dayLabel(iso: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const days = Math.round((startOfDay(now) - startOfDay(date)) / DAY_MS);
+  if (days === 0) return 'Сегодня';
+  if (days === 1) return 'Вчера';
+  return formatDayMonth(iso, now);
+}

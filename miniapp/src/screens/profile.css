@@ -297,3 +297,185 @@
 .profile-more {
   background: var(--bg);
 }
+
+.profile-head .bell {
+  margin-left: auto;
+  align-self: flex-start;
+}
+
+.profile-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.profile-metrics .chip-button,
+.profile-periods .chip-button {
+  height: 36px;
+  font-size: 13px;
+}
+
+.profile-periods {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+/* By category */
+.profile-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+
+.profile-cat-list,
+.profile-best-list,
+.profile-notify-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.profile-cat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.profile-cat:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.profile-cat-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.profile-cat-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.profile-cat-profit {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-cat-profit.is-plus {
+  color: var(--yes);
+}
+
+.profile-cat-profit.is-minus {
+  color: var(--no);
+}
+
+.profile-cat-profit.is-zero {
+  color: var(--sub);
+}
+
+.profile-cat-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.profile-cat-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--yes-fill);
+}
+
+.profile-cat-sub {
+  font-size: 12px;
+}
+
+/* Best predictions */
+.profile-best-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.profile-best-item:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.profile-best-item:last-child {
+  padding-bottom: 0;
+}
+
+/* Settings */
+.profile-settings {
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-family: var(--font);
+  cursor: pointer;
+}
+
+.profile-setting-label {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.profile-setting-value {
+  font-size: 14px;
+}
+
+.profile-notify {
+  padding: 4px var(--gutter) calc(16px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-notify-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.profile-notify-row:first-child {
+  border-top: none;
+}
+
+.profile-notify-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-notify-label {
+  font-size: 15px;
+  font-weight: 500;
+}

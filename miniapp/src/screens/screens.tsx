@@ -7,6 +7,7 @@ export { MineScreen } from './Mine';
 export { CreateScreen } from './Create';
 export { RatingScreen } from './Rating';
 export { ProfileScreen } from './Profile';
+export { NotificationsScreen } from './Notifications';
 
 export function NotFoundScreen() {
   return <Placeholder title="Страница не найдена" cards={0} />;

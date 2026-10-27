@@ -18,6 +18,10 @@ export interface Limits {
   trade_limit_share?: number;
 }
 
+/** What the bot may send (docs/api.md, «Фаза 2»). */
+export type NotifyKind = 'results' | 'moves' | 'closing' | 'referral' | 'creator';
+export type NotifySettings = { [k in NotifyKind]: boolean };
+
 export interface Me {
   id: number;
   name: string;
@@ -33,6 +37,10 @@ export interface Me {
   referred_by: string | null;
   invested: { [marketId: number]: Money };
   limits: Limits;
+  /** Phase 2; missing on an older server. */
+  notify?: NotifySettings;
+  /** Phase 2; missing on an older server. */
+  unread_notifications?: number;
 }
 
 export interface MarketCard {
@@ -74,6 +82,8 @@ export interface MarketDetail extends MarketCard {
   max_amount: Money;
   my_position: Position | null;
   trades: { side: Side; amount: Money; prob_after: number; at: string; sell: boolean }[];
+  /** Up to 3 sharpest single-trade price moves, anonymous (phase 2; may be missing). */
+  top_moves?: TopMove[];
   resolution: {
     proposed_outcome: Side | 'cancel' | null;
     evidence_url: string | null;
@@ -81,6 +91,12 @@ export interface MarketDetail extends MarketCard {
     dispute_until: string | null;
     can_dispute: boolean;
   } | null;
+}
+
+export interface TopMove {
+  at: string;
+  from: number;
+  to: number;
 }
 
 export interface Quote {
@@ -128,6 +144,27 @@ export interface Category {
 
 export type EventName = 'share' | 'onboarding_done' | 'onboarding_skip' | 'open_bot';
 
+export type NoticeGroup = 'mine' | 'pay' | 'markets';
+export type NoticeFilter = 'all' | NoticeGroup;
+
+export interface Notice {
+  id: number;
+  kind: NotifyKind | string;
+  group: NoticeGroup;
+  title: string;
+  text: string;
+  at: string;
+  read: boolean;
+  market: { id: number; title: string } | null;
+  /** Button: «Указать итог в боте» / «Открыть рынок». */
+  action: 'resolve' | 'market' | null;
+}
+
+export interface NoticesResponse {
+  items: Notice[];
+  unread: number;
+}
+
 export type MarketSort = 'hot' | 'new' | 'soon';
 export type HistoryPeriod = 'd' | 'w' | 'm' | 'all';
 
@@ -171,6 +208,35 @@ export interface BestPrediction {
   gain: Money;
 }
 
+export interface ReferralSummary {
+  /** People who came by my link. */
+  invited: number;
+  /** Friends a reward was received for. */
+  rewarded: number;
+  /** Coins received for friends. */
+  earned: Money;
+  /** Reward for each side, "300.00". */
+  reward: Money;
+  /** Predictions in different markets a friend needs (5). */
+  predictions_needed: number;
+}
+
+export interface CategoryStat {
+  slug: string;
+  label: string;
+  predictions: number;
+  correct: number;
+  accuracy: number | null;
+  profit: Money;
+}
+
+export interface ProfileHistoryPoint {
+  t: string;
+  balance: Money;
+  /** Realized profit without bonuses. */
+  profit: Money;
+}
+
 export interface ProfileResponse {
   me: Me;
   stats: {
@@ -190,6 +256,10 @@ export interface ProfileResponse {
   best_prediction: BestPrediction | null;
   balance_history: { t: string; balance: Money }[];
   ledger: LedgerEntry[];
+  /** Phase 2 fields; missing on an older server. */
+  referral?: ReferralSummary;
+  categories?: CategoryStat[];
+  best_predictions?: BestPrediction[];
 }
 
 // ---- Transport ----
@@ -256,8 +326,26 @@ export const api = {
 
   me: () => request<Me>('GET', '/me'),
 
-  updateMe: (patch: { pseudonym?: string; show_real_name?: boolean; onboarded?: boolean; interests?: string[] }) =>
-    request<Me>('PATCH', '/me', patch),
+  updateMe: (patch: {
+    pseudonym?: string;
+    show_real_name?: boolean;
+    onboarded?: boolean;
+    interests?: string[];
+    notify?: Partial<NotifySettings>;
+  }) => request<Me>('PATCH', '/me', patch),
+
+  notifications: (filter: NoticeFilter = 'all') =>
+    request<NoticesResponse>('GET', withQuery('/notifications', { filter })),
+
+  /** Without ids marks everything read. */
+  readNotifications: (ids?: number[]) =>
+    request<{ unread: number }>('POST', '/notifications/read', ids ? { ids } : {}),
+
+  profileHistory: (period: HistoryPeriod = 'm') =>
+    request<{ points: ProfileHistoryPoint[] }>('GET', withQuery('/profile/history', { period })),
+
+  /** Prepared message for Telegram.WebApp.shareMessage; 503 when Telegram is unavailable. */
+  shareMarket: (id: number) => request<{ prepared_message_id: string }>('POST', `/markets/${id}/share`),
 
   categories: () => request<Category[]>('GET', '/categories'),
 

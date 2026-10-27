@@ -6,31 +6,47 @@ import {
   ApiError,
   type BestPrediction,
   type CalibrationBucket,
+  type CategoryStat,
+  type HistoryPeriod,
   type LedgerEntry,
+  type NotifyKind,
+  type ProfileHistoryPoint,
   type ProfileResponse,
+  type ReferralSummary,
 } from '../api';
+import { BottomSheet } from '../components/BottomSheet';
+import { NotificationBell } from '../components/NotificationBell';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { Avatar } from '../components/Avatar';
 import { CoinIcon } from '../components/CoinIcon';
 import { Skeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
-import { formatMoney, formatSigned, formatSince, pluralize } from '../format';
+import { formatDayMonth, formatMoney, formatSigned, formatSince, pluralize } from '../format';
 import { shareInvite } from '../invite';
+import { periodWord, PERIODS } from '../market';
+import { NOTIFY_NOTE, NOTIFY_OPTIONS, notifyCountLabel, toggleNotify } from '../notifications';
 import {
   amountTone,
-  balanceChangeLabel,
   balanceChart,
-  balanceSeries,
   bestPredictionLabel,
+  bestPredictionsOf,
   CALIBRATION_BOX,
   calibrationLabel,
   calibrationPoints,
   calibrationTip,
-  daysAgo,
+  categoryRows,
   formatLedgerDate,
+  historySeries,
+  inviteText,
+  legacyHistory,
   nearestPoint,
+  PERIOD_START_LABEL,
+  periodWindow,
   pseudonymError,
   PSEUDONYM_MAX,
+  scrubLabel,
+  seriesChangeLabel,
+  type ChartMetric,
 } from '../profile';
 import { useSession } from '../session';
 import { tg } from '../telegram';
@@ -39,7 +55,6 @@ import './profile.css';
 type LoadState = 'loading' | 'ready' | 'error';
 
 const CHART = { w: 358, h: 140, plot: 318, top: 6, bottom: 120 };
-const DAYS = 30;
 const LEDGER_PREVIEW = 10;
 
 export function ProfileScreen() {
@@ -83,6 +98,7 @@ export function ProfileScreen() {
             {state === 'ready' && data?.joined_at ? ` · ${formatSince(data.joined_at)}` : ''}
           </span>
         </div>
+        <NotificationBell />
       </header>
 
       {state === 'error' && (
@@ -94,7 +110,7 @@ export function ProfileScreen() {
         </div>
       )}
 
-      <BalanceCard history={state === 'ready' && data ? data.balance_history : null} balance={balance} />
+      <BalanceCard fallback={state === 'ready' && data ? data.balance_history : null} balance={balance} />
 
       {state === 'ready' && data ? (
         <Stats stats={data.stats} />
@@ -112,9 +128,15 @@ export function ProfileScreen() {
       )}
 
       {state === 'ready' && data && data.calibration.length > 0 && <Calibration buckets={data.calibration} />}
-      {state === 'ready' && data?.best_prediction && <BestPredictionCard best={data.best_prediction} />}
+      {state === 'ready' && data && <Categories stats={data.categories} />}
+      {state === 'ready' && data && <BestPredictions items={bestPredictionsOf(data)} />}
 
-      <InviteCard link={me.referral_link} invited={state === 'ready' && data ? data.invited : null} />
+      <InviteCard
+        link={me.referral_link}
+        invited={state === 'ready' && data ? data.invited : null}
+        referral={state === 'ready' && data ? data.referral : undefined}
+      />
+      {me.notify && <SettingsNav />}
       <NameCard />
 
       {state === 'ready' && data && <Ledger entries={data.ledger} />}
@@ -122,26 +144,66 @@ export function ProfileScreen() {
   );
 }
 
-function BalanceCard({ history, balance }: { history: ProfileResponse['balance_history'] | null; balance: number }) {
+const METRICS: { key: ChartMetric; label: string }[] = [
+  { key: 'balance', label: 'Баланс' },
+  { key: 'profit', label: 'Прибыль' },
+];
+
+type HistoryCache = Partial<Record<HistoryPeriod, ProfileHistoryPoint[]>>;
+
+/**
+ * Balance and profit by period (GET /api/profile/history). An older server
+ * without the endpoint gets the balance from `balance_history` and no profit.
+ */
+function BalanceCard({ fallback, balance }: { fallback: ProfileResponse['balance_history'] | null; balance: number }) {
+  const [period, setPeriod] = useState<HistoryPeriod>('m');
+  const [metric, setMetric] = useState<ChartMetric>('balance');
+  const [cache, setCache] = useState<HistoryCache>({});
+  const [legacy, setLegacy] = useState(false);
   const [scrub, setScrub] = useState<number | null>(null);
-  const now = useMemo(() => new Date(), []);
-  const series = useMemo(() => (history ? balanceSeries(history, balance, now, DAYS) : null), [history, balance, now]);
+
+  useEffect(() => {
+    if (legacy || cache[period]) return;
+    let cancelled = false;
+    api
+      .profileHistory(period)
+      .then((res) => {
+        if (!cancelled) setCache((prev) => ({ ...prev, [period]: res.points }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLegacy(true);
+        setMetric('balance');
+        setPeriod('m');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [period, legacy, cache]);
+
+  const points = legacy ? (fallback ? legacyHistory(fallback) : null) : (cache[period] ?? null);
+  const now = useMemo(() => new Date(), [points]);
+  const series = useMemo(
+    () => (points ? historySeries(points, metric, period, metric === 'balance' ? balance : null, now) : null),
+    [points, metric, period, balance, now],
+  );
+  const frame = useMemo(() => (points ? periodWindow(period, points, now) : null), [points, period, now]);
   const chart = useMemo(
     () =>
-      series
-        ? balanceChart(series, {
-            width: CHART.plot,
-            top: CHART.top,
-            bottom: CHART.bottom,
-            start: now.getTime() - DAYS * 24 * 60 * 60 * 1000,
-            end: now.getTime(),
-          })
+      series && frame
+        ? balanceChart(series, { width: CHART.plot, top: CHART.top, bottom: CHART.bottom, ...frame })
         : null,
-    [series, now],
+    [series, frame],
   );
+  useEffect(() => setScrub(null), [chart]);
 
-  const point = chart && scrub !== null ? chart.points[scrub] : null;
+  const point = chart && scrub !== null ? (chart.points[scrub] ?? null) : null;
   const last = chart ? chart.points[chart.points.length - 1] : null;
+  const profit = metric === 'profit';
+  const format = (v: number) => (profit ? formatSigned(v, 0) : formatMoney(v));
+  const label = profit ? 'Прибыль' : 'Баланс';
+  const startLabel =
+    period === 'all' && frame ? formatDayMonth(new Date(frame.start).toISOString(), now) : PERIOD_START_LABEL[period];
 
   const onMove = (e: PointerEvent<SVGSVGElement>) => {
     if (!chart) return;
@@ -154,18 +216,46 @@ function BalanceCard({ history, balance }: { history: ProfileResponse['balance_h
     }
   };
 
+  const pickPeriod = (p: HistoryPeriod) => {
+    if (p === period) return;
+    tg.HapticFeedback.selection();
+    setPeriod(p);
+  };
+
+  const pickMetric = (m: ChartMetric) => {
+    if (m === metric) return;
+    tg.HapticFeedback.selection();
+    setMetric(m);
+  };
+
   return (
-    <section aria-label="Баланс" className="card profile-balance">
+    <section aria-label={label} className="card profile-balance">
+      {!legacy && (
+        <div role="group" aria-label="Что показать" className="profile-metrics">
+          {METRICS.map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              className={`chip-button ${m.key === metric ? 'is-active' : ''}`}
+              aria-pressed={m.key === metric}
+              onClick={() => pickMetric(m.key)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="profile-balance-top">
         <div className="profile-balance-main">
-          <span className="sub small">Баланс</span>
+          <span className="sub small">{label}</span>
           <span className="profile-balance-value">
-            <CoinIcon size={26} />
-            {point ? formatMoney(point.v) : <AnimatedNumber value={balance} />}
+            {!profit && <CoinIcon size={26} />}
+            {point ? format(point.v) : profit ? (last ? format(last.v) : '—') : <AnimatedNumber value={balance} />}
           </span>
+          {profit && <span className="sub small">без бонусов</span>}
         </div>
         <span className="sub small profile-balance-when">
-          {point ? daysAgo(point.t, now) : series ? balanceChangeLabel(series) : ''}
+          {point ? scrubLabel(point.t, period, now) : series ? seriesChangeLabel(series, period) : ''}
         </span>
       </div>
       {chart && series ? (
@@ -174,7 +264,7 @@ function BalanceCard({ history, balance }: { history: ProfileResponse['balance_h
           height={CHART.h}
           viewBox={`0 0 ${CHART.w} ${CHART.h}`}
           role="img"
-          aria-label={`Баланс за ${DAYS} дней: с ${formatMoney(series[0].v)} до ${formatMoney(series[series.length - 1].v)}`}
+          aria-label={`${label} ${periodWord(period)}: с ${format(series[0].v)} до ${format(series[series.length - 1].v)}`}
           className="profile-chart"
           onPointerMove={onMove}
           onPointerDown={onMove}
@@ -198,7 +288,7 @@ function BalanceCard({ history, balance }: { history: ProfileResponse['balance_h
             last && <circle cx={last.x} cy={last.y} r="4" fill="var(--yes)" stroke="var(--card)" strokeWidth="2" />
           )}
           <text x="0" y="136" fontSize="11" fill="var(--sub)">
-            {DAYS} дней назад
+            {startLabel}
           </text>
           <text x={CHART.plot} y="136" textAnchor="end" fontSize="11" fill="var(--sub)">
             сегодня
@@ -206,6 +296,21 @@ function BalanceCard({ history, balance }: { history: ProfileResponse['balance_h
         </svg>
       ) : (
         <Skeleton height={140} radius={10} />
+      )}
+      {!legacy && (
+        <div role="group" aria-label="Период" className="profile-periods">
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              className={`chip-button ${p.key === period ? 'is-active' : ''}`}
+              aria-pressed={p.key === period}
+              onClick={() => pickPeriod(p.key)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
       )}
     </section>
   );
@@ -320,22 +425,64 @@ function Calibration({ buckets }: { buckets: CalibrationBucket[] }) {
   );
 }
 
-function BestPredictionCard({ best }: { best: BestPrediction }) {
+function Categories({ stats }: { stats: CategoryStat[] | undefined }) {
+  const rows = useMemo(() => categoryRows(stats), [stats]);
+  if (rows.length === 0) return null;
   return (
-    <section aria-label="Лучший прогноз" className="card profile-best">
-      <span className="sub profile-best-label">ЛУЧШИЙ ПРОГНОЗ</span>
-      <Link to={`/market/${best.market.id}`} className="profile-best-title">
-        {best.market.title}
-      </Link>
-      <div className="profile-best-row">
-        <span className="sub">{bestPredictionLabel(best)}</span>
-        <span className={`profile-best-gain is-${amountTone(best.gain)}`}>{formatSigned(best.gain, 0)}</span>
-      </div>
+    <section aria-label="По категориям" className="card profile-categories">
+      <h2 className="profile-section-title">По категориям</h2>
+      <ul className="profile-cat-list">
+        {rows.map((r) => (
+          <li key={r.slug} className="profile-cat">
+            <div className="profile-cat-row">
+              <span className="profile-cat-label">{r.label}</span>
+              <span className={`profile-cat-profit is-${r.tone}`}>{r.profit}</span>
+            </div>
+            <div className="profile-cat-bar" aria-hidden="true">
+              <span style={{ width: `${Math.round(r.bar * 100)}%` }} />
+            </div>
+            <span className="sub profile-cat-sub">
+              Точность {r.accuracy} · {r.predictions}
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
 
-function InviteCard({ link, invited }: { link: string; invited: number | null }) {
+function BestPredictions({ items }: { items: BestPrediction[] }) {
+  if (items.length === 0) return null;
+  const many = items.length > 1;
+  return (
+    <section aria-label={many ? 'Лучшие прогнозы' : 'Лучший прогноз'} className="card profile-best">
+      <span className="sub profile-best-label">{many ? 'ЛУЧШИЕ ПРОГНОЗЫ' : 'ЛУЧШИЙ ПРОГНОЗ'}</span>
+      <ul className="profile-best-list">
+        {items.map((best) => (
+          <li key={best.market.id} className="profile-best-item">
+            <Link to={`/market/${best.market.id}`} className="profile-best-title">
+              {best.market.title}
+            </Link>
+            <div className="profile-best-row">
+              <span className="sub">{bestPredictionLabel(best)}</span>
+              <span className={`profile-best-gain is-${amountTone(best.gain)}`}>{formatSigned(best.gain, 0)}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function InviteCard({
+  link,
+  invited,
+  referral,
+}: {
+  link: string;
+  invited: number | null;
+  referral: ReferralSummary | undefined;
+}) {
   const [copied, setCopied] = useState(false);
   const timer = useRef(0);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -355,10 +502,7 @@ function InviteCard({ link, invited }: { link: string; invited: number | null })
   return (
     <section aria-label="Пригласить друга" className="card profile-invite">
       <h2 className="profile-section-title">Пригласи друга</h2>
-      <p className="sub small profile-text">
-        Вы оба получите монеты, когда друг начнёт делать прогнозы.
-        {invited !== null && ` Приглашено ${formatMoney(invited, 0)}.`}
-      </p>
+      <p className="sub small profile-text">{inviteText(referral, invited)}</p>
       <div className="profile-link-row">
         <label htmlFor="ref-link" className="visually-hidden">
           Твоя ссылка
@@ -372,6 +516,89 @@ function InviteCard({ link, invited }: { link: string; invited: number | null })
         Пригласить друга
       </button>
     </section>
+  );
+}
+
+/** «Настройки» list from the mockup; for now only «Уведомления». */
+function SettingsNav() {
+  const { me } = useSession();
+  const [open, setOpen] = useState(false);
+  if (!me?.notify) return null;
+  return (
+    <>
+      <nav aria-label="Настройки" className="card profile-settings">
+        <button
+          type="button"
+          className="profile-setting"
+          onClick={() => {
+            tg.HapticFeedback.selection();
+            setOpen(true);
+          }}
+        >
+          <span className="profile-setting-label">Уведомления</span>
+          <span className="sub profile-setting-value">{notifyCountLabel(me.notify)}</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--sub)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </nav>
+      <BottomSheet open={open} onClose={() => setOpen(false)} label="Уведомления в боте">
+        <NotifySettings />
+      </BottomSheet>
+    </>
+  );
+}
+
+/** Five switches; optimistic PATCH /api/me, the one switch rolls back on error. */
+function NotifySettings() {
+  const { me, setMe, patchMe } = useSession();
+  const toast = useToast();
+  const latest = useRef(0);
+  if (!me?.notify) return null;
+  const notify = me.notify;
+
+  const flip = (key: NotifyKind) => {
+    const value = toggleNotify(notify, key)[key];
+    tg.HapticFeedback.impact('light');
+    patchMe((prev) => (prev.notify ? { ...prev, notify: { ...prev.notify, [key]: value } } : prev));
+    latest.current += 1;
+    const request = latest.current;
+    api
+      .updateMe({ notify: { [key]: value } })
+      .then((res) => {
+        // A newer toggle is in flight: its answer brings the final state.
+        if (request === latest.current) setMe(res);
+      })
+      .catch((err: unknown) => {
+        patchMe((prev) => (prev.notify ? { ...prev, notify: { ...prev.notify, [key]: !value } } : prev));
+        tg.HapticFeedback.notification('error');
+        toast(err instanceof ApiError ? err.message : 'Не получилось. Попробуйте ещё раз.', 'error');
+      });
+  };
+
+  return (
+    <div className="profile-notify">
+      <h2 className="profile-section-title">Уведомления в боте</h2>
+      <ul className="profile-notify-list">
+        {NOTIFY_OPTIONS.map((o) => (
+          <li key={o.key} className="profile-notify-row">
+            <span className="profile-notify-text" id={`notify-${o.key}`}>
+              <span className="profile-notify-label">{o.label}</span>
+              <span className="sub small">{o.hint}</span>
+            </span>
+            <button
+              type="button"
+              role="switch"
+              className="switch"
+              aria-checked={notify[o.key]}
+              aria-labelledby={`notify-${o.key}`}
+              onClick={() => flip(o.key)}
+            />
+          </li>
+        ))}
+      </ul>
+      <p className="sub small profile-text">{NOTIFY_NOTE}</p>
+    </div>
   );
 }
 
