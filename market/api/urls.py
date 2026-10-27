@@ -19,5 +19,7 @@ urlpatterns = [
     path("mine", views.mine, name="mine"),
     path("rating", views.rating, name="rating"),
     path("profile", views.profile, name="profile"),
+    path("notifications", views.notifications, name="notifications"),
+    path("notifications/read", views.notifications_read, name="notifications_read"),
     path("events", views.events, name="events"),
 ]

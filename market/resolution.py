@@ -55,7 +55,8 @@ def user_markets():
 
 def tick(now=None) -> dict:
     now = now or timezone.now()
-    done = {"closed": 0, "asked": 0, "reminded": 0, "cancelled": 0, "finalized": 0, "results": 0}
+    done = {"closed": 0, "asked": 0, "reminded": 0, "cancelled": 0, "finalized": 0, "results": 0,
+            "moves": 0, "closing": 0, "sent": 0, "skipped": 0, "failed": 0, "postponed": 0}
     bot = _bot()
 
     for q in user_markets().filter(status=Question.Status.OPEN, deadline__lte=now):
@@ -95,4 +96,16 @@ def tick(now=None) -> dict:
         if _safe(bot.send_results, q):
             Question.objects.filter(pk=q.pk).update(results_sent_at=now)
             done["results"] += 1
+
+    # Notifications (spec E6.3): detectors fill the outbox, then due bot messages go out.
+    from . import bot_notifications as notices
+    for name, detect in (("moves", notices.detect_moves), ("closing", notices.detect_closing)):
+        try:
+            done[name] = detect(now)
+        except Exception:  # noqa: BLE001 - a broken detector must not stop the worker
+            log.exception("notification detector %s failed", name)
+    try:
+        done.update(notices.flush(now))
+    except Exception:  # noqa: BLE001
+        log.exception("bot outbox flush failed")
     return done

@@ -5,7 +5,7 @@ from django.core.exceptions import PermissionDenied
 
 from . import services
 from .models import Payout, Position, Question, Trade, Trader, EmailVerification
-from .models import Dispute, Event, LedgerEntry, MarketComplaint
+from .models import BotMessage, Dispute, Event, LedgerEntry, MarketComplaint, ReferralReward
 from .question_forms import ResultForm
 from .participation import finish
 from .models import Group, GroupMembership, Notification
@@ -208,3 +208,19 @@ class LedgerAdmin(ReadOnlyLedgerAdmin):
 class EventAdmin(ReadOnlyLedgerAdmin):
     list_display = ("name", "trader", "created_at")
     list_filter = ("name",)
+
+
+@admin.register(BotMessage)
+class BotMessageAdmin(ReadOnlyLedgerAdmin):
+    list_display = ("trader", "kind", "status", "send_after", "sent_at", "attempts", "question")
+    list_filter = ("status", "kind")
+    search_fields = ("trader__name", "key", "text")
+    list_select_related = ("trader", "question")
+
+
+@admin.register(ReferralReward)
+class ReferralRewardAdmin(ReadOnlyLedgerAdmin):
+    list_display = ("friend", "referrer", "granted", "created_at")
+    list_filter = ("granted",)
+    search_fields = ("friend__name", "referrer__name")
+    list_select_related = ("friend", "referrer")

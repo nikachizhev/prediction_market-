@@ -91,6 +91,18 @@ def interests_of(value) -> list[str]:
     return [slug for slug in slugs if slug in value]
 
 
+def notify_of(value) -> dict[str, bool]:
+    """Partial bot notification switches: known kinds only, true/false only."""
+    from ..bot_notifications import KINDS
+    if not isinstance(value, dict):
+        raise BadRequest("Настройки уведомлений — неверный формат.")
+    if any(key not in KINDS for key in value):
+        raise BadRequest("Неизвестный тип уведомлений.")
+    if any(not isinstance(v, bool) for v in value.values()):
+        raise BadRequest("Уведомление можно только включить или выключить.")
+    return dict(value)
+
+
 # --- account -------------------------------------------------------------------------
 
 @endpoint("POST", create=True)
@@ -132,6 +144,9 @@ def me(request):
         if "interests" in data:
             trader.interests = interests_of(data["interests"])
             fields.append("interests")
+        if "notify" in data:
+            trader.notify_prefs = {**(trader.notify_prefs or {}), **notify_of(data["notify"])}
+            fields.append("notify_prefs")
         if data.get("onboarded") and not trader.onboarded_at:
             trader.onboarded_at = timezone.now()
             fields.append("onboarded_at")
@@ -354,6 +369,42 @@ def profile(request):
                     "market": {"id": e.question_id, "title": e.question.title} if e.question_id else None}
                    for e in ledger],
     }
+
+
+NOTICE_FILTERS = ("all", "mine", "pay", "markets")
+
+
+@endpoint("GET")
+def notifications(request):
+    from ..bot_notifications import MARKETS_KINDS, PAY_KINDS
+    from ..notifications import visible_notifications
+    choice = request.GET.get("filter", "all")
+    if choice not in NOTICE_FILTERS:
+        raise BadRequest("Неизвестный фильтр.")
+    items = visible_notifications(request.trader)
+    unread = items.filter(read_at__isnull=True).count()
+    if choice == "pay":
+        items = items.filter(kind__in=PAY_KINDS)
+    elif choice == "markets":
+        items = items.filter(kind__in=MARKETS_KINDS)
+    elif choice == "mine":
+        items = items.exclude(kind__in=PAY_KINDS + MARKETS_KINDS)
+    return {"items": [s.notice(n) for n in items.select_related("question")[:50]], "unread": unread}
+
+
+@endpoint("POST")
+def notifications_read(request):
+    from ..notifications import visible_notifications
+    data = body(request)
+    items = visible_notifications(request.trader).filter(read_at__isnull=True)
+    if data.get("ids") is not None:
+        ids = data["ids"]
+        if not isinstance(ids, list) or any(isinstance(i, bool) or not isinstance(i, int) for i in ids):
+            raise BadRequest("Неверный список уведомлений.")
+        items.filter(pk__in=ids).update(read_at=timezone.now())
+    else:
+        items.update(read_at=timezone.now())
+    return {"unread": visible_notifications(request.trader).filter(read_at__isnull=True).count()}
 
 
 @endpoint("POST")
