@@ -22,10 +22,14 @@ def app_button(text: str = "Открыть приложение", path: str = ""
 
 
 def welcome(chat_id: int) -> None:
-    """/start for someone without an account: everything happens in the Mini App."""
+    """/start: everything happens in the Mini App; people with an account also get «Мои рынки»."""
+    keyboard = [[app_button()]]
+    if Trader.objects.filter(telegram_chat_id=chat_id).exists():
+        from .bot_markets import OPEN_LIST
+        keyboard.append([{"text": "Мои рынки", "callback_data": OPEN_LIST}])
     telegram.send(chat_id, "Привет! Здесь рынок прогнозов на виртуальные монеты: делай прогнозы, "
                            "создавай свои рынки и следи за итогами. Всё — в приложении.",
-                  reply_markup={"inline_keyboard": [[app_button()]]})
+                  reply_markup={"inline_keyboard": keyboard})
 
 
 def outcome_keyboard(question: Question) -> dict:

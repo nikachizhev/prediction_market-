@@ -27,6 +27,10 @@ class BadRequest(Exception):
     pass
 
 
+class Unavailable(Exception):
+    """An outside service (Telegram) failed: 503, the client has a fallback."""
+
+
 def endpoint(*methods, create: bool = False):
     """Authenticated JSON view; MarketError/BadRequest become 400, unknown market 404."""
     def decorate(view):
@@ -39,6 +43,8 @@ def endpoint(*methods, create: bool = False):
                 return JsonResponse(view(request, *args, **kwargs), safe=False)
             except (MarketError, BadRequest) as exc:
                 return JsonResponse({"error": str(exc)}, status=400)
+            except Unavailable as exc:
+                return JsonResponse({"error": str(exc)}, status=503)
             except Question.DoesNotExist:
                 return JsonResponse({"error": "Рынок не найден."}, status=404)
         wrapper.__name__ = view.__name__
@@ -274,6 +280,21 @@ def star(request, pk):
     else:
         MarketSubscription.objects.filter(trader=request.trader, question=question).delete()
     return {"starred": starred}
+
+
+@endpoint("POST")
+def share(request, pk):
+    """Prepared inline message for Telegram.WebApp.shareMessage (spec E6.4)."""
+    from .. import share as sharing
+    from ..events import log_event
+    from ..telegram import TelegramError
+    question = get_market(request.trader, pk)
+    try:
+        prepared_id = sharing.prepare(request.trader, question)
+    except TelegramError:
+        raise Unavailable("Telegram сейчас недоступен. Поделитесь ссылкой.") from None
+    log_event(request.trader, "share", {"market": question.pk, "via": "prepared_message"})
+    return {"prepared_message_id": prepared_id}
 
 
 @endpoint("POST")

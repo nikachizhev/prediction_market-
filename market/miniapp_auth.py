@@ -90,9 +90,13 @@ def _new_referral_code() -> str:
 
 
 def _referrer(start_param: str) -> Trader | None:
+    """`ref_<code>` or a market link `ref_<code>-m<id>`; a plain `m<id>` has no inviter."""
     if not start_param.startswith("ref_"):
         return None
-    return Trader.objects.filter(referral_code=start_param[4:]).first()
+    code, sep, market = start_param[4:].partition("-m")
+    if not code or (sep and not market.isdigit()):
+        return None
+    return Trader.objects.filter(referral_code=code).first()
 
 
 def get_or_create_trader(session: TelegramSession) -> tuple[Trader, bool]:

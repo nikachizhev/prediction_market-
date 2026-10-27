@@ -1,5 +1,6 @@
 """Telegram transport and private-chat account linking."""
 import hashlib
+import json
 import secrets
 from datetime import timedelta
 
@@ -22,6 +23,28 @@ def api(method, **data):
         response = requests.post(
             f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/{method}",
             json=data, timeout=40,
+        )
+        result = response.json()
+        if not response.ok or not result.get("ok"):
+            raise TelegramError("Telegram отклонил запрос.")
+        return result["result"]
+    except (requests.RequestException, ValueError):
+        raise TelegramError("Не удалось связаться с Telegram.") from None
+
+
+def upload(method, files, **data):
+    """Multipart call for sending a new file; `files` maps a field to (filename, bytes, content type).
+
+    Nested values (reply_markup, ...) go as JSON strings, as the Bot API expects in form data.
+    """
+    if not settings.TELEGRAM_BOT_TOKEN:
+        raise TelegramError("Токен Telegram-бота не настроен.")
+    form = {key: json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list, bool)) else str(value)
+            for key, value in data.items() if value is not None}
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/{method}",
+            data=form, files=files, timeout=60,
         )
         result = response.json()
         if not response.ok or not result.get("ok"):
@@ -84,8 +107,17 @@ def consume_link(token, chat_id):
 
 def handle_update(update):
     from . import bot_resolution_dialog as resolution_dialog
+    if "inline_query" in update:
+        from .share import handle_inline_query
+        handle_inline_query(update["inline_query"])
+        return
     if "callback_query" in update:
-        resolution_dialog.handle_callback(update["callback_query"])
+        callback = update["callback_query"]
+        from . import bot_markets
+        if bot_markets.owns(callback.get("data") or ""):
+            bot_markets.handle_callback(callback)
+        else:
+            resolution_dialog.handle_callback(callback)
         return
     message = update.get("message", {})
     chat = message.get("chat", {})
@@ -120,6 +152,10 @@ def handle_update(update):
         # Everything lives in the Mini App now; the old site menu stays reachable via /menu.
         from .bot_resolution import welcome
         welcome(chat_id)
+        return
+    if command == "/my":
+        from .bot_markets import show
+        show(chat_id)
         return
     if trader and (not trader.user or trader.user.is_active) and command in ("/menu", "/help"):
         handle_menu(trader, command, send)
