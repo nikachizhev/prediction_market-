@@ -192,7 +192,8 @@ def balance_profit_history(trader, period: str, now=None) -> list[dict]:
     - a start point at the period start, a point at every moment the balance or the profit changed
       inside the period, and an end point at `now`;
     - `balance` is `balance_after` of the latest ledger line at that moment (before the first line:
-      that line's balance minus its amount); the end point shows the current balance;
+      that line's balance minus its amount; a starter pack as the first line is the opening balance,
+      so a new account starts at 1000, not 0); the end point shows the current balance;
     - `profit` is the running sum of non-bonus ledger amounts since the account start. A line tied
       to a market counts only once the market is settled (resolved or annulled), at the market's
       `resolved_at`; a line without a market counts at its own time. Bonuses (starter pack, daily
@@ -210,7 +211,9 @@ def balance_profit_history(trader, period: str, now=None) -> list[dict]:
     since = max(started, now - timedelta(days=HISTORY_PERIODS[period])) if period in HISTORY_PERIODS else started
     since = min(since, now)
 
-    balance_changes = [(at, after) for at, _, after, _, _, _ in lines]
+    # The starter pack is the opening balance, not a jump from zero at sign-up.
+    opening = lines[:1] if lines and lines[0][3] == LedgerEntry.Kind.STARTER else []
+    balance_changes = [(at, after) for at, _, after, _, _, _ in lines[len(opening):]]
     profit_changes: dict = {}
     for at, amount, _, kind, question_id, resolved_at in lines:
         if kind in LedgerEntry.BONUS_KINDS:
@@ -220,7 +223,10 @@ def balance_profit_history(trader, period: str, now=None) -> list[dict]:
                 continue
             at = max(at, resolved_at)  # a line written after settlement (e.g. a late refund) counts when written
         profit_changes[at] = profit_changes.get(at, Decimal(0)) + amount
-    initial_balance = lines[0][2] - lines[0][1] if lines else trader.balance
+    if opening:
+        initial_balance = opening[0][2]
+    else:
+        initial_balance = lines[0][2] - lines[0][1] if lines else trader.balance
 
     events = sorted({at for at, _ in balance_changes} | set(profit_changes))
     balance, profit, b_i = initial_balance, Decimal(0), 0
