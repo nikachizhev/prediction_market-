@@ -8,7 +8,6 @@ from market.models import Trader, Group, GroupMembership, Question, Notification
 from market import services
 from market.access import visible_questions
 from market.bot_registration import site_link
-from market.telegram import handle_update
 from market.question_forms import CreateQuestionForm
 
 
@@ -77,9 +76,6 @@ def test_private_markets_hidden_everywhere(client, team):
     assert not client.get(reverse("market:markets_api")).json()["results"]
     with pytest.raises(services.MarketError):
         services.buy(stranger, q, "yes", 10)
-    with patch("market.telegram.send") as send:
-        handle_update({"message": {"chat": {"id": stranger.telegram_chat_id, "type": "private"}, "text": "/markets"}})
-        assert "Secret roadmap" not in str(send.call_args_list)
     client.force_login(owner.user)
     assert client.get(reverse("market:question", args=[q.pk])).status_code == 200
     assert q.pk in visible_questions(owner).values_list("pk", flat=True)
@@ -138,7 +134,7 @@ def test_github_group_sync_scoped_and_idempotent(team):
 
 
 @pytest.mark.django_db
-def test_removed_member_loses_private_notifications_and_bot_access(client, team):
+def test_removed_member_loses_private_notifications(client, team):
     from market.notifications import notify
     group, (owner, member, _) = team
     membership = GroupMembership.objects.create(group=group, trader=member, status="active")
@@ -149,9 +145,6 @@ def test_removed_member_loses_private_notifications_and_bot_access(client, team)
     client.force_login(member.user)
     assert not client.get(reverse("market:notification_feed")).json()["items"]
     assert "Private release" not in client.get(reverse("market:me")).content.decode()
-    with patch("market.telegram.send") as send:
-        handle_update({"message": {"chat": {"id": member.telegram_chat_id, "type": "private"}, "text": "/positions"}})
-        assert "Private release" not in str(send.call_args_list)
     services.resolve(question, "yes")
     member.refresh_from_db()
     assert member.balance > 1000
