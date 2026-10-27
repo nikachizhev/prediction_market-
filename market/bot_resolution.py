@@ -39,9 +39,22 @@ def _waiting(question: Question) -> int:
     return Position.objects.filter(question=question).count()
 
 
+def _resolve_notice(question: Question, key: str) -> None:
+    """Inbox item with «Указать итог в боте»; the bot message itself is mandatory and sent directly."""
+    from .notifications import notify
+    notice = notify(question.creator, f"«{question.title}» Участников ждут итог: {_waiting(question)}.",
+                    kind="resolve", question=question, key=key)
+    if not notice.title:
+        notice.title = "Пора указать итог:"
+        notice.save(update_fields=["title"])
+
+
 def ask_creator(question: Question) -> None:
     creator = question.creator
-    if not creator or not creator.telegram_chat_id:
+    if not creator:
+        return
+    _resolve_notice(question, f"resolve-ask:{question.pk}")
+    if not creator.telegram_chat_id:
         return
     telegram.send(creator.telegram_chat_id,
                   f"Приём прогнозов на твоём рынке закрыт:\n«{question.title}»\n"
@@ -51,7 +64,10 @@ def ask_creator(question: Question) -> None:
 
 def remind_creator(question: Question, number: int) -> None:
     creator = question.creator
-    if not creator or not creator.telegram_chat_id:
+    if not creator:
+        return
+    _resolve_notice(question, f"resolve-remind:{question.pk}:{number}")
+    if not creator.telegram_chat_id:
         return
     left = settings.RESOLUTION_TIMEOUT_HOURS - 24 * number
     telegram.send(creator.telegram_chat_id,
@@ -61,17 +77,25 @@ def remind_creator(question: Question, number: int) -> None:
 
 
 def send_results(question: Question) -> None:
-    """Result and payout for every participant; confetti for winners."""
+    """Result and payout for every participant through the notification outbox; confetti for winners.
+
+    Keyed per market and trader, so a repeated call never sends twice.
+    """
+    from .bot_notifications import coins, enqueue
     label = {"yes": "ДА", "no": "НЕТ"}.get(question.outcome or "", "")
-    for trader in Trader.objects.filter(positions__question=question, telegram_chat_id__isnull=False).distinct():
+    markup = {"inline_keyboard": [[app_button("Открыть рынок", f"market/{question.pk}")]]}
+    for trader in Trader.objects.filter(positions__question=question).distinct():
         paid = Payout.objects.filter(question=question, trader=trader).aggregate(t=Sum("amount"))["t"] or Decimal(0)
-        markup = {"inline_keyboard": [[{"text": "Открыть рынок", "web_app": {"url": app_url(f"market/{question.pk}")}}]]}
+        payload = {"reply_markup": markup}
         if question.status == Question.Status.ANNULLED:
-            text = f"Рынок «{question.title}» отменён. Возврат: +{paid:.2f}."
-            telegram.send(trader.telegram_chat_id, text, reply_markup=markup)
+            title, text = "Рынок отменён:", f"«{question.title}». Возврат: +{coins(paid)}."
+            bot_text = f"Рынок «{question.title}» отменён. Возврат: +{paid:.2f}."
         elif paid > 0:
-            text = f"Рынок «{question.title}» завершён: итог {label}. Ты угадал! Выплата: +{paid:.2f}."
-            telegram.send(trader.telegram_chat_id, text, reply_markup=markup, message_effect_id=CONFETTI_EFFECT_ID)
+            title, text = f"Ты угадал! +{coins(paid)}", f"«{question.title}» закрылся с итогом {label}."
+            bot_text = None
+            payload["message_effect_id"] = CONFETTI_EFFECT_ID
         else:
-            text = f"Рынок «{question.title}» завершён: итог {label}. В этот раз мимо."
-            telegram.send(trader.telegram_chat_id, text, reply_markup=markup)
+            title, text = "В этот раз мимо:", f"«{question.title}» закрылся с итогом {label}."
+            bot_text = f"Рынок «{question.title}» завершён: итог {label}. В этот раз мимо."
+        enqueue(trader, "results", f"market-result:{question.pk}:{trader.pk}", title, text,
+                question=question, payload=payload, bot_text=bot_text)

@@ -9,7 +9,9 @@ from django.conf import settings
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
+from ..bot_notifications import group_of, notify_settings
 from ..models import CATEGORIES, MarketSubscription, Position, Question, Trade, Trader
+from ..notifications import visible_notifications
 
 CENT = Decimal("0.01")
 
@@ -63,6 +65,19 @@ def me(trader: Trader) -> dict:
         "referred_by": trader.referred_by.display_name if trader.referred_by_id else None,
         "invested": {str(p.question_id): money(p.spent) for p in open_positions},
         "limits": limits(),
+        "notify": notify_settings(trader),
+        "unread_notifications": visible_notifications(trader).filter(read_at__isnull=True).count(),
+    }
+
+
+def notice(item) -> dict:
+    """One row of the «Уведомления» screen."""
+    action = "resolve" if item.kind == "resolve" else ("market" if item.question_id else None)
+    return {
+        "id": item.pk, "kind": item.kind, "group": group_of(item.kind),
+        "title": item.title, "text": item.text, "at": iso(item.created_at), "read": item.read_at is not None,
+        "market": {"id": item.question_id, "title": item.question.title} if item.question_id else None,
+        "action": action,
     }
 
 

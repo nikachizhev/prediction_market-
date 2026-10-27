@@ -209,6 +209,7 @@ def buy(trader: Trader, question: Question, side: str, amount: Decimal | float |
     _record(trader, LedgerEntry.Kind.BUY, -q["cost"], question)
     from .subscriptions import price_changed
     price_changed(question)
+    grant_referral_reward(trader)
     return trade
 
 
@@ -662,6 +663,7 @@ def open_dispute(trader: Trader, question: Question, reason: str = ""):
     dispute = Dispute.objects.create(question=question, trader=trader, stake=stake, reason=(reason or "")[:500])
     question.resolution_state = Question.Resolution.DISPUTED
     question.save(update_fields=["resolution_state"])
+    _after_commit("dispute_opened", question.pk)
     return dispute
 
 
@@ -704,7 +706,9 @@ def moderator_decide(question: Question, decision: str) -> Question:
         if upheld:
             _credit(Trader.objects.select_for_update().get(pk=dispute.trader_id), dispute.stake,
                     LedgerEntry.Kind.DISPUTE_REFUND, question)
-    return _apply(question, decision, creator_at_fault=upheld)
+    question = _apply(question, decision, creator_at_fault=upheld)
+    _after_commit("moderator_decided", question.pk, decision, upheld)
+    return question
 
 
 @transaction.atomic
@@ -717,3 +721,52 @@ def cancel_unresolved(question: Question) -> Question:
     question.resolution_state = Question.Resolution.FINAL
     question.save(update_fields=["resolution_state"])
     return question
+
+
+# --- notifications and referral rewards (spec E6.3, E5) ----------------------------------------
+
+def _after_commit(event: str, *args) -> None:
+    """Notify once the money is committed; a notification failure never rolls it back."""
+    def run():
+        from . import bot_notifications
+        getattr(bot_notifications, event)(*args)
+    transaction.on_commit(run, robust=True)
+
+
+def _moscow_month_start():
+    from datetime import datetime, time
+    from zoneinfo import ZoneInfo
+    msk = ZoneInfo("Europe/Moscow")
+    today = timezone.localdate(timezone=msk)
+    return datetime.combine(today.replace(day=1), time(0), tzinfo=msk)
+
+
+@transaction.atomic
+def grant_referral_reward(friend: Trader):
+    """Both the friend and the inviter get REFERRAL_REWARD once the friend bought in REFERRAL_PREDICTIONS markets.
+
+    Over the inviter's monthly cap nobody is paid (so account farms don't pay off); the row still records it.
+    """
+    from .models import ReferralReward
+    if not friend.referred_by_id or friend.referred_by_id == friend.pk:
+        return None
+    if ReferralReward.objects.filter(friend_id=friend.pk).exists():
+        return None
+    markets = Trade.objects.filter(trader_id=friend.pk, shares__gt=0).values("question_id").distinct().count()
+    if markets < settings.REFERRAL_PREDICTIONS:
+        return None
+    locked = {t.pk: t for t in Trader.objects.select_for_update()
+              .filter(pk__in=[friend.pk, friend.referred_by_id]).order_by("pk")}
+    friend, referrer = locked[friend.pk], locked.get(friend.referred_by_id)
+    if referrer is None or ReferralReward.objects.filter(friend=friend).exists():
+        return None
+    granted = ReferralReward.objects.filter(referrer=referrer, granted=True,
+                                            created_at__gte=_moscow_month_start()).count()
+    if granted >= settings.REFERRAL_MONTHLY_CAP:
+        return ReferralReward.objects.create(friend=friend, referrer=referrer, granted=False)
+    reward = ReferralReward.objects.create(friend=friend, referrer=referrer, granted=True)
+    amount = Decimal(settings.REFERRAL_REWARD).quantize(CENT)
+    _credit(friend, amount, LedgerEntry.Kind.REFERRAL)
+    _credit(referrer, amount, LedgerEntry.Kind.REFERRAL)
+    _after_commit("referral_granted", friend.pk, referrer.pk)
+    return reward

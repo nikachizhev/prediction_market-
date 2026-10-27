@@ -180,26 +180,40 @@ def test_worker_asks_reminds_and_cancels_after_72h(people, market, bot):
     assert creator.balance == D(1000)  # subsidy back: everyone is refunded
 
 
+def daytime_after(hours):
+    """A Moscow noon at least `hours` from now, so the bot outbox is outside quiet hours."""
+    from datetime import datetime, time
+    from zoneinfo import ZoneInfo
+    msk = ZoneInfo("Europe/Moscow")
+    day = timezone.localtime(timezone.now() + timedelta(hours=hours), msk).date() + timedelta(days=1)
+    return datetime.combine(day, time(12), tzinfo=msk)
+
+
 def test_worker_finalizes_and_sends_results_once(people, market, bot):
     creator, anya, boris = people
     propose(market, creator, "yes")
-    later = timezone.now() + timedelta(hours=25)
+    later = daytime_after(25)
     with patch("django.utils.timezone.now", return_value=later):
         done = resolution.tick(later)
-    assert done["finalized"] == 1 and done["results"] == 1
+    assert done["finalized"] == 1 and done["results"] == 1 and done["sent"] == 2
     texts = {c.args[0]: (c.args[1], c.kwargs) for c in bot.call_args_list}
-    assert "Выплата" in texts[2][0] and texts[2][1].get("message_effect_id")
+    assert texts[2][0].startswith("Ты угадал! +") and texts[2][1].get("message_effect_id")
+    assert texts[2][1]["reply_markup"]["inline_keyboard"][0][0]["text"] == "Открыть рынок"
     assert "мимо" in texts[3][0] and "message_effect_id" not in texts[3][1]
     calls = bot.call_count
-    resolution.tick(later)
+    with patch("django.utils.timezone.now", return_value=later):
+        resolution.tick(later)
     assert bot.call_count == calls
 
 
 def test_telegram_failure_does_not_block_money(people, market, bot):
+    from market.models import BotMessage
     bot.side_effect = RuntimeError("telegram down")
     propose(market, people[0], "no")
-    later = timezone.now() + timedelta(hours=25)
+    later = daytime_after(25)
     with patch("django.utils.timezone.now", return_value=later):
         done = resolution.tick(later)
     market.refresh_from_db()
-    assert done["finalized"] == 1 and market.status == Question.Status.RESOLVED and market.results_sent_at is None
+    assert done["finalized"] == 1 and market.status == Question.Status.RESOLVED
+    # The results wait in the outbox and are retried on later ticks.
+    assert done["sent"] == 0 and set(BotMessage.objects.values_list("status", "attempts")) == {("queued", 1)}
