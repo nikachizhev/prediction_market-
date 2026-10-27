@@ -263,6 +263,13 @@ def test_create_market_when_the_bot_cannot_write(anya, bot_send):
     assert Question.objects.filter(creator=trader(1001)).count() == 1
 
 
+def test_fun_category(anya):
+    code, data = anya.get("categories")
+    assert code == 200 and {"slug": "fun", "label": "Фан"} in data
+    code, data = anya.post("markets", create_payload(category="fun"))
+    assert code == 200 and data["market"]["category"] == "fun"
+
+
 def test_create_market_bad_key(anya):
     code, _ = anya.post("markets", create_payload(request_key="not-a-uuid"))
     assert code == 400 and not Question.objects.exists()
