@@ -373,7 +373,13 @@ export const api = {
   createMarket: (
     data: { title: string; criteria: string; category: string; closes_at: string; resolves_at: string },
     request_key: string = newRequestKey(),
-  ) => request<{ market: MarketDetail; balance: Money }>('POST', '/markets', { ...data, request_key }),
+  ) =>
+    request<{
+      market: MarketDetail;
+      balance: Money;
+      /** Whether the bot's note about the outcome reached the creator; null on a replayed request, absent on an older server. */
+      bot_notified?: boolean | null;
+    }>('POST', '/markets', { ...data, request_key }),
 
   mine: () => request<MineResponse>('GET', '/mine'),
 

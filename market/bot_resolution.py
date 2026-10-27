@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db.models import Sum
+from django.utils import timezone
 
 from . import telegram
 from .models import Payout, Position, Question, Trader
@@ -19,6 +20,37 @@ def app_url(path: str = "") -> str:
 
 def app_button(text: str = "Открыть приложение", path: str = "") -> dict:
     return {"text": text, "web_app": {"url": app_url(path)}}
+
+
+MONTHS = ("января", "февраля", "марта", "апреля", "мая", "июня",
+          "июля", "августа", "сентября", "октября", "ноября", "декабря")
+
+
+def day_month(moment) -> str:
+    """«16 ноября» in the project's time zone."""
+    local = timezone.localtime(moment)
+    return f"{local.day} {MONTHS[local.month - 1]}"
+
+
+def announce_created(question: Question) -> bool:
+    """Right after creation: the creator learns in the bot when and how the outcome will be asked.
+
+    Also tells whether the bot can write to them at all: False when Telegram refuses or is unreachable.
+    The request waits for Telegram, so the timeout is short.
+    """
+    creator = question.creator
+    if not creator or not creator.telegram_chat_id:
+        return False
+    when = day_month(question.resolves_at) if question.resolves_at else "В дату итога"
+    text = (f"Рынок опубликован:\n«{question.title}»\n"
+            f"{when} напишу тебе здесь и спрошу, чем закончилось. "
+            "Нажмёшь ДА или НЕТ и пришлёшь фото или скриншот — его увидят все участники.")
+    try:
+        telegram.send(creator.telegram_chat_id, text, http_timeout=5,
+                      reply_markup={"inline_keyboard": [[app_button("Открыть рынок", f"market/{question.pk}")]]})
+    except telegram.TelegramError:
+        return False
+    return True
 
 
 def welcome(chat_id: int) -> None:

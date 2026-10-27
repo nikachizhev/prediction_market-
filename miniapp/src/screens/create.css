@@ -243,3 +243,46 @@
   font: 600 16px/1 var(--font);
   cursor: pointer;
 }
+
+/* ---- «Разреши боту писать тебе» before publishing (Как указать итог, Main.dc.html) ---- */
+
+.create-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.create-ask-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  background: var(--yes-tint);
+  color: var(--yes);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.create-ask-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.create-ask-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.create-ask-skip {
+  height: 44px;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--sub);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}

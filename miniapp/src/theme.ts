@@ -22,6 +22,12 @@ export interface ThemeTokens {
   unreadBg: string;
   overlay: string;
   tab: string;
+  /** Bot chat drawn inside the app (Bot.dc.html): background, bubbles, inline keys. */
+  chatBg: string;
+  bubbleIn: string;
+  bubbleOut: string;
+  botKey: string;
+  botKeyOn: string;
 }
 
 export const themes: Record<ColorScheme, ThemeTokens> = {
@@ -43,6 +49,11 @@ export const themes: Record<ColorScheme, ThemeTokens> = {
     unreadBg: '#F6F9FE',
     overlay: 'rgba(17, 20, 24, 0.45)',
     tab: '#FFFFFF',
+    chatBg: '#E6EBF0',
+    bubbleIn: '#FFFFFF',
+    bubbleOut: '#D7E8FF',
+    botKey: '#F3F5F8',
+    botKeyOn: '#E1EBF8',
   },
   dark: {
     bg: '#0E1014',
@@ -62,6 +73,11 @@ export const themes: Record<ColorScheme, ThemeTokens> = {
     unreadBg: '#1B212B',
     overlay: 'rgba(0, 0, 0, 0.6)',
     tab: '#14171C',
+    chatBg: '#0E1014',
+    bubbleIn: '#1E2229',
+    bubbleOut: '#1F3A5C',
+    botKey: '#242931',
+    botKeyOn: '#2F3A4B',
   },
 };
 

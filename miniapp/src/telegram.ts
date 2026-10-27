@@ -100,6 +100,18 @@ function webApp(): TgWebApp | null {
 /** True when running inside a Telegram client. */
 export const isTelegram = (): boolean => webApp() !== null;
 
+// Set once the bot is known to reach the user: access granted here or a message delivered.
+const BOT_WRITE_KEY = 'pm.botCanWrite';
+
+function storeBotCanWrite(value: boolean): void {
+  try {
+    if (value) window.localStorage.setItem(BOT_WRITE_KEY, '1');
+    else window.localStorage.removeItem(BOT_WRITE_KEY);
+  } catch {
+    // Storage may be unavailable (private mode, WebView restrictions).
+  }
+}
+
 function systemScheme(): ColorScheme {
   if (typeof window === 'undefined' || !window.matchMedia) return 'light';
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -206,7 +218,28 @@ export const tg = {
   requestWriteAccess(): Promise<boolean> {
     const app = webApp();
     if (!app || typeof app.requestWriteAccess !== 'function') return Promise.resolve(false);
-    return new Promise((resolve) => app.requestWriteAccess!((allowed) => resolve(allowed)));
+    return new Promise((resolve) =>
+      app.requestWriteAccess!((allowed) => {
+        if (allowed) storeBotCanWrite(true);
+        resolve(allowed);
+      }),
+    );
+  },
+
+  /** True when the bot may already write to the user: Telegram says so, or it was confirmed here before. */
+  get botCanWrite(): boolean {
+    const user = webApp()?.initDataUnsafe.user as { allows_write_to_pm?: boolean } | undefined;
+    if (user?.allows_write_to_pm) return true;
+    try {
+      return window.localStorage.getItem(BOT_WRITE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  },
+
+  /** Records what the server learned while sending a bot message. */
+  setBotCanWrite(value: boolean): void {
+    storeBotCanWrite(value);
   },
 
   /** True when the client supports Telegram.WebApp.shareMessage (8.0+). */

@@ -11,6 +11,7 @@ import {
   loadDraft,
   localIso,
   previewCard,
+  resolutionRule,
   saveDraft,
   stepOfField,
   type CreateDraft,
@@ -176,5 +177,17 @@ describe('draft storage', () => {
     expect(loadDraft(NOW)).toEqual(d);
     clearDraft();
     expect(loadDraft(NOW)).toEqual(defaultDraft(NOW));
+  });
+});
+
+describe('resolutionRule', () => {
+  it('names the result date and what the bot will ask for', () => {
+    expect(resolutionRule(draft({ resultDate: '2026-11-16' }), NOW)).toBe(
+      '16 ноября бот спросит, чем закончилось: нажмёшь ДА или НЕТ и пришлёшь фото или скриншот',
+    );
+  });
+
+  it('falls back to words without a date', () => {
+    expect(resolutionRule(draft({ resultDate: '' }), NOW)).toMatch(/^В дату итога бот спросит/);
   });
 });

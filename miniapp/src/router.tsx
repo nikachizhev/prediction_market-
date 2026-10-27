@@ -11,6 +11,7 @@ import { useSession } from './session';
 import { tg } from './telegram';
 import {
   CreateScreen,
+  CreatedScreen,
   FeedScreen,
   MarketScreen,
   MineScreen,
@@ -126,6 +127,7 @@ export const router = createBrowserRouter(
         { path: '/rating', element: <RatingScreen /> },
         { path: '/profile', element: <ProfileScreen /> },
         { path: '/market/:id', element: <MarketScreen /> },
+        { path: '/market/:id/created', element: <CreatedScreen /> },
         { path: '/notifications', element: <NotificationsScreen /> },
         { path: '*', element: <NotFoundScreen /> },
       ],
