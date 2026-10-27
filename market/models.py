@@ -34,6 +34,8 @@ class Trader(models.Model):
     onboarded_at = models.DateTimeField(null=True, blank=True)
     # Category slugs picked in onboarding («Что тебе интересно?»), see CATEGORIES.
     interests = models.JSONField(default=list, blank=True)
+    # Bot notification switches (spec E6.3), keyed by NOTIFY_KINDS; a missing key means «on».
+    notify_prefs = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(null=True, blank=True, auto_now_add=True)
 
     class Meta:
@@ -133,8 +135,20 @@ class GroupMembership(models.Model):
         constraints = [models.UniqueConstraint(fields=["group", "trader"], name="unique_group_member")]
 
 
+# Bot notification types a user can switch off in the profile (spec E6.3). Order = order in the settings screen.
+NOTIFY_KINDS = [
+    ("results", "Итоги и выплаты"),
+    ("moves", "Сдвиги вероятности"),
+    ("closing", "Скоро конец приёма прогнозов"),
+    ("referral", "Награды за друзей"),
+    ("creator", "Мои рынки"),
+]
+
+
 class Notification(models.Model):
+    """In-app inbox (Mini App «Уведомления»); every notification lands here regardless of bot settings."""
     recipient = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="notifications")
+    title = models.CharField(max_length=120, blank=True, default="")
     text = models.CharField(max_length=500)
     kind = models.CharField(max_length=30, default="info")
     question = models.ForeignKey("Question", null=True, blank=True, on_delete=models.CASCADE)
@@ -498,3 +512,64 @@ class ResolutionDraft(models.Model):
     class Meta:
         verbose_name = "черновик итога"
         verbose_name_plural = "черновики итогов"
+
+
+class BotMessage(models.Model):
+    """Outbox of bot notifications (spec E6.3).
+
+    The worker sends queued rows honouring the user's switches, the daily cap and quiet hours,
+    so a Telegram failure never rolls back money and nothing is sent twice (`key` is unique).
+    """
+    class Status(models.TextChoices):
+        QUEUED = "queued", "в очереди"
+        SENT = "sent", "отправлено"
+        SKIPPED = "skipped", "пропущено"
+        FAILED = "failed", "ошибка"
+
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="bot_messages")
+    # One of NOTIFY_KINDS.
+    kind = models.CharField(max_length=20)
+    key = models.CharField(max_length=160, unique=True)
+    text = models.TextField()
+    # Extra sendMessage parameters: reply_markup, message_effect_id, ...
+    payload = models.JSONField(default=dict, blank=True)
+    question = models.ForeignKey(Question, null=True, blank=True, on_delete=models.CASCADE, related_name="bot_messages")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.QUEUED, db_index=True)
+    send_after = models.DateTimeField(db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "сообщение бота"
+        verbose_name_plural = "сообщения бота"
+        ordering = ["send_after", "id"]
+
+
+class ReferralReward(models.Model):
+    """Reward for an invited friend who made REFERRAL_PREDICTIONS predictions in different markets (spec E5).
+
+    One row per friend, ever. `granted=False` records that the referrer's monthly cap was reached
+    and nobody was paid, so the check is not repeated.
+    """
+    friend = models.OneToOneField(Trader, on_delete=models.CASCADE, related_name="referral_reward")
+    referrer = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="referral_rewards")
+    granted = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "награда за друга"
+        verbose_name_plural = "награды за друзей"
+
+
+class ChartAnimation(models.Model):
+    """Rendered 7-day probability animation for the bot (spec E6.2), cached per market and hour."""
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="chart_animations")
+    hour = models.DateTimeField()
+    file = models.FileField(upload_to="charts/", blank=True)
+    # Telegram file_id after the first upload; later sends reuse it instead of the file.
+    file_id = models.CharField(max_length=200, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["question", "hour"], name="one_chart_per_market_hour")]

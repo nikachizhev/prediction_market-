@@ -82,3 +82,53 @@ interface LedgerEntry { kind: string; label: string; amount: Money; at: string; 
 | `POST /api/events` | `{name: "share" \| "onboarding_done" \| "onboarding_skip" \| "open_bot", props?: object}` | `{ok: true}` |
 
 «Указать итог» в «Моих» открывает бота: `https://t.me/<бот>?start=resolve_<id>`; «Оспорить итог» — `https://t.me/<бот>?start=dispute_<id>`.
+
+## Фаза 2 (контракт, 27.10.2026)
+
+Добавления к MVP. Старые поля не меняются.
+
+```ts
+type NotifyKind = "results" | "moves" | "closing" | "referral" | "creator";
+// results — итог рынка и выплата; moves — вероятность отслеживаемого рынка сдвинулась на 10+ п.п. за сутки;
+// closing — до конца приёма прогнозов 24 часа; referral — награда за друга; creator — события моих рынков (спор открыт, решение модератора)
+
+interface Me {                                   // + к MVP
+  notify: { [k in NotifyKind]: boolean };        // что бот присылает; в приложении («Уведомления») видно всё
+  unread_notifications: number;
+}
+
+interface Notice {
+  id: number; kind: NotifyKind | string;
+  group: "mine" | "pay" | "markets";             // фильтры экрана: Мои рынки / Выплаты / Слежу
+  title: string; text: string; at: string; read: boolean;
+  market: { id: number; title: string } | null;
+  action: "resolve" | "market" | null;           // кнопка: «Указать итог в боте» / «Открыть рынок»
+}
+
+interface ReferralSummary {
+  invited: number;            // сколько людей пришло по моей ссылке
+  rewarded: number;           // за скольких получена награда
+  earned: Money;              // сколько монет получено за друзей
+  reward: Money;              // "300.00" — по столько обоим
+  predictions_needed: number; // 5 — прогнозов в разных рынках
+}
+
+interface CategoryStat { slug: string; label: string; predictions: number; correct: number; accuracy: number | null; profit: Money }
+
+interface BestPrediction { market: { id: number; title: string }; side: Side; price: number; gain: Money }
+
+interface MarketDetail {                          // + к MVP
+  top_moves: { at: string; from: number; to: number }[];   // до 3 самых резких сдвигов цены одной сделкой, анонимно
+}
+```
+
+| Метод и путь | Тело / параметры | Ответ |
+| --- | --- | --- |
+| `PATCH /api/me` | + `{notify?: Partial<{[k in NotifyKind]: boolean}>}` — неизвестные ключи → 400 | `Me` |
+| `GET /api/notifications` | `?filter=all\|mine\|pay\|markets` | `{items: Notice[], unread: number}` — последние 50, новые сверху |
+| `POST /api/notifications/read` | `{ids?: number[]}` — без `ids` прочитать все | `{unread: number}` |
+| `GET /api/profile` | + поля | `+ {referral: ReferralSummary, categories: CategoryStat[], best_predictions: BestPrediction[]}` — `best_predictions` до 3, первым идёт `best_prediction`; `categories` только где есть завершённые прогнозы |
+| `GET /api/profile/history` | `?period=d\|w\|m\|all` | `{points: {t: string, balance: Money, profit: Money}[]}` — до 200 точек; `profit` — реализованная прибыль без бонусов: сделки рынка учитываются в момент его завершения |
+| `POST /api/markets/{id}/share` | — | `{prepared_message_id: string}` — для `Telegram.WebApp.shareMessage`; `503 {error}`, если Telegram недоступен — тогда клиент открывает обычную ссылку `t.me/share` |
+
+**Ссылка на рынок** — `t.me/<бот>/<приложение>?startapp=ref_<код>-m<id>` (или `m<id>` без приглашения). Сервер берёт код пригласившего до `-m`; Mini App после входа открывает `/market/<id>`.
