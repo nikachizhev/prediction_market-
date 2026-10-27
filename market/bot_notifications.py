@@ -29,6 +29,7 @@ MANDATORY_KINDS = ("results",)
 MAX_ATTEMPTS = 5
 
 # Filters of the «Уведомления» screen. Everything else (creator events, outcome asks, groups) is «Мои рынки».
+LEASE = timedelta(minutes=5)
 PAY_KINDS = ("results", "referral", "daily", "insurance", "market_result")
 MARKETS_KINDS = ("moves", "closing", "market_change", "market_invite")
 
@@ -127,6 +128,15 @@ def _finish(message: BotMessage, status: str, now: datetime | None = None) -> No
     message.save(update_fields=["status", "sent_at", "attempts", "send_after"])
 
 
+def _claim(message: BotMessage, now: datetime) -> bool:
+    """Lease a queued row so a second worker process cannot send it too; released by _finish or a retry."""
+    claimed = BotMessage.objects.filter(pk=message.pk, status=BotMessage.Status.QUEUED,
+                                        send_after=message.send_after).update(send_after=now + LEASE)
+    if claimed:
+        message.send_after = now + LEASE
+    return bool(claimed)
+
+
 def flush(now: datetime | None = None) -> dict:
     """Send due queued bot messages. Telegram errors are retried on later ticks, never raised."""
     now = now or timezone.now()
@@ -137,6 +147,8 @@ def flush(now: datetime | None = None) -> dict:
         done["postponed"] = due.update(send_after=wake)
         return done
     for message in due.select_related("trader", "question").order_by("send_after", "id"):
+        if not _claim(message, now):
+            continue
         trader = message.trader
         if (not trader.telegram_chat_id or not kind_enabled(trader, message.kind)
                 or (message.question and not can_access(trader, message.question))):

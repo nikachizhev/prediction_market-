@@ -34,6 +34,9 @@ def price_changed(question):
     for subscription in question.subscriptions.select_related("trader"):
         if not can_access(subscription.trader, question):
             continue
+        # Mini App accounts (no site login) get the worker's daily «moves» notice instead (spec E6.3).
+        if subscription.trader.user_id is None:
+            continue
         baseline = subscription.last_probability
         if baseline is None or abs(question.prob-baseline) < .10 - 1e-9:
             continue

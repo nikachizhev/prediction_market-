@@ -78,6 +78,31 @@ def test_quiet_hours_postpone_to_nine(send):
     assert send.call_args.args == (1, "А: б")
 
 
+def test_queued_message_is_claimed_once(send):
+    anya = make("Аня", chat=1)
+    notices.enqueue(anya, "moves", "k1", "А:", "б", now=NOON)
+    first, second = BotMessage.objects.get(key="k1"), BotMessage.objects.get(key="k1")
+    # Two worker processes read the same row: only one may send it.
+    assert notices._claim(first, NOON) is True
+    assert notices._claim(second, NOON) is False
+    # A lease that was never released (worker died) expires and the message goes out once.
+    assert notices.flush(NOON)["sent"] == 0
+    assert notices.flush(NOON + notices.LEASE)["sent"] == 1 and send.call_count == 1
+
+
+def test_mini_app_account_gets_no_legacy_change_alert():
+    from django.contrib.auth.models import User
+    from market.subscriptions import price_changed
+    q = market()
+    app_user = make("Аня", chat=1)
+    site_user = make("Борис", user=User.objects.create(username="boris"))
+    for who in (app_user, site_user):
+        MarketSubscription.objects.create(trader=who, question=q, last_probability=0.3)
+    price_changed(q)
+    kinds = set(Notification.objects.filter(kind="market_change").values_list("recipient__name", flat=True))
+    assert kinds == {"Борис"}
+
+
 def test_daily_cap_drops_optional_but_not_results(send):
     anya = make("Аня", chat=1)
     for i in range(6):
