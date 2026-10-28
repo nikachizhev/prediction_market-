@@ -9,6 +9,8 @@ from .models import BotMessage, Dispute, Event, LedgerEntry, MarketComplaint, Re
 from .question_forms import ResultForm
 from .participation import finish
 from .models import Group, GroupMembership, Notification
+from .models import ModerationAction, ModerationDelivery
+from . import moderation
 
 
 @admin.register(Group)
@@ -47,7 +49,7 @@ class QuestionAdmin(admin.ModelAdmin):
     list_display = ("title", "kind", "source_type", "status", "outcome", "deadline", "result_link")
     list_filter = ("resolution_state", "kind", "status", "category", "source_type")
     search_fields = ("title", "resolution_criteria")
-    readonly_fields = ("status", "outcome", "answer", "q_yes", "q_no", "pool_yes", "pool_no", "created_at", "resolved_at")
+    readonly_fields = ("status", "outcome", "answer", "q_yes", "q_no", "pool_yes", "pool_no", "created_at", "resolved_at", "hidden_at", "moderation_hidden", "refund_compensation")
     actions = ["decide_yes", "decide_no", "decide_cancel", "unhide", "resolve_yes", "resolve_no", "close_selected", "annul_selected"]
 
     def get_readonly_fields(self, request, obj=None):
@@ -145,8 +147,14 @@ class QuestionAdmin(admin.ModelAdmin):
     @admin.action(description="Вернуть скрытый жалобами рынок в ленту")
     def unhide(self, request, queryset):
         def run(q):
-            Question.objects.filter(pk=q.pk).update(hidden_at=None)
-            MarketComplaint.objects.filter(question=q).delete()
+            from django.db import transaction
+            with transaction.atomic():
+                report = q.complaints.filter(status=MarketComplaint.Status.PENDING).first()
+                if report:
+                    moderation.review(report.pk, 'dismiss', user=request.user)
+                q.refresh_from_db()
+                if q.hidden_at:
+                    moderation.restore(q.pk, user=request.user)
         self._apply(request, queryset, run, "возвращён в ленту")
 
 
@@ -193,8 +201,40 @@ class DisputeAdmin(ReadOnlyLedgerAdmin):
 
 @admin.register(MarketComplaint)
 class ComplaintAdmin(ReadOnlyLedgerAdmin):
-    list_display = ("question", "trader", "reason", "created_at")
+    list_display = ("question", "trader", "reason", "status", "reviewed_by", "created_at")
+    list_filter = ("status",)
     list_select_related = ("question", "trader")
+    actions = ['uphold', 'dismiss']
+
+    def _review(self, request, queryset, decision):
+        for report in queryset.order_by('id'):
+            if not MarketComplaint.objects.filter(pk=report.pk, status=MarketComplaint.Status.PENDING).exists():
+                continue
+            try:
+                moderation.review(report.pk, decision, user=request.user)
+            except services.MarketError as exc:
+                self.message_user(request, str(exc), messages.ERROR)
+
+    @admin.action(description='Подтвердить жалобы и скрыть рынок')
+    def uphold(self, request, queryset):
+        self._review(request, queryset, 'hide')
+
+    @admin.action(description='Отклонить новые жалобы рынка')
+    def dismiss(self, request, queryset):
+        self._review(request, queryset, 'dismiss')
+
+
+@admin.register(ModerationAction)
+class ModerationActionAdmin(ReadOnlyLedgerAdmin):
+    list_display = ('question', 'action', 'actor', 'complaint_count', 'created_at')
+    list_filter = ('action',)
+    list_select_related = ('question',)
+
+
+@admin.register(ModerationDelivery)
+class ModerationDeliveryAdmin(ReadOnlyLedgerAdmin):
+    list_display = ('complaint', 'admin_id', 'sent_at', 'attempts', 'next_attempt')
+    list_select_related = ('complaint',)
 
 
 @admin.register(LedgerEntry)
