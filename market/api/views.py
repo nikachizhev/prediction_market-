@@ -262,9 +262,17 @@ def create_market(request):
     # null on a replayed request: the message went out with the first one.
     bot_notified = None
     if not question.replayed:
+        import re
         from ..bot_resolution import announce_created
         from ..events import log_event
-        log_event(request.trader, "market_create", {"market": question.pk, "category": question.category})
+        props = {"market": question.pk, "category": question.category}
+        # Analytics only (docs/api.md «Фаза 3a»): unknown values are dropped, the market is created anyway.
+        if data.get("assist") in ("accepted", "edited", "undone"):
+            props["assist"] = data["assist"]
+        template = data.get("template")
+        if isinstance(template, str) and re.fullmatch(r"[a-z0-9_-]{1,40}", template):
+            props["template"] = template
+        log_event(request.trader, "market_create", props)
         bot_notified = announce_created(question)
     request.trader.refresh_from_db()
     return {"market": s.detail(question, request.trader), "balance": s.money(request.trader.balance),
