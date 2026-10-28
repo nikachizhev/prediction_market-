@@ -534,6 +534,34 @@ def claim_insurance(trader: Trader) -> LedgerEntry | None:
     return _record(trader, LedgerEntry.Kind.INSURANCE, amount)
 
 
+def check_market_fields(*, title: str, criteria: str, category: str, closes_at, resolves_at, now=None) -> None:
+    """Rules for the fields of a new user market (stripped title and criteria, aware dates); raises MarketError.
+
+    No side effects: the AI helper checks its suggestions with the same rules (market/assist.py).
+    """
+    from datetime import timedelta
+    from .models import CATEGORIES
+    if not title:
+        raise MarketError("Напишите вопрос.")
+    if len(title) > 120:
+        raise MarketError("Вопрос — не длиннее 120 символов.")
+    if not criteria:
+        raise MarketError("Опишите, как определяем результат.")
+    if category not in dict(CATEGORIES):
+        raise MarketError("Выберите категорию.")
+    now = now or timezone.now()
+    if closes_at is None or resolves_at is None:
+        raise MarketError("Укажите, до какого момента принимаем прогнозы и когда станет известен итог.")
+    if closes_at < now + timedelta(hours=settings.MARKET_MIN_HOURS):
+        raise MarketError("Приём прогнозов — хотя бы час.")
+    if closes_at > now + timedelta(days=settings.MARKET_MAX_DAYS):
+        raise MarketError("Приём прогнозов — не дольше года.")
+    if resolves_at < closes_at:
+        raise MarketError("Итог не может стать известен раньше конца приёма прогнозов.")
+    if resolves_at > closes_at + timedelta(days=settings.MARKET_MAX_DAYS):
+        raise MarketError("Итог должен стать известен не позже чем через год после конца приёма.")
+
+
 @transaction.atomic
 def create_market(trader: Trader, *, title: str, criteria: str, category: str, closes_at, resolves_at,
                   request_key=None) -> Question:
@@ -545,7 +573,6 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
     from datetime import timedelta
     from uuid import UUID
     from django.db import IntegrityError
-    from .models import CATEGORIES
     trader = Trader.objects.select_for_update().get(pk=trader.pk)
     title = (title or "").strip()
     criteria = (criteria or "").strip()
@@ -562,25 +589,9 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
                 raise MarketError("Этот идентификатор уже использован для другого рынка. Обновите страницу.")
             previous.replayed = True
             return previous
-    if not title:
-        raise MarketError("Напишите вопрос.")
-    if len(title) > 120:
-        raise MarketError("Вопрос — не длиннее 120 символов.")
-    if not criteria:
-        raise MarketError("Опишите, как определяем результат.")
-    if category not in dict(CATEGORIES):
-        raise MarketError("Выберите категорию.")
     now = timezone.now()
-    if closes_at is None or resolves_at is None:
-        raise MarketError("Укажите, до какого момента принимаем прогнозы и когда станет известен итог.")
-    if closes_at < now + timedelta(hours=settings.MARKET_MIN_HOURS):
-        raise MarketError("Приём прогнозов — хотя бы час.")
-    if closes_at > now + timedelta(days=settings.MARKET_MAX_DAYS):
-        raise MarketError("Приём прогнозов — не дольше года.")
-    if resolves_at < closes_at:
-        raise MarketError("Итог не может стать известен раньше конца приёма прогнозов.")
-    if resolves_at > closes_at + timedelta(days=settings.MARKET_MAX_DAYS):
-        raise MarketError("Итог должен стать известен не позже чем через год после конца приёма.")
+    check_market_fields(title=title, criteria=criteria, category=category, closes_at=closes_at,
+                        resolves_at=resolves_at, now=now)
     recent = Question.objects.filter(creator=trader, created_at__gte=now - timedelta(days=1)).count()
     if recent >= settings.MARKETS_PER_DAY:
         raise MarketError(f"Не больше {settings.MARKETS_PER_DAY} новых рынков в день.")
