@@ -404,3 +404,15 @@ manage.py            команды Django
 ## Архитектурный документ
 
 Описание модулей, модель данных, проверки доступа и диаграммы последовательностей: [docs/architecture.md](docs/architecture.md).
+
+## Локальный Prometheus + Grafana
+
+Изолированный стек с демоданными и готовым дашбордом: [запуск и определения метрик](docs/observability.md).
+
+```bash
+docker compose -f compose.observability.yaml up -d --build
+```
+
+Grafana: [бизнес](http://localhost:13000/d/prediction-market) · [техника](http://localhost:13000/d/prediction-market-technical). Вход: `admin` / `local-observability`.
+
+Развёртывание мониторинга на VPS с systemd: [серверная инструкция](docs/observability-server.md).

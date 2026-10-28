@@ -35,6 +35,9 @@ def public_state(question: Question, trader: Trader) -> dict | None:
 
 
 def _bot():
+    if settings.OBSERVABILITY_DEMO:
+        from . import demo_telegram
+        return demo_telegram
     from . import bot_resolution
     return bot_resolution
 
@@ -45,6 +48,8 @@ def _safe(action, question: Question, *args) -> bool:
         action(question, *args)
         return True
     except Exception:  # noqa: BLE001 - logged and retried
+        from .worker_metrics import record_telegram_failure
+        record_telegram_failure(getattr(action, "__name__", "other"))
         log.exception("bot step %s failed for market %s", getattr(action, "__name__", action), question.pk)
         return False
 
