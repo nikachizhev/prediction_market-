@@ -191,3 +191,29 @@ def test_text_similarity_ignores_question_boilerplate():
                           ["Будет ли релиз Python завтра?"], [])
     assert scores[2] > scores[1]
     assert title_scores([(1, "Будет ли?")], ["Когда будет?"], [])[1] == 0
+
+
+def test_first_visit_prefers_complete_markets_with_time_to_participate(viewer):
+    complete = make_market("Выпустят ли новый релиз?", resolution_criteria="ДА, если релиз опубликован в репозитории.")
+    no_rules = make_market("Выпустят ли другой релиз?")
+    imminent = make_market("Закончится ли матч?", resolution_criteria="ДА, если результат подтвердится на сайте.")
+    imminent.deadline = timezone.now()+timedelta(minutes=20)
+    imminent.save()
+    assert ids(viewer, sort="recommended")[0] == complete.pk
+    assert set(ids(viewer, sort="recommended")) == {complete.pk, no_rules.pk, imminent.pk}
+    assert ids(viewer, sort="new")[0] == imminent.pk
+
+
+def test_star_is_a_reversible_personal_signal_without_click_history(viewer):
+    from market.recommendations import behavioral_scores
+    source = make_market("Выйдет ли релиз Python?")
+    related = make_market("Новый релиз Python появится зимой?")
+    unrelated = make_market("Победит ли футбольная команда?")
+    viewer.post(f"markets/{source.pk}/star", {"starred": True})
+    trader = Trader.objects.get(telegram_chat_id=9001)
+    assert behavioral_scores(trader, timezone.now()) == {"games": 3}
+    result = ids(viewer, sort="recommended")
+    assert result.index(related.pk) < result.index(unrelated.pk)
+    viewer.post(f"markets/{source.pk}/star", {"starred": False})
+    assert behavioral_scores(trader, timezone.now()) == {}
+    assert ids(viewer, sort="recommended")[0] == unrelated.pk

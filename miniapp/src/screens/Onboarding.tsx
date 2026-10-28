@@ -391,6 +391,7 @@ export function Onboarding() {
             {categories.length > 0 && (
               <section className="card name-choice" aria-label="Что интересно">
                 <span className="name-choice-title">Что тебе интересно?</span>
+                <p className="sub small">Выбери 2–3 темы для первой ленты. Можно ничего не выбирать — покажем рынки из разных категорий.</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {categories.map((c) => {
                     const on = interests.includes(c.slug);
