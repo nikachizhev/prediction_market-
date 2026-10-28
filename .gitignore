@@ -5,6 +5,7 @@ venv/
 .env*
 !.env.example
 .tmp/
+.models/
 db.sqlite3
 *.sqlite3
 .idea/

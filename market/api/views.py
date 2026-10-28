@@ -16,7 +16,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .. import services
 from ..access import visible_questions
 from ..miniapp_auth import api_view
-from ..models import LedgerEntry, MarketComplaint, MarketSubscription, Position, Question, Trade, Trader
+from ..models import FeedDismissal, LedgerEntry, MarketComplaint, MarketSubscription, Position, Question, Trade, Trader
 from ..services import MarketError
 from . import serializers as s
 
@@ -158,6 +158,9 @@ def me(request):
             fields.append("onboarded_at")
         if fields:
             trader.save(update_fields=fields)
+            if "interests" in fields:
+                from ..events import log_event
+                log_event(trader, "interests_update", {"categories": trader.interests})
     return s.me(trader)
 
 
@@ -174,7 +177,8 @@ def markets(request):
         return create_market(request)
     trader = request.trader
     now = timezone.now()
-    qs = feed_markets(trader).filter(status__in=[Question.Status.OPEN, Question.Status.CLOSED])
+    from ..recommendations import exclude_dismissed, recommended, reason
+    qs = exclude_dismissed(feed_markets(trader), trader).filter(status__in=[Question.Status.OPEN, Question.Status.CLOSED])
     category = request.GET.get("category", "")
     if category:
         qs = qs.filter(category=category)
@@ -182,7 +186,9 @@ def markets(request):
     if query:
         qs = qs.filter(title__icontains=query)
     sort = request.GET.get("sort", "hot")
-    if sort == "new":
+    if sort == "recommended":
+        qs = recommended(qs, trader, now)
+    elif sort == "new":
         qs = qs.order_by("-created_at", "-id")
     elif sort == "soon":
         qs = qs.filter(deadline__gt=now).order_by("deadline", "id")
@@ -197,8 +203,39 @@ def markets(request):
     items = list(qs[(page - 1) * PAGE: page * PAGE])
     starred = s.starred_ids(trader)
     sides = s.my_sides(trader, [q.pk for q in items])
-    return {"items": [s.card(q, starred=starred, now=now, my_side=sides.get(q.pk)) for q in items],
+    cards = [s.card(q, starred=starred, now=now, my_side=sides.get(q.pk)) for q in items]
+    if sort == "recommended":
+        for card, question in zip(cards, items):
+            card["recommendation_reason"] = reason(question)
+    return {"items": cards,
             "next_page": page + 1 if page * PAGE < total else None, "total": total}
+
+
+@endpoint("POST")
+def dismiss_market(request, pk):
+    question = get_market(request.trader, pk)
+    dismissed = body(request).get("dismissed")
+    if not isinstance(dismissed, bool):
+        raise BadRequest("Укажите dismissed: true или false.")
+    from ..events import log_event
+    if dismissed:
+        _, created = FeedDismissal.objects.get_or_create(trader=request.trader, question=question)
+        if created:
+            log_event(request.trader, "market_dismiss", {"market": question.pk})
+    else:
+        deleted, _ = FeedDismissal.objects.filter(trader=request.trader, question=question).delete()
+        if deleted:
+            log_event(request.trader, "market_restore", {"market": question.pk})
+    return {"dismissed": dismissed}
+
+
+@endpoint("POST")
+def reset_dismissals(request):
+    deleted, _ = FeedDismissal.objects.filter(trader=request.trader).delete()
+    if deleted:
+        from ..events import log_event
+        log_event(request.trader, "feed_restore_all", {"count": deleted})
+    return {"restored": deleted}
 
 
 def create_market(request):
@@ -328,7 +365,7 @@ def report(request, pk):
                 MarketComplaint.objects.create(question=question, trader=request.trader, reason=reason)
         except IntegrityError:
             return {"ok": True}
-        if not question.hidden_at and question.complaints.count() >= settings.COMPLAINTS_TO_HIDE:
+        if not question.hidden_at and question.complaints.filter(status=MarketComplaint.Status.PENDING).count() >= settings.COMPLAINTS_TO_HIDE:
             question.hidden_at = timezone.now()
             question.save(update_fields=["hidden_at"])
     return {"ok": True}
@@ -355,7 +392,7 @@ def mine(request):
     created = []
     for q in visible.filter(creator=trader).order_by("-created_at"):
         item = s.card(q, starred=starred, now=now)
-        item["fee_expected"] = s.money(q.fee_pool * Decimal(settings.CREATOR_FEE_SHARE))
+        item["fee_expected"] = s.money(0 if q.status == Question.Status.ANNULLED else q.fee_pool * Decimal(settings.CREATOR_FEE_SHARE))
         item["needs_resolution"] = (q.status in (Question.Status.OPEN, Question.Status.CLOSED)
                                     and not q.accepting_entries and s.market_status(q) == "closed")
         item["resolve_link"] = f"https://t.me/{settings.TELEGRAM_BOT_USERNAME}?start=resolve_{q.pk}"
@@ -451,5 +488,16 @@ def events(request):
     if name not in CLIENT_EVENTS:
         raise BadRequest("Неизвестное событие.")
     props = data.get("props") if isinstance(data.get("props"), dict) else {}
+    if name in ("feed_impression", "market_open"):
+        market_id = props.get("market")
+        if isinstance(market_id, bool) or not isinstance(market_id, int):
+            raise BadRequest("Укажите рынок.")
+        question = get_market(request.trader, market_id)
+        props = {"market": question.pk, "sort": props.get("sort") if props.get("sort") in ("recommended", "hot", "new", "soon") else None}
+        # Suppress refresh/retry bursts; these events never grant coins or rewards.
+        from ..models import Event
+        if Event.objects.filter(trader=request.trader, name=name, props=props,
+                                created_at__gte=timezone.now()-timedelta(minutes=5)).exists():
+            return {"ok": True}
     log_event(request.trader, name, props)
     return {"ok": True}

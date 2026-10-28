@@ -1,5 +1,6 @@
 // Feed screen from docs/mockups/Main.dc.html.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, ApiError, type Category, type MarketCard, type MarketSort, type Position, type Side } from '../api';
 import { cascadeDelay } from '../chartMotion';
 import { BalancePill } from '../components/BalancePill';
@@ -11,8 +12,10 @@ import { useTradeSheet } from '../components/TradeSheet';
 import { pluralize } from '../format';
 import { tg } from '../telegram';
 import { applyProbability, mergeMarket, replaceCard } from '../trade';
+import '../recommendations.css';
 
 const SORTS: { key: MarketSort; label: string }[] = [
+  { key: 'recommended', label: 'Для тебя' },
   { key: 'hot', label: 'Горячие' },
   { key: 'new', label: 'Новые' },
   { key: 'soon', label: 'Скоро итог' },
@@ -26,7 +29,7 @@ export function FeedScreen() {
   const toast = useToast();
   const [categories, setCategories] = useState<Category[]>([]);
   const [category, setCategory] = useState('');
-  const [sort, setSort] = useState<MarketSort>('hot');
+  const [sort, setSort] = useState<MarketSort>('recommended');
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
 
@@ -38,6 +41,9 @@ export function FeedScreen() {
   const [moreFailed, setMoreFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [positions, setPositions] = useState<Record<number, Position>>({});
+  const [hidingId, setHidingId] = useState<number | null>(null);
+  const hideBusy = useRef(false);
+  const [lastHidden, setLastHidden] = useState<MarketCard | null>(null);
 
   const generation = useRef(0);
   const snapshots = useRef(new Map<number, MarketCard>());
@@ -124,6 +130,7 @@ export function FeedScreen() {
         return card ? replaceCard(prev, mergeMarket(card, market)) : prev;
       });
       if (market.my_position) setPositions((prev) => ({ ...prev, [market.id]: market.my_position! }));
+      if (sort === 'recommended') setAttempt((value) => value + 1);
     },
     onRollback: (id) => {
       const before = snapshots.current.get(id);
@@ -133,6 +140,29 @@ export function FeedScreen() {
   });
 
   const onTrade = useCallback((market: MarketCard, side: Side) => void open(market, side), [open]);
+  const onImpression = useCallback((market: MarketCard) => {
+    api.event('feed_impression', { market: market.id, sort }).catch(() => {});
+  }, [sort]);
+  const onOpen = useCallback((market: MarketCard) => {
+    api.event('market_open', { market: market.id, sort }).catch(() => {});
+  }, [sort]);
+  const dismiss = async (market: MarketCard, hidden: boolean) => {
+    if (hideBusy.current) return;
+    hideBusy.current = true;
+    setHidingId(market.id);
+    try {
+      await api.dismissMarket(market.id, hidden);
+      setLastHidden(hidden ? market : null);
+      // Reload from page one: offset pagination otherwise skips a card after removing a row.
+      setAttempt((value) => value + 1);
+      tg.HapticFeedback.selection();
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Не получилось изменить ленту.', 'error');
+    } finally {
+      hideBusy.current = false;
+      setHidingId(null);
+    }
+  };
 
   const onStar = useCallback(
     (market: MarketCard) => {
@@ -223,6 +253,8 @@ export function FeedScreen() {
       </div>
 
       <div className="screen-body">
+        {sort === 'recommended' && <p className="sub recommendation-note">Выбери любимые темы в профиле. <Link to="/profile">Настроить интересы</Link></p>}
+        {lastHidden && <div className="feed-undo" role="status"><span>Рынок скрыт из ленты</span><button type="button" disabled={hidingId !== null} onClick={() => void dismiss(lastHidden, false)}>Отменить</button></div>}
         {state === 'loading' && [0, 1, 2].map((i) => <CardSkeleton key={i} />)}
 
         {state === 'error' && (
@@ -249,6 +281,10 @@ export function FeedScreen() {
               drawDelay={cascadeDelay(i)}
               onTrade={onTrade}
               onStar={onStar}
+              onHide={(market) => void dismiss(market, true)}
+              hiding={hidingId === m.id}
+              onImpression={onImpression}
+              onOpen={onOpen}
             />
           ))}
 

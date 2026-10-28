@@ -6,7 +6,7 @@ import json
 from .models import Event, Trader
 
 # Events the Mini App may report itself; server-side ones (app_open, trade, market_create) are logged by views.
-CLIENT_EVENTS = {"share", "onboarding_done", "onboarding_skip", "open_bot"}
+CLIENT_EVENTS = {"share", "onboarding_done", "onboarding_skip", "open_bot", "feed_impression", "market_open"}
 MAX_PROPS_BYTES = 2000
 
 

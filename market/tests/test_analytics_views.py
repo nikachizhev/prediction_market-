@@ -25,7 +25,7 @@ BASE_COLUMNS = {
     "disputes": ["question_id", "upheld", "created_at"],
 }
 HELPERS = {"activity", "active_users", "signups", "retention", "funnel_users", "funnel", "economy_daily",
-           "market_resolution_delays", "markets_daily"}
+           "market_resolution_delays", "markets_daily", "recommendation_daily"}
 PERSONAL = {"name", "pseudonym", "show_real_name", "telegram_chat_id", "telegram_username", "photo_url",
             "referral_code", "referred_by_id", "user_id", "github_login", "birth_date", "city", "workplace",
             "education", "bio", "email", "first_name", "username", "title", "reason", "text", "evidence",

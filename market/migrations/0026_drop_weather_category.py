@@ -14,8 +14,10 @@ def drop_weather(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
+    # Also merges the two leaves that came from main: recommendations (0024) and moderation (0025).
     dependencies = [
-        ("market", "0022_analytics_views"),
+        ("market", "0024_recommendation_analytics"),
+        ("market", "0025_moderation_cancellation"),
     ]
 
     operations = [

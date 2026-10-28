@@ -58,6 +58,7 @@ export interface MarketCard {
   starred: boolean;
   /** Where my position leans («Твой прогноз»). */
   my_side?: Side | null;
+  recommendation_reason?: string;
 }
 
 export interface Position {
@@ -142,7 +143,7 @@ export interface Category {
   label: string;
 }
 
-export type EventName = 'share' | 'onboarding_done' | 'onboarding_skip' | 'open_bot';
+export type EventName = 'share' | 'onboarding_done' | 'onboarding_skip' | 'open_bot' | 'feed_impression' | 'market_open';
 
 export type NoticeGroup = 'mine' | 'pay' | 'markets';
 export type NoticeFilter = 'all' | NoticeGroup;
@@ -165,7 +166,7 @@ export interface NoticesResponse {
   unread: number;
 }
 
-export type MarketSort = 'hot' | 'new' | 'soon';
+export type MarketSort = 'recommended' | 'hot' | 'new' | 'soon';
 export type HistoryPeriod = 'd' | 'w' | 'm' | 'all';
 
 export interface MineResponse {
@@ -366,6 +367,8 @@ export const api = {
   sell: (id: number, side: Side, shares: string) => request<TradeResult>('POST', `/markets/${id}/sell`, { side, shares }),
 
   star: (id: number, starred: boolean) => request<{ starred: boolean }>('POST', `/markets/${id}/star`, { starred }),
+  dismissMarket: (id: number, dismissed = true) => request<{ dismissed: boolean }>('POST', `/markets/${id}/dismiss`, { dismissed }),
+  resetHiddenMarkets: () => request<{ restored: number }>('POST', '/feed/reset-hidden'),
 
   report: (id: number, reason?: string) => request<{ ok: true }>('POST', `/markets/${id}/report`, { reason }),
 

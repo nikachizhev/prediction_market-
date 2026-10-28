@@ -1,4 +1,4 @@
-"""Migration 0023: weather markets move to «Фан», the slug leaves onboarding interests."""
+"""Migration 0026: weather markets move to «Фан», the slug leaves onboarding interests."""
 import importlib
 from datetime import timedelta
 
@@ -11,7 +11,7 @@ from market.models import Question, Trader
 
 pytestmark = pytest.mark.django_db
 
-migration = importlib.import_module("market.migrations.0023_drop_weather_category")
+migration = importlib.import_module("market.migrations.0026_drop_weather_category")
 
 
 def question(category: str) -> Question:

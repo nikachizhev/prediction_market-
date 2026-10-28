@@ -5,6 +5,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
+from django.utils import timezone
 
 from . import lmsr
 
@@ -48,6 +49,15 @@ class Trader(models.Model):
     @property
     def display_name(self) -> str:
         return self.name if self.show_real_name else self.pseudonym
+
+
+class FeedDismissal(models.Model):
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="feed_dismissals")
+    question = models.ForeignKey("Question", on_delete=models.CASCADE, related_name="feed_dismissals")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["trader", "question"], name="unique_feed_dismissal")]
 
 
 class Friendship(models.Model):
@@ -264,6 +274,8 @@ class Question(models.Model):
     # Fees held in the market; split between the creator and burning at resolution, refunded on cancel.
     fee_pool = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal(0))
     hidden_at = models.DateTimeField("скрыт до решения модератора", null=True, blank=True)
+    moderation_hidden = models.BooleanField("скрыт модератором", default=False)
+    refund_compensation = models.DecimalField("компенсация платформы при отмене", max_digits=14, decimal_places=2, default=Decimal(0))
     # Client-generated key of the create request: a repeated POST /api/markets returns this market.
     request_key = models.UUIDField(null=True, blank=True, unique=True, editable=False)
 
@@ -454,15 +466,62 @@ class LedgerEntry(models.Model):
 
 
 class MarketComplaint(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Ожидает проверки"
+        UPHELD = "upheld", "Подтверждена"
+        DISMISSED = "dismissed", "Отклонена"
+
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="complaints")
     trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="complaints")
     reason = models.CharField(max_length=300, blank=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.CharField(max_length=80, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "жалоба"
         verbose_name_plural = "жалобы"
         constraints = [models.UniqueConstraint(fields=["question", "trader"], name="one_complaint_per_trader")]
+
+
+class ModerationAction(models.Model):
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="moderation_actions")
+    action = models.CharField(max_length=12, choices=[("hide", "Скрыть"), ("cancel", "Отменить с возвратом"), ("dismiss", "Отклонить жалобы"), ("restore", "Вернуть в ленту")])
+    actor = models.CharField(max_length=80)
+    complaint_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-id"]
+        verbose_name = "решение модератора"
+        verbose_name_plural = "решения модераторов"
+
+
+class ModerationDelivery(models.Model):
+    complaint = models.ForeignKey(MarketComplaint, on_delete=models.CASCADE, related_name="moderation_deliveries")
+    admin_id = models.PositiveBigIntegerField()
+    sent_at = models.DateTimeField(null=True, blank=True)
+    next_attempt = models.DateTimeField(default=timezone.now, db_index=True)
+    attempts = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["complaint", "admin_id"], name="one_moderation_delivery")]
+
+
+class ModerationBotState(models.Model):
+    token_fingerprint = models.CharField(max_length=64, primary_key=True)
+    offset = models.BigIntegerField(default=0)
+
+
+class ModerationPanel(models.Model):
+    token_fingerprint = models.CharField(max_length=64)
+    admin_id = models.PositiveBigIntegerField()
+    message_id = models.BigIntegerField(null=True, blank=True)
+    notice_id = models.BigIntegerField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['token_fingerprint', 'admin_id'], name='one_moderation_panel')]
 
 
 class Event(models.Model):
@@ -474,6 +533,7 @@ class Event(models.Model):
 
     class Meta:
         verbose_name = "событие"
+        indexes = [models.Index(fields=["trader", "name", "created_at"], name="event_trader_name_time")]
         verbose_name_plural = "события"
         ordering = ["-created_at", "-id"]
 
