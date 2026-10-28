@@ -185,10 +185,10 @@ class Component extends DCLogic {
       isStep1: s.step === 1, isStep2: s.step === 2, isStep3: s.step === 3, isDone: s.step === 4,
       q: s.q, qLen: s.q.length,
       onQ: (e) => this.setState({ q: e.target.value.slice(0, 120) }),
-      examples: ['Сдам ли я сессию без троек?', 'Будет ли дождь в Москве в субботу?', 'Отменят ли пары 31 октября?'].map((label) => ({
+      examples: ['Сдам ли я сессию без троек?', 'Победит ли сборная вуза в субботу?', 'Отменят ли пары 31 октября?'].map((label) => ({
         label: label, pick: () => this.setState({ q: label })
       })),
-      cats: ['Игры', 'Учёба', 'Погода', 'Технологии', 'Спорт'].map((label) => {
+      cats: ['Игры', 'Учёба', 'Технологии', 'Спорт', 'Фан'].map((label) => {
         const on = label === s.cat;
         return { label: label, pressed: on ? 'true' : 'false', bg: on ? t.ink : t.card, ink: on ? t.bg : t.ink, border: on ? t.ink : t.line, pick: () => this.setState({ cat: label }) };
       }),

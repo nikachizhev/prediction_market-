@@ -99,7 +99,7 @@ class Component extends DCLogic {
     super(props);
     this.state = {
       tab: 'positions',
-      stars: { gta: true, snow: true, mat: true, ege: true }
+      stars: { gta: true, video: true, mat: true, ege: true }
     };
   }
 
@@ -121,7 +121,7 @@ class Component extends DCLogic {
 
     const positions = [
       { q: 'Выйдет ли GTA VI до конца 2026 года?', side: 'ДА', yes: true, pct: '71%', invested: 100, value: 108, payout: 152 },
-      { q: 'Выпадет снег в Москве до 1 декабря?', side: 'НЕТ', yes: false, pct: '64%', invested: 120, value: 65, payout: 182 },
+      { q: 'Наберёт ли видео с посвята 10 тысяч просмотров до 1 декабря?', side: 'НЕТ', yes: false, pct: '64%', invested: 120, value: 65, payout: 182 },
       { q: 'Сдадим матан всей группой без пересдач?', side: 'НЕТ', yes: false, pct: '38%', invested: 200, value: 171, payout: 276 }
     ].map((p) => {
       const diff = p.value - p.invested;
@@ -133,7 +133,7 @@ class Component extends DCLogic {
 
     const watched = [
       { id: 'gta', q: 'Выйдет ли GTA VI до конца 2026 года?', pct: '71%', d: 4 },
-      { id: 'snow', q: 'Выпадет снег в Москве до 1 декабря?', pct: '64%', d: 9 },
+      { id: 'video', q: 'Наберёт ли видео с посвята 10 тысяч просмотров до 1 декабря?', pct: '64%', d: 9 },
       { id: 'mat', q: 'Сдадим матан всей группой без пересдач?', pct: '38%', d: -6 },
       { id: 'ege', q: 'Нейросеть наберёт 100 баллов на ЕГЭ по профильной математике в 2027 году?', pct: '22%', d: -2 }
     ].map((w, i) => {
