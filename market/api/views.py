@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.csrf import csrf_exempt
@@ -28,11 +28,18 @@ class BadRequest(Exception):
 
 
 class Unavailable(Exception):
-    """An outside service (Telegram) failed: 503, the client has a fallback."""
+    """An outside service (Telegram, the AI model) failed: 503, the client has a fallback."""
+
+
+class LimitReached(Exception):
+    """A per-user daily limit (the AI helper's) is used up: 429."""
 
 
 def endpoint(*methods, create: bool = False):
-    """Authenticated JSON view; MarketError/BadRequest become 400, unknown market 404."""
+    """Authenticated JSON view; MarketError/BadRequest become 400, unknown market 404.
+
+    A view returns a dict or list (sent as JSON) or a ready response.
+    """
     def decorate(view):
         @csrf_exempt
         @api_view(create=create)
@@ -40,13 +47,16 @@ def endpoint(*methods, create: bool = False):
             if request.method not in methods:
                 return JsonResponse({"error": "Метод не поддерживается."}, status=405)
             try:
-                return JsonResponse(view(request, *args, **kwargs), safe=False)
+                result = view(request, *args, **kwargs)
             except (MarketError, BadRequest) as exc:
                 return JsonResponse({"error": str(exc)}, status=400)
+            except LimitReached as exc:
+                return JsonResponse({"error": str(exc)}, status=429)
             except Unavailable as exc:
                 return JsonResponse({"error": str(exc)}, status=503)
             except Question.DoesNotExist:
                 return JsonResponse({"error": "Рынок не найден."}, status=404)
+            return result if isinstance(result, HttpResponse) else JsonResponse(result, safe=False)
         wrapper.__name__ = view.__name__
         return wrapper
     return decorate
