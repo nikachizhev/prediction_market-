@@ -1,52 +1,98 @@
-// Market creation wizard from docs/mockups/Create.dc.html (spec E3, three steps).
+// Market creation wizard from docs/mockups/Create.dc.html (spec E3, three steps) with templates,
+// the AI rules helper and similar markets from docs/mockups/quick-create/Main.dc.html (spec E9.1–E9.3).
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, ApiError, newRequestKey, type Category } from '../api';
+import {
+  api,
+  ApiError,
+  isAssistWarning,
+  newRequestKey,
+  type Category,
+  type MarketCard,
+  type MarketTemplate,
+} from '../api';
 import { BottomSheet } from '../components/BottomSheet';
 import { MainAction } from '../components/MainAction';
 import { MarketCardView } from '../components/MarketCardView';
+import { Skeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
 import {
+  acceptSuggestion,
+  applyAssist,
+  applyTemplate,
+  ASSIST_DAILY_LIMIT,
+  assistCard,
+  assistLeftLabel,
   balanceAfterCreation,
   canProceed,
+  changedFields,
   clearDraft,
   createPayload,
   dateErrors,
   defaultDraft,
+  dismissSuggestion,
+  editDraft,
   errorField,
+  fillTemplate,
   loadDraft,
   previewCard,
   resolutionRule,
   resolvesAtIso,
+  revertSuggestion,
   saveDraft,
+  similarLine,
   stepOfField,
+  templateCategories,
+  templateFilled,
+  templateMinDate,
   TITLE_MAX,
   TITLE_MIN,
+  undoAssist,
+  type AssistUi,
   type CreateDraft,
   type CreateField,
   type CreateStep,
+  type DraftEdit,
+  type FilledGroup,
+  type FillSource,
 } from '../create';
 import { formatDayMonth, formatMoney } from '../format';
 import { useSession } from '../session';
 import { isTelegram, tg } from '../telegram';
 import './create.css';
 
-const EXAMPLES = ['Сдам ли я сессию без троек?', 'Будет ли дождь в Москве в субботу?', 'Отменят ли пары 31 октября?'];
-
 const OWN_RULE = 'Ты не сможешь делать прогнозы на свой рынок';
 const LATER_RULES = ['У участников будет 24 часа, чтобы оспорить итог', 'Половина комиссии со всех сделок — твоя'];
+/** Template category open at first, as in the mockup. */
+const DEFAULT_TEMPLATE_CATEGORY = 'study';
+const SIMILAR_MAX = 3;
 
 const noop = () => {};
 
-// Categories do not change while the app is open; avoid empty chips on return.
+// Categories and templates do not change while the app is open; avoid an empty block on return.
 let cachedCategories: Category[] = [];
+let cachedTemplates: MarketTemplate[] = [];
+// Similar markets of the last question, so coming back from one of them shows the list at once.
+let cachedSimilar: { q: string; items: MarketCard[] } | null = null;
 
 export function CreateScreen() {
   const navigate = useNavigate();
   const toast = useToast();
-  const { me, balance, setBalance } = useSession();
+  const { me, balance, setBalance, patchMe } = useSession();
   const [draft, setDraftState] = useState<CreateDraft>(() => loadDraft());
+  const draftRef = useRef(draft);
   const [categories, setCategories] = useState<Category[]>(cachedCategories);
+  const [templates, setTemplates] = useState<MarketTemplate[]>(cachedTemplates);
+  const [tplCategory, setTplCategory] = useState('');
+  const [tplOpen, setTplOpen] = useState<string | null>(null);
+  const [tplValues, setTplValues] = useState<Record<string, string>>({});
+  const [assistUi, setAssistUi] = useState<AssistUi>('idle');
+  const [warning, setWarning] = useState('');
+  // Bumped to drop the answer of a request that no longer fits (new question, closed wizard).
+  const assistRequest = useRef(0);
+  const [similar, setSimilar] = useState<MarketCard[]>(() =>
+    cachedSimilar && cachedSimilar.q === draft.title.trim() ? cachedSimilar.items : [],
+  );
   const [serverErrors, setServerErrors] = useState<Partial<Record<CreateField, string>>>({});
   const [busy, setBusy] = useState(false);
   // «Разреши боту писать тебе» before publishing, when the bot cannot reach the creator yet.
@@ -66,7 +112,23 @@ export function CreateScreen() {
         setCategories(list);
       })
       .catch(() => {});
+    // Without templates the block is not shown; the wizard works as before.
+    api
+      .templates()
+      .then((list) => {
+        if (!Array.isArray(list)) return;
+        cachedTemplates = list;
+        setTemplates(list);
+      })
+      .catch(() => {});
   }, []);
+
+  useEffect(
+    () => () => {
+      assistRequest.current += 1;
+    },
+    [],
+  );
 
   // Date checks depend on the current time ("at least an hour from now").
   useEffect(() => {
@@ -74,23 +136,30 @@ export function CreateScreen() {
     return () => window.clearInterval(id);
   }, []);
 
-  const update = useCallback((patch: Partial<CreateDraft>) => {
-    setDraftState((prev) => {
-      const next = { ...prev, ...patch };
-      saveDraft(next);
-      return next;
-    });
-    setServerErrors((prev) => {
-      const keys = Object.keys(patch);
-      const cleared = { ...prev };
-      if (keys.includes('title')) delete cleared.title;
-      if (keys.includes('criteria')) delete cleared.criteria;
-      if (keys.includes('category')) delete cleared.category;
-      if (keys.some((k) => k === 'closeDate' || k === 'closeTime')) delete cleared.closes;
-      if (keys.some((k) => k === 'resultDate' || k === 'resultTime' || k === 'closeDate' || k === 'closeTime')) delete cleared.resolves;
-      return cleared;
-    });
+  /** Every change of the draft goes through here: saved, stale server errors cleared. */
+  const commit = useCallback((next: CreateDraft) => {
+    const prev = draftRef.current;
+    if (next === prev) return;
+    draftRef.current = next;
+    saveDraft(next);
+    setDraftState(next);
+    const stale = changedFields(prev, next);
+    if (stale.length > 0) {
+      setServerErrors((errors) => {
+        const kept = { ...errors };
+        for (const field of stale) delete kept[field];
+        return kept;
+      });
+    }
+    if (prev.title !== next.title) {
+      // The helper's answer or warning was about the old question.
+      assistRequest.current += 1;
+      setAssistUi((ui) => (ui === 'loading' || ui === 'warn' || ui === 'off' ? 'idle' : ui));
+    }
   }, []);
+
+  /** A change made by the creator: removes the «ИИ» / «Шаблон» mark of the field. */
+  const update = useCallback((patch: DraftEdit) => commit(editDraft(draftRef.current, patch)), [commit]);
 
   const goTo = useCallback(
     (step: CreateStep) => {
@@ -113,12 +182,81 @@ export function CreateScreen() {
     };
   }, [step, goTo]);
 
+  // Similar markets on the review step (spec E9.3); an error or nothing similar — no block.
+  const similarQuery = step === 3 ? draft.title.trim() : '';
+  useEffect(() => {
+    if (similarQuery.length < TITLE_MIN) {
+      setSimilar([]);
+      return;
+    }
+    if (cachedSimilar?.q === similarQuery) {
+      setSimilar(cachedSimilar.items);
+      return;
+    }
+    let cancelled = false;
+    setSimilar([]);
+    api
+      .similarMarkets(similarQuery)
+      .then((res) => {
+        const items = Array.isArray(res?.items) ? res.items.slice(0, SIMILAR_MAX) : [];
+        cachedSimilar = { q: similarQuery, items };
+        if (!cancelled) setSimilar(items);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [similarQuery]);
+
+  const assist = me?.assist;
+  const card = assistCard(draft, assistUi, assist);
+  const loading = step === 2 && card === 'loading';
   const cost = me ? Number(me.limits.creation_cost) : 0;
   const rest = balanceAfterCreation(balance, cost);
-  const ready = canProceed(draft, step, now);
+  const ready = canProceed(draft, step, now) && !loading;
   const dates = dateErrors(draft, now);
   const fieldError = (field: CreateField) =>
     serverErrors[field] ?? (field === 'closes' || field === 'resolves' ? dates[field] : undefined);
+
+  const setLeft = (left: unknown) => {
+    if (typeof left !== 'number' || !Number.isFinite(left)) return;
+    patchMe((prev) => (prev.assist ? { ...prev, assist: { ...prev.assist, left: Math.max(0, left) } } : prev));
+  };
+
+  const ask = async () => {
+    if (!assist?.enabled) return;
+    if (assist.left <= 0) {
+      setAssistUi('limit');
+      return;
+    }
+    tg.HapticFeedback.impact('light');
+    const request = ++assistRequest.current;
+    setAssistUi('loading');
+    const current = draftRef.current;
+    try {
+      const res = await api.assist(current.title.trim(), current.category || undefined);
+      setLeft(res.left);
+      if (request !== assistRequest.current) return;
+      if (isAssistWarning(res)) {
+        setWarning(res.text);
+        setAssistUi('warn');
+        tg.HapticFeedback.notification('warning');
+        return;
+      }
+      commit(applyAssist(draftRef.current, res));
+      setAssistUi('idle');
+      tg.HapticFeedback.notification('success');
+    } catch (err) {
+      if (request !== assistRequest.current) return;
+      if (err instanceof ApiError && err.status === 429) {
+        setLeft(0);
+        setAssistUi('limit');
+      } else {
+        // 503 (off, no answer in 10 s), no connection or anything else: the wizard works without it.
+        setAssistUi('off');
+      }
+    }
+  };
 
   const submit = async () => {
     const payload = createPayload(draft);
@@ -178,8 +316,14 @@ export function CreateScreen() {
 
   const close = () => {
     clearDraft();
-    setDraftState(defaultDraft());
+    const fresh = defaultDraft();
+    draftRef.current = fresh;
+    setDraftState(fresh);
     setServerErrors({});
+    assistRequest.current += 1;
+    setAssistUi('idle');
+    setTplOpen(null);
+    setTplValues({});
     navigate('/');
   };
 
@@ -188,6 +332,31 @@ export function CreateScreen() {
   const nextLabel = step === 3 ? `Опубликовать за ${formatMoney(cost)}` : 'Далее';
   const resolves = resolvesAtIso(draft);
   const resolutionDay = resolves ? `${formatDayMonth(resolves, now)} в ${draft.resultTime}` : 'В дату итога';
+
+  // Templates on step 1.
+  const tplCategories = templateCategories(templates);
+  const activeTplCategory = tplCategories.includes(tplCategory)
+    ? tplCategory
+    : tplCategories.includes(DEFAULT_TEMPLATE_CATEGORY)
+      ? DEFAULT_TEMPLATE_CATEGORY
+      : (tplCategories[0] ?? '');
+  const openTemplate = templates.find((t) => t.id === tplOpen) ?? null;
+  const tplReady = openTemplate ? templateFilled(openTemplate, tplValues) : false;
+
+  const pickTemplate = (id: string | null) => {
+    setTplOpen(id);
+    setTplValues({});
+  };
+
+  const putTemplate = () => {
+    if (!openTemplate || !tplReady) return;
+    tg.HapticFeedback.impact('light');
+    commit(applyTemplate(draftRef.current, openTemplate, tplValues, now));
+    pickTemplate(null);
+  };
+
+  const mark = (group: FilledGroup) =>
+    draft.filledBy && draft.marks.includes(group) ? <FillMark by={draft.filledBy} /> : null;
 
   return (
     <div className="screen create" ref={mainRef}>
@@ -233,115 +402,371 @@ export function CreateScreen() {
                 aria-describedby="create-q-hint"
               />
               <span id="create-q-hint" className="sub field-hint">
-                Вопрос должен иметь однозначный ответ ДА или НЕТ, дату и понятный способ проверить итог.
+                {draft.templateId
+                  ? 'Сроки и правила подставятся из шаблона — проверишь их на следующем шаге.'
+                  : 'Вопрос должен иметь однозначный ответ ДА или НЕТ, дату и понятный способ проверить итог.'}
                 {' '}От {TITLE_MIN} до {TITLE_MAX} символов без пробелов по краям.
               </span>
               {fieldError('title') && <span className="field-error">{fieldError('title')}</span>}
             </div>
-            <div className="field">
-              <span className="field-label">Примеры</span>
-              <div className="create-examples">
-                {EXAMPLES.map((ex) => (
-                  <button key={ex} type="button" className="example-button" onClick={() => update({ title: ex })}>
-                    {ex}
-                  </button>
-                ))}
-              </div>
-            </div>
+
+            {templates.length > 0 && (
+              <section aria-label="Шаблоны" className="create-templates">
+                <div className="create-section-head">
+                  <span className="field-label">Шаблоны</span>
+                  <span className="sub field-hint">Правила и сроки уже готовы — останется вписать детали</span>
+                </div>
+                <div role="group" aria-label="Категория шаблонов" className="create-tpl-categories">
+                  {tplCategories.map((slug) => (
+                    <button
+                      key={slug}
+                      type="button"
+                      className={`chip create-tpl-chip ${slug === activeTplCategory ? 'is-active' : ''}`}
+                      aria-pressed={slug === activeTplCategory}
+                      onClick={() => {
+                        tg.HapticFeedback.selection();
+                        setTplCategory(slug);
+                        pickTemplate(null);
+                      }}
+                    >
+                      {labels.get(slug) ?? slug}
+                    </button>
+                  ))}
+                </div>
+                {openTemplate ? (
+                  <div className="card create-tpl-panel">
+                    <div className="create-tpl-top">
+                      <span className="sub create-tpl-category">
+                        Шаблон · {labels.get(openTemplate.category) ?? openTemplate.category}
+                      </span>
+                      <button
+                        type="button"
+                        className="icon-button create-tpl-close"
+                        aria-label="Закрыть шаблон"
+                        onClick={() => pickTemplate(null)}
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                          <path d="M6 6l12 12M18 6L6 18" />
+                        </svg>
+                      </button>
+                    </div>
+                    <p className="create-tpl-preview">
+                      {fillTemplate(openTemplate.text, openTemplate.blanks, tplValues, now)}
+                    </p>
+                    {openTemplate.blanks.map((b) => (
+                      <div key={b.key} className="field create-tpl-field">
+                        <label htmlFor={`tpl-${b.key}`} className="field-label">
+                          {b.label}
+                        </label>
+                        <input
+                          id={`tpl-${b.key}`}
+                          type={b.type}
+                          className="input input-short create-tpl-input"
+                          value={tplValues[b.key] ?? ''}
+                          placeholder={b.placeholder}
+                          min={b.type === 'date' ? templateMinDate(now) : b.type === 'number' ? 0 : undefined}
+                          inputMode={b.type === 'number' ? 'numeric' : undefined}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setTplValues((prev) => ({ ...prev, [b.key]: value }));
+                          }}
+                        />
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="button-primary is-ink create-tpl-apply"
+                      disabled={!tplReady}
+                      onClick={putTemplate}
+                    >
+                      Подставить в вопрос
+                    </button>
+                  </div>
+                ) : (
+                  <div className="create-tpl-list">
+                    {templates
+                      .filter((t) => t.category === activeTplCategory)
+                      .map((t) => (
+                        <button key={t.id} type="button" className="create-tpl-item" onClick={() => pickTemplate(t.id)}>
+                          <span>{fillTemplate(t.text, t.blanks, {}, now)}</span>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M9 6l6 6-6 6" />
+                          </svg>
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </section>
+            )}
           </>
         )}
 
         {step === 2 && (
           <>
             <h1 className="screen-title">Сроки и правила итога</h1>
-            <div className="create-two">
-              <div className="field">
-                <label htmlFor="create-close" className="field-label">
-                  Приём прогнозов до
-                </label>
-                <input
-                  id="create-close"
-                  type="date"
-                  className="input input-short"
-                  value={draft.closeDate}
-                  onChange={(e) => update({ closeDate: e.target.value })}
-                  aria-invalid={!!fieldError('closes') || undefined}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="create-time" className="field-label">
-                  Время
-                </label>
-                <input
-                  id="create-time"
-                  type="time"
-                  className="input input-short"
-                  value={draft.closeTime}
-                  onChange={(e) => update({ closeTime: e.target.value })}
-                  aria-invalid={!!fieldError('closes') || undefined}
-                />
-              </div>
-            </div>
-            {fieldError('closes') && <span className="field-error create-tight">{fieldError('closes')}</span>}
-            <div className="field">
-              <label htmlFor="create-result" className="field-label">
-                Итог станет известен
-              </label>
-              <input
-                id="create-result"
-                type="date"
-                className="input input-short"
-                value={draft.resultDate}
-                onChange={(e) => update({ resultDate: e.target.value })}
-                aria-invalid={!!fieldError('resolves') || undefined}
-              />
-              <label htmlFor="create-result-time" className="field-label">Время итога</label>
-              <input
-                id="create-result-time"
-                type="time"
-                className="input input-short"
-                value={draft.resultTime}
-                onChange={(e) => update({ resultTime: e.target.value })}
-                aria-invalid={!!fieldError('resolves') || undefined}
-              />
-              <span className="sub field-hint">Дата и время по часовому поясу твоего устройства.</span>
-              {fieldError('resolves') && <span className="field-error">{fieldError('resolves')}</span>}
-            </div>
-            <div className="field">
-              <label htmlFor="create-criteria" className="field-label">
-                Как определяем результат
-              </label>
-              <textarea
-                id="create-criteria"
-                className="input"
-                rows={5}
-                value={draft.criteria}
-                onChange={(e) => update({ criteria: e.target.value })}
-                placeholder="ДА, если … НЕТ, если … Чем подтвержу итог: скриншот, фото, ссылка."
-                aria-invalid={!!fieldError('criteria') || undefined}
-              />
-              {fieldError('criteria') && <span className="field-error">{fieldError('criteria')}</span>}
-            </div>
-            <div role="group" aria-label="Категория" className="field">
-              <span className="field-label">Категория</span>
-              <div className="create-chips">
-                {categories.map((c) => (
+
+            {card === 'idle' && (
+              <section aria-label="ИИ-помощник" className="create-assist is-outlined">
+                <div className="create-assist-row">
+                  <span className="create-assist-badge">
+                    <SparkIcon size={20} />
+                  </span>
+                  <div className="create-assist-text">
+                    <span className="create-assist-name">ИИ-помощник</span>
+                    <span className="sub create-assist-note">
+                      Предложит, как определить итог, сроки и категорию по твоему вопросу. Ты всё проверишь и поправишь.
+                    </span>
+                  </div>
+                </div>
+                <button type="button" className="create-assist-ask" onClick={() => void ask()}>
+                  <SparkIcon size={18} single />
+                  Помочь с правилами
+                </button>
+                <span className="sub create-assist-small">Помощнику уходит только текст вопроса — без имени и Telegram ID.</span>
+              </section>
+            )}
+
+            {card === 'loading' && (
+              <section role="status" className="create-assist is-outlined is-row">
+                <span className="create-assist-badge">
+                  <SparkIcon size={20} />
+                </span>
+                <div className="create-assist-text">
+                  <span className="create-assist-name">Помощник пишет правила…</span>
+                  <span className="sub create-assist-note">Обычно 2–3 секунды. Поля ниже заполнятся сами.</span>
+                </div>
+              </section>
+            )}
+
+            {card === 'done' && (
+              <section role="status" className="create-assist is-done">
+                <div className="create-assist-row is-tight">
+                  <span className="create-assist-icon">
+                    <SparkIcon size={20} />
+                  </span>
+                  <div className="create-assist-text">
+                    <span className="create-assist-title">Помощник заполнил сроки, правила и категорию</span>
+                    <span className="sub create-assist-note">Проверь каждое поле: за итог отвечаешь ты, а не ИИ.</span>
+                  </div>
+                </div>
+                <div className="create-assist-foot">
                   <button
-                    key={c.slug}
                     type="button"
-                    className={`chip ${c.slug === draft.category ? 'is-active' : ''}`}
-                    aria-pressed={c.slug === draft.category}
+                    className="create-link"
                     onClick={() => {
-                      tg.HapticFeedback.selection();
-                      update({ category: c.slug });
+                      tg.HapticFeedback.impact('light');
+                      commit(undoAssist(draftRef.current));
                     }}
                   >
-                    {c.label}
+                    Вернуть как было
                   </button>
-                ))}
+                  <span className="sub create-assist-small">{assistLeftLabel(assist?.left ?? 0)}</span>
+                </div>
+              </section>
+            )}
+
+            {card === 'done' && draft.suggestion?.state === 'open' && (
+              <section aria-label="Уточнить вопрос" className="card create-better">
+                <span className="field-label">Точнее так</span>
+                <p className="create-better-question">{draft.suggestion.question}</p>
+                {draft.suggestion.why && <span className="sub create-assist-note">{draft.suggestion.why}</span>}
+                <div className="create-pair">
+                  <button type="button" className="create-button is-ink" onClick={() => commit(acceptSuggestion(draftRef.current))}>
+                    Заменить
+                  </button>
+                  <button type="button" className="create-button is-outline" onClick={() => commit(dismissSuggestion(draftRef.current))}>
+                    Оставить мой
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {card === 'done' && draft.suggestion?.state === 'accepted' && (
+              <div className="create-accepted sub">
+                <span>Вопрос уточнён</span>
+                <button type="button" className="create-link" onClick={() => commit(revertSuggestion(draftRef.current))}>
+                  Вернуть мой
+                </button>
               </div>
-              {fieldError('category') && <span className="field-error">{fieldError('category')}</span>}
-            </div>
+            )}
+
+            {card === 'template' && (
+              <section role="status" className="create-assist is-row is-plain">
+                <svg className="create-assist-icon sub" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="4" y="4" width="16" height="16" rx="3" />
+                  <path d="M4 10h16M10 10v10" />
+                </svg>
+                <div className="create-assist-text">
+                  <span className="create-assist-title">Сроки и правила — из шаблона</span>
+                  <span className="sub create-assist-note">Проверь их: все поля можно менять.</span>
+                </div>
+              </section>
+            )}
+
+            {card === 'warn' && (
+              <section role="alert" className="create-assist is-warn">
+                <div className="create-assist-row is-tight">
+                  <svg className="create-assist-icon create-warn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 4l9 16H3z" />
+                    <path d="M12 10v4M12 17v.01" />
+                  </svg>
+                  <div className="create-assist-text is-loose">
+                    <span className="create-assist-title">{warning}</span>
+                    <span className="create-assist-note">
+                      Такие рынки запрещены и скрываются по жалобам. Спроси о событии, а не о человеке, — например,
+                      «Пройдёт ли экзамен по расписанию?»
+                    </span>
+                  </div>
+                </div>
+                <div className="create-pair">
+                  <button
+                    type="button"
+                    className="create-button is-ink"
+                    onClick={() => {
+                      setAssistUi('idle');
+                      goTo(1);
+                    }}
+                  >
+                    Изменить вопрос
+                  </button>
+                  <button type="button" className="create-button is-outline-ink" onClick={() => setAssistUi('manual')}>
+                    Заполню сам
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {card === 'off' && (
+              <section role="status" className="create-assist">
+                <div className="create-assist-text">
+                  <span className="create-assist-title">Помощник сейчас не отвечает</span>
+                  <span className="sub create-assist-note">Заполни правила сам — мастер работает и без ИИ.</span>
+                </div>
+                <button type="button" className="create-button is-outline" onClick={() => void ask()}>
+                  Попробовать ещё раз
+                </button>
+              </section>
+            )}
+
+            {card === 'limit' && (
+              <section role="status" className="create-assist is-compact">
+                <span className="create-assist-title">Подсказки на сегодня закончились</span>
+                <span className="sub create-assist-note">
+                  Их {ASSIST_DAILY_LIMIT} в день. Шаблоны на первом шаге работают без ИИ.
+                </span>
+              </section>
+            )}
+
+            {loading ? (
+              <FieldsSkeleton />
+            ) : (
+              <>
+                <div className="create-two">
+                  <div className="field">
+                    <div className="create-label-row">
+                      <label htmlFor="create-close" className="field-label">
+                        Приём прогнозов до
+                      </label>
+                    </div>
+                    <input
+                      id="create-close"
+                      type="date"
+                      className="input input-short"
+                      value={draft.closeDate}
+                      onChange={(e) => update({ closeDate: e.target.value })}
+                      aria-invalid={!!fieldError('closes') || undefined}
+                    />
+                  </div>
+                  <div className="field">
+                    <div className="create-label-row">
+                      <label htmlFor="create-time" className="field-label">
+                        Время
+                      </label>
+                      {mark('dates')}
+                    </div>
+                    <input
+                      id="create-time"
+                      type="time"
+                      className="input input-short"
+                      value={draft.closeTime}
+                      onChange={(e) => update({ closeTime: e.target.value })}
+                      aria-invalid={!!fieldError('closes') || undefined}
+                    />
+                  </div>
+                </div>
+                {fieldError('closes') && <span className="field-error create-tight">{fieldError('closes')}</span>}
+                <div className="field">
+                  <div className="create-label-row">
+                    <label htmlFor="create-result" className="field-label">
+                      Итог станет известен
+                    </label>
+                    {mark('dates')}
+                  </div>
+                  <input
+                    id="create-result"
+                    type="date"
+                    className="input input-short"
+                    value={draft.resultDate}
+                    onChange={(e) => update({ resultDate: e.target.value })}
+                    aria-invalid={!!fieldError('resolves') || undefined}
+                  />
+                  <label htmlFor="create-result-time" className="field-label">
+                    Время итога
+                  </label>
+                  <input
+                    id="create-result-time"
+                    type="time"
+                    className="input input-short"
+                    value={draft.resultTime}
+                    onChange={(e) => update({ resultTime: e.target.value })}
+                    aria-invalid={!!fieldError('resolves') || undefined}
+                  />
+                  <span className="sub field-hint">Дата и время по часовому поясу твоего устройства.</span>
+                  {fieldError('resolves') && <span className="field-error">{fieldError('resolves')}</span>}
+                </div>
+                <div className="field">
+                  <div className="create-label-row">
+                    <label htmlFor="create-criteria" className="field-label">
+                      Как определяем результат
+                    </label>
+                    {mark('criteria')}
+                  </div>
+                  <textarea
+                    id="create-criteria"
+                    className="input"
+                    rows={card === 'none' ? 5 : 7}
+                    value={draft.criteria}
+                    onChange={(e) => update({ criteria: e.target.value })}
+                    placeholder="ДА, если … НЕТ, если … Чем подтвержу итог: скриншот, фото, ссылка."
+                    aria-invalid={!!fieldError('criteria') || undefined}
+                  />
+                  {fieldError('criteria') && <span className="field-error">{fieldError('criteria')}</span>}
+                </div>
+                <div role="group" aria-label="Категория" className="field">
+                  <div className="create-label-row">
+                    <span className="field-label">Категория</span>
+                    {mark('category')}
+                  </div>
+                  <div className="create-chips">
+                    {categories.map((c) => (
+                      <button
+                        key={c.slug}
+                        type="button"
+                        className={`chip ${c.slug === draft.category ? 'is-active' : ''}`}
+                        aria-pressed={c.slug === draft.category}
+                        onClick={() => {
+                          tg.HapticFeedback.selection();
+                          update({ category: c.slug });
+                        }}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                  {fieldError('category') && <span className="field-error">{fieldError('category')}</span>}
+                </div>
+              </>
+            )}
             <div className="hint-box create-note sub">
               <InfoIcon />
               <span>Если не укажешь итог в течение 72 часов после этой даты, рынок отменится и всем вернутся монеты.</span>
@@ -359,6 +784,25 @@ export function CreateScreen() {
         {step === 3 && (
           <>
             <h1 className="screen-title">Проверь и публикуй</h1>
+            {similar.length > 0 && (
+              <section aria-label="Похожие рынки" className="create-similar">
+                <div className="create-section-head">
+                  <span className="create-similar-title">Похожие рынки уже есть</span>
+                  <span className="sub field-hint">Можно сделать прогноз там — или всё равно создать свой.</span>
+                </div>
+                {similar.map((m) => (
+                  <article key={m.id} className="create-similar-card">
+                    <div className="create-similar-text">
+                      <span className="create-similar-question">{m.title}</span>
+                      <span className="sub create-similar-line">{similarLine(m)}</span>
+                    </div>
+                    <button type="button" className="create-button is-outline create-similar-open" onClick={() => navigate(`/market/${m.id}`)}>
+                      Открыть
+                    </button>
+                  </article>
+                ))}
+              </section>
+            )}
             <span className="field-label sub">Так рынок увидят в ленте</span>
             <div className="create-preview" ref={(el) => el?.setAttribute('inert', '')} aria-label="Предпросмотр карточки">
               <MarketCardView
@@ -447,6 +891,61 @@ export function CreateScreen() {
         </div>
       </BottomSheet>
     </div>
+  );
+}
+
+/** «ИИ» or «Шаблон» next to a field the helper or a template filled. */
+function FillMark({ by }: { by: FillSource }) {
+  return <span className={`create-mark ${by === 'ai' ? 'is-ai' : ''}`}>{by === 'ai' ? 'ИИ' : 'Шаблон'}</span>;
+}
+
+/** Step 2 fields while the helper writes the rules. */
+function FieldsSkeleton() {
+  return (
+    <div className="create-skeleton" aria-hidden="true">
+      <div className="create-two">
+        <div className="field">
+          <span className="field-label">Приём прогнозов до</span>
+          <Skeleton height={48} radius={12} />
+        </div>
+        <div className="field">
+          <span className="field-label">Время</span>
+          <Skeleton height={48} radius={12} />
+        </div>
+      </div>
+      <div className="field">
+        <span className="field-label">Итог станет известен</span>
+        <Skeleton height={48} radius={12} />
+        <span className="field-label">Время итога</span>
+        <Skeleton height={48} radius={12} />
+      </div>
+      <div className="field">
+        <span className="field-label">Как определяем результат</span>
+        <div className="create-skeleton-box">
+          <Skeleton width="92%" height={12} radius={6} />
+          <Skeleton width="78%" height={12} radius={6} />
+          <Skeleton width="86%" height={12} radius={6} />
+          <Skeleton width="54%" height={12} radius={6} />
+        </div>
+      </div>
+      <div className="field">
+        <span className="field-label">Категория</span>
+        <div className="create-chips">
+          <Skeleton width={72} height={40} radius={999} />
+          <Skeleton width={84} height={40} radius={999} />
+          <Skeleton width={96} height={40} radius={999} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SparkIcon({ size, single = false }: { size: number; single?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={single ? 2 : 1.8} strokeLinejoin="round" aria-hidden="true">
+      <path d="M11 3.5l1.9 5.1 5.1 1.9-5.1 1.9L11 17.5l-1.9-5.1L4 10.5l5.1-1.9z" />
+      {!single && <path d="M18.5 15l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" />}
+    </svg>
   );
 }
 
