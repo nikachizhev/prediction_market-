@@ -369,67 +369,28 @@ export function MarketScreen() {
         </div>
 
         {m.submarkets && m.submarkets.length > 0 && (
-          <section className="card mk-section mk-options-card" aria-label="Варианты ответа">
-            <span className="mk-section-title">Варианты</span>
-            <div className="mk-options-list">
-              {m.submarkets.map((sub) => {
-                const subPct = splitPercents(sub.prob);
-                const isSelected = activeSub?.id === sub.id;
-                const subBlocked = !sub.can_trade || statusView(sub.status).phase !== 'open';
-                return (
-                  <div
-                    key={sub.id}
-                    role="button"
-                    tabIndex={0}
-                    className={`mk-option-row ${isSelected ? 'is-selected' : ''}`}
-                    onClick={() => {
-                      tg.HapticFeedback.selection();
-                      setSelectedSubId(sub.id);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setSelectedSubId(sub.id);
-                      }
-                    }}
-                  >
-                    <div className="mk-option-info">
-                      <span className="mk-option-label">{sub.label}</span>
-                      {sub.my_position && heldSides(sub.my_position).length > 0 && (
-                        <span className="sub small">Есть позиция</span>
-                      )}
-                    </div>
-                    <div className="mk-option-actions">
-                      <button
-                        type="button"
-                        className="market-sub-btn is-yes"
-                        disabled={subBlocked}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedSubId(sub.id);
-                          void trade.open(sub, 'yes');
-                        }}
-                      >
-                        ДА · {subPct.yes}%
-                      </button>
-                      <button
-                        type="button"
-                        className="market-sub-btn is-no"
-                        disabled={subBlocked}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedSubId(sub.id);
-                          void trade.open(sub, 'no');
-                        }}
-                      >
-                        НЕТ · {subPct.no}%
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+          <div className="mk-submarket-tabs" role="tablist" aria-label="Варианты ответа">
+            {m.submarkets.map((sub) => {
+              const subPct = splitPercents(sub.prob);
+              const isSelected = activeSub?.id === sub.id;
+              return (
+                <button
+                  key={sub.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  className={`mk-submarket-tab ${isSelected ? 'is-active' : ''}`}
+                  onClick={() => {
+                    tg.HapticFeedback.selection();
+                    setSelectedSubId(sub.id);
+                  }}
+                >
+                  <span className="mk-submarket-tab-label">{sub.label}</span>
+                  <span className="mk-submarket-tab-pct">{subPct.yes}%</span>
+                </button>
+              );
+            })}
+          </div>
         )}
 
         {view.phase === 'closed' && (

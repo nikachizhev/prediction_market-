@@ -145,56 +145,53 @@
   padding: 16px;
 }
 
-.mk-options-list {
+.mk-submarket-tabs {
   display: flex;
-  flex-direction: column;
   gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 4px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 
-.mk-option-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1.5px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg);
-  cursor: pointer;
+.mk-submarket-tabs::-webkit-scrollbar {
+  display: none;
 }
 
-.mk-option-row.is-selected {
-  border-color: var(--ink);
-  background: var(--card);
-}
-
-.mk-option-info {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.mk-option-label {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.mk-option-actions {
+.mk-submarket-tab {
   flex: 0 0 auto;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  height: 42px;
+  padding: 0 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font: 500 14px/1 var(--font);
+  cursor: pointer;
+  transition: all 150ms ease;
 }
 
-.mk-option-pct {
-  min-width: 40px;
-  text-align: right;
-  font-size: 15px;
+.mk-submarket-tab.is-active {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.mk-submarket-tab-label {
+  font-weight: 600;
+}
+
+.mk-submarket-tab-pct {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.mk-submarket-tab.is-active .mk-submarket-tab-pct {
+  opacity: 1;
 }
 
 .mk-section-title {
