@@ -172,4 +172,4 @@ interface MarketTemplate {
 | `GET /api/markets/similar` | `?q=` — от 10 символов | `{items: MarketCard[]}` — до 3 открытых рынков, которые видит пользователь (`visible_questions`), похожесть по словам вопроса, без ИИ |
 | `POST /api/markets` | + `{assist?: "accepted" \| "edited" \| "undone", template?: string}` | как раньше; оба поля пишутся в событие `market_create` |
 
-Сервер пишет событие `assist_request` с `props.result`: `"ok" | "warning" | "limit" | "error"`. Модели уходят только текст вопроса, категория и сегодняшняя дата.
+Сервер пишет событие `assist_request` с `props.result`: `"ok" | "warning" | "limit" | "error"`. Модели уходят только текст вопроса, категория и сегодняшняя дата. Лимит считают события `assist_request` за московский день, кроме `limit`; при выключенном помощнике события нет. Неизвестные значения `assist` и `template` в `POST /api/markets` отбрасываются, рынок создаётся.

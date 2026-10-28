@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import assist_views, create_help_views, views
 
 app_name = "api"
 
@@ -9,6 +9,9 @@ urlpatterns = [
     path("me", views.me, name="me"),
     path("categories", views.categories, name="categories"),
     path("markets", views.markets, name="markets"),
+    path("markets/similar", create_help_views.similar, name="similar_markets"),
+    path("templates", create_help_views.templates, name="templates"),
+    path("assist", assist_views.assist, name="assist"),
     path("feed/reset-hidden", views.reset_dismissals, name="reset_dismissals"),
     path("markets/<int:pk>/dismiss", views.dismiss_market, name="dismiss_market"),
     path("markets/<int:pk>", views.market, name="market"),
