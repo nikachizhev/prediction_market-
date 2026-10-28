@@ -1,0 +1,157 @@
+/* Scoped styles specifically for multi-outcome cards */
+
+.multi-card-options {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 4px;
+}
+
+.multi-option-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.multi-option-row:last-child {
+  border-bottom: none;
+}
+
+.multi-option-left {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.multi-option-title {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+.multi-option-delta {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.multi-option-delta.is-up {
+  color: var(--yes);
+}
+
+.multi-option-delta.is-down {
+  color: var(--no);
+}
+
+.multi-option-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Кнопки ДА/НЕТ: строго те же параметры, что и .side-button у бинарной карточки */
+.multi-btn {
+  height: 44px;
+  min-width: 96px;
+  padding: 0 12px;
+  border: 2px solid transparent;
+  border-radius: var(--radius-control);
+  font: 600 15px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.multi-btn.is-yes {
+  background: var(--yes-tint);
+  color: var(--yes);
+}
+
+.multi-btn.is-no {
+  background: var(--no-tint);
+  color: var(--no);
+}
+
+.multi-btn.is-yes.is-picked {
+  background: var(--yes-fill);
+  border-color: var(--yes-fill);
+  color: #FFFFFF;
+}
+
+.multi-btn.is-no.is-picked {
+  background: var(--no-fill);
+  border-color: var(--no-fill);
+  color: #FFFFFF;
+}
+
+.multi-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.multi-more-btn,
+.multi-more-link {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 40px;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--card);
+  color: var(--ink);
+  font: 600 13px/1 var(--font);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.multi-more-btn:active,
+.multi-more-link:active {
+  background: var(--bg);
+}
+
+/* Адаптив для маленьких экранов (< 360px) */
+@media (max-width: 360px) {
+  .multi-option-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .multi-option-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .multi-btn {
+    min-width: 0;
+    width: 100%;
+  }
+}
+

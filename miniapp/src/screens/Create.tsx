@@ -35,6 +35,17 @@ import './create.css';
 
 const EXAMPLES = ['Сдам ли я сессию без троек?', 'Будет ли дождь в Москве в субботу?', 'Отменят ли пары 31 октября?'];
 
+const EXAMPLES_MULTIPLE: { title: string; options: string[] }[] = [
+  {
+    title: 'Какая будет завтра погода?',
+    options: ['солнечная', 'дождь', 'ветер'],
+  },
+  {
+    title: 'Сколько процентов хорошо сдаст сессию?',
+    options: ['меньше 50%', '50–70%', 'больше 70%'],
+  },
+];
+
 const OWN_RULE = 'Ты не сможешь делать прогнозы на свой рынок';
 const LATER_RULES = ['У участников будет 24 часа, чтобы оспорить итог', 'Половина комиссии со всех сделок — твоя'];
 
@@ -261,7 +272,7 @@ export function CreateScreen() {
                 onChange={(e) => update({ title: e.target.value.slice(0, TITLE_MAX) })}
                 placeholder={
                   draft.mode === 'multiple'
-                    ? 'Например: Оживет ли e-mkn?'
+                    ? 'Например: Какая будет завтра погода?'
                     : 'Например: Сдам ли я сессию без троек?'
                 }
                 aria-invalid={!!fieldError('title') || undefined}
@@ -330,11 +341,23 @@ export function CreateScreen() {
             <div className="field">
               <span className="field-label">Примеры</span>
               <div className="create-examples">
-                {EXAMPLES.map((ex) => (
-                  <button key={ex} type="button" className="example-button" onClick={() => update({ title: ex })}>
-                    {ex}
-                  </button>
-                ))}
+                {draft.mode === 'multiple'
+                  ? EXAMPLES_MULTIPLE.map((ex) => (
+                      <button
+                        key={ex.title}
+                        type="button"
+                        className="example-button example-button-multi"
+                        onClick={() => update({ title: ex.title, options: [...ex.options] })}
+                      >
+                        <span className="example-title">{ex.title}</span>
+                        <span className="example-sub sub">{ex.options.join(' · ')}</span>
+                      </button>
+                    ))
+                  : EXAMPLES.map((ex) => (
+                      <button key={ex} type="button" className="example-button" onClick={() => update({ title: ex })}>
+                        {ex}
+                      </button>
+                    ))}
               </div>
             </div>
           </>

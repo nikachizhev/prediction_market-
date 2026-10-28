@@ -348,3 +348,33 @@ def test_client_events(anya):
     assert anya.post("events", {"name": "share", "props": {"market": 1}})[0] == 200
     assert anya.post("events", {"name": "drop_tables"})[0] == 400
     assert Event.objects.filter(name="share").exists()
+
+
+def test_create_and_trade_multi_option_market(anya, boris):
+    code, created = anya.post(
+        "markets",
+        create_payload(
+            title="Оживет ли e-mkn?",
+            options=["до конца октября", "до конца ноября", "в целом"],
+        ),
+    )
+    assert code == 200
+    market = created["market"]
+    assert len(market["submarkets"]) == 3
+    assert [s["label"] for s in market["submarkets"]] == ["до конца октября", "до конца ноября", "в целом"]
+    # Feed only lists the parent card, not the child submarkets as separate cards.
+    code, feed = boris.get("markets")
+    assert code == 200
+    feed_ids = [item["id"] for item in feed["items"]]
+    assert market["id"] in feed_ids
+    for sub in market["submarkets"]:
+        assert sub["id"] not in feed_ids
+    # Boris can buy YES on the first option.
+    first_sub_id = market["submarkets"][0]["id"]
+    code, trade_res = boris.post(
+        f"markets/{first_sub_id}/buy",
+        {"side": "yes", "amount": "50.00", "request_key": str(uuid.uuid4())},
+    )
+    assert code == 200
+    assert trade_res["market"]["prob"] > 0.5
+

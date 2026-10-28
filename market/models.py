@@ -270,6 +270,11 @@ class Question(models.Model):
     refund_compensation = models.DecimalField("компенсация платформы при отмене", max_digits=14, decimal_places=2, default=Decimal(0))
     # Client-generated key of the create request: a repeated POST /api/markets returns this market.
     request_key = models.UUIDField(null=True, blank=True, unique=True, editable=False)
+    parent = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.CASCADE, related_name="submarkets",
+        verbose_name="родительский рынок",
+    )
+    option_label = models.CharField("название варианта", max_length=120, blank=True, default="")
 
     # Resolution by the creator in the bot (spec E4).
     class Resolution(models.TextChoices):

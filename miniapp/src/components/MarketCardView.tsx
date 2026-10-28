@@ -1,11 +1,12 @@
 // Market card from the feed (docs/mockups/Main.dc.html).
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import type { MarketCard, Position, Side } from '../api';
+import type { MarketCard, Position, Side, SubmarketCard } from '../api';
 import { formatCompact, formatEnds, formatMoney, pluralize } from '../format';
 import { positionSummary, sideLabel, splitPercents } from '../trade';
 import { AnimatedNumber } from './AnimatedNumber';
 import { Sparkline } from './Sparkline';
+import './multi-card.css';
 
 interface MarketCardViewProps {
   market: MarketCard;
@@ -68,40 +69,12 @@ export const MarketCardView = memo(function MarketCardView({
       </h2>
 
       {market.submarkets && market.submarkets.length > 0 ? (
-        <>
-          <div className="market-submarkets">
-            {market.submarkets.map((sub) => {
-              const subPct = splitPercents(sub.prob);
-              return (
-                <div key={sub.id} className="market-sub-row">
-                  <span className="market-sub-label">{sub.label}</span>
-                  <div className="market-sub-right">
-                    <button
-                      type="button"
-                      className="market-sub-btn is-yes"
-                      disabled={pending}
-                      onClick={() => onTrade(sub, 'yes')}
-                    >
-                      ДА · {subPct.yes}%
-                    </button>
-                    <button
-                      type="button"
-                      className="market-sub-btn is-no"
-                      disabled={pending}
-                      onClick={() => onTrade(sub, 'no')}
-                    >
-                      НЕТ · {subPct.no}%
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="sub market-people">
-            {pluralize(market.participants, 'участник', 'участника', 'участников')} · объём {formatCompact(market.volume)}
-          </div>
-        </>
+        <MultiCardContent
+          market={market}
+          submarkets={market.submarkets}
+          pending={pending}
+          onTrade={onTrade}
+        />
       ) : (
         <>
           <div className="market-stats">
@@ -140,3 +113,75 @@ export const MarketCardView = memo(function MarketCardView({
     </article>
   );
 });
+
+interface MultiCardContentProps {
+  market: MarketCard;
+  submarkets: SubmarketCard[];
+  pending: boolean;
+  onTrade: (market: MarketCard, side: Side) => void;
+}
+
+function MultiCardContent({ market, submarkets, pending, onTrade }: MultiCardContentProps) {
+  // Show at most 2 options with the highest volume on the feed card
+  const visible = useMemo(() => {
+    return [...submarkets]
+      .sort((a, b) => Number(b.volume || 0) - Number(a.volume || 0))
+      .slice(0, 2);
+  }, [submarkets]);
+
+  const remaining = submarkets.length - visible.length;
+
+  return (
+    <>
+      <div className="multi-card-options">
+        {visible.map((sub) => {
+          const subPct = splitPercents(sub.prob);
+          const subDelta = Math.round(sub.change_24h);
+          const subUp = subDelta >= 0;
+
+          return (
+            <div key={sub.id} className="multi-option-row">
+              <div className="multi-option-left">
+                <span className="multi-option-title" title={sub.label}>
+                  {sub.label}
+                </span>
+                <span className={`market-delta multi-option-delta ${subUp ? 'is-up' : 'is-down'}`}>
+                  {subUp ? '▲' : '▼'} {Math.abs(subDelta)} за сутки
+                </span>
+              </div>
+
+              <div className="multi-option-actions">
+                <button
+                  type="button"
+                  className="multi-btn is-yes"
+                  disabled={pending}
+                  onClick={() => onTrade(sub, 'yes')}
+                >
+                  ДА · {subPct.yes}%
+                </button>
+                <button
+                  type="button"
+                  className="multi-btn is-no"
+                  disabled={pending}
+                  onClick={() => onTrade(sub, 'no')}
+                >
+                  НЕТ · {subPct.no}%
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {remaining > 0 && (
+        <Link to={`/market/${market.id}`} className="multi-more-link">
+          Показать ещё →
+        </Link>
+      )}
+
+      <div className="sub market-people">
+        {pluralize(market.participants, 'участник', 'участника', 'участников')} · объём {formatCompact(market.volume)}
+      </div>
+    </>
+  );
+}

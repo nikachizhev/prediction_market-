@@ -145,53 +145,121 @@
   padding: 16px;
 }
 
-.mk-submarket-tabs {
+.mk-multi-legend {
   display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 2px 0 4px;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.mk-submarket-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.mk-submarket-tab {
-  flex: 0 0 auto;
-  display: inline-flex;
+.mk-multi-legend-item {
+  display: flex;
   align-items: center;
   gap: 8px;
-  height: 42px;
-  padding: 0 16px;
-  border: 1.5px solid var(--line);
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.mk-multi-legend-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
   border-radius: 999px;
-  background: var(--card);
+}
+
+.mk-multi-legend-label {
+  color: var(--sub);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mk-multi-legend-pct {
   color: var(--ink);
-  font: 500 14px/1 var(--font);
-  cursor: pointer;
-  transition: all 150ms ease;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
-.mk-submarket-tab.is-active {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--bg);
+.mk-multi-options {
+  gap: 0;
+  padding: 4px 16px;
 }
 
-.mk-submarket-tab-label {
+.mk-multi-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.mk-multi-opt:last-child {
+  border-bottom: none;
+}
+
+.mk-multi-opt-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mk-multi-opt-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mk-multi-opt-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.mk-multi-opt-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mk-multi-opt-delta {
+  font-size: 12px;
   font-weight: 600;
 }
 
-.mk-submarket-tab-pct {
+.mk-multi-opt-pct {
+  flex: 0 0 auto;
+  font-size: 26px;
   font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-  opacity: 0.85;
+  color: var(--ink);
 }
 
-.mk-submarket-tab.is-active .mk-submarket-tab-pct {
-  opacity: 1;
+.mk-multi-opt-pos {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mk-multi-opt-pos-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mk-multi-opt-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .mk-section-title {

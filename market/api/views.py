@@ -79,8 +79,8 @@ def side_of(value) -> str:
 
 
 def feed_markets(trader: Trader):
-    """Markets the Mini App lists: visible, binary LMSR, not hidden by complaints."""
-    return visible_questions(trader).filter(kind=Question.Kind.LMSR, hidden_at__isnull=True)
+    """Markets the Mini App lists: visible, top-level LMSR, not hidden by complaints."""
+    return visible_questions(trader).filter(kind=Question.Kind.LMSR, hidden_at__isnull=True, parent__isnull=True)
 
 
 def get_market(trader: Trader, pk: int) -> Question:
@@ -197,7 +197,7 @@ def markets(request):
     items = list(qs[(page - 1) * PAGE: page * PAGE])
     starred = s.starred_ids(trader)
     sides = s.my_sides(trader, [q.pk for q in items])
-    return {"items": [s.card(q, starred=starred, now=now, my_side=sides.get(q.pk)) for q in items],
+    return {"items": [s.card(q, starred=starred, now=now, my_side=sides.get(q.pk), trader=trader) for q in items],
             "next_page": page + 1 if page * PAGE < total else None, "total": total}
 
 
@@ -211,7 +211,7 @@ def create_market(request):
     question = services.create_market(
         request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
         category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
-        request_key=data.get("request_key") or None)
+        request_key=data.get("request_key") or None, options=data.get("options"))
     # null on a replayed request: the message went out with the first one.
     bot_notified = None
     if not question.replayed:

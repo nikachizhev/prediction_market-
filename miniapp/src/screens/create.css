@@ -224,6 +224,17 @@
   cursor: pointer;
 }
 
+.example-button-multi {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.example-sub {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
 .create-note {
   padding: 12px 14px;
   border-radius: 14px;

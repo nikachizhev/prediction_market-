@@ -536,8 +536,8 @@ def claim_insurance(trader: Trader) -> LedgerEntry | None:
 
 @transaction.atomic
 def create_market(trader: Trader, *, title: str, criteria: str, category: str, closes_at, resolves_at,
-                  request_key=None) -> Question:
-    """User-created YES/NO market: the creator pays the market maker's subsidy.
+                  request_key=None, options: list[str] | None = None) -> Question:
+    """User-created YES/NO or multi-option market: the creator pays the market maker's subsidy.
 
     With `request_key` the call is idempotent: a repeat by the same creator returns the market
     created first (marked `replayed`) without charging again or counting against the daily limit.
@@ -549,6 +549,16 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
     trader = Trader.objects.select_for_update().get(pk=trader.pk)
     title = (title or "").strip()
     criteria = (criteria or "").strip()
+    cleaned_options: list[str] = []
+    if options is not None and options != []:
+        if not isinstance(options, list):
+            raise MarketError("Укажите от 2 до 10 разных вариантов ответа.")
+        cleaned_options = [str(o or "").strip() for o in options if str(o or "").strip()]
+        if (len(cleaned_options) < 2 or len(cleaned_options) > 10
+                or len({o.lower() for o in cleaned_options}) != len(cleaned_options)):
+            raise MarketError("Укажите от 2 до 10 разных вариантов ответа.")
+        if any(len(o) > 80 for o in cleaned_options):
+            raise MarketError("Вариант — не длиннее 80 символов.")
     if request_key is not None:
         try:
             request_key = UUID(str(request_key))
@@ -581,7 +591,9 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
         raise MarketError("Итог не может стать известен раньше конца приёма прогнозов.")
     if resolves_at > closes_at + timedelta(days=settings.MARKET_MAX_DAYS):
         raise MarketError("Итог должен стать известен не позже чем через год после конца приёма.")
-    recent = Question.objects.filter(creator=trader, created_at__gte=now - timedelta(days=1)).count()
+    recent = Question.objects.filter(
+        creator=trader, parent__isnull=True, created_at__gte=now - timedelta(days=1),
+    ).count()
     if recent >= settings.MARKETS_PER_DAY:
         raise MarketError(f"Не больше {settings.MARKETS_PER_DAY} новых рынков в день.")
     cost = Decimal(settings.MARKET_CREATION_COST)
@@ -591,11 +603,18 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
         question = create_question(
             title=title, resolution_criteria=criteria, deadline=closes_at, initial_prob=0.5,
             b=settings.LMSR_DEFAULT_B, creator=trader, category=category, resolves_at=resolves_at, subsidy=cost,
-            request_key=request_key,
+            request_key=request_key, options=cleaned_options,
         )
     except IntegrityError:
         # Another trader raced us with the same key; never reveal their market.
         raise MarketError("Этот идентификатор уже использован для другого рынка. Обновите страницу.") from None
+    for label in cleaned_options:
+        create_question(
+            title=f"{title} — {label}"[:240], option_label=label, parent=question,
+            resolution_criteria=criteria, deadline=closes_at, initial_prob=0.5,
+            b=settings.LMSR_DEFAULT_B, creator=trader, category=category, resolves_at=resolves_at,
+            subsidy=Decimal(0),
+        )
     question.replayed = False
     trader.balance -= cost
     trader.save(update_fields=["balance"])

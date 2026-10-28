@@ -143,14 +143,32 @@ def trade_block(question: Question, trader: Trader) -> str | None:
     return None
 
 
+def _submarket_card(sub: Question, *, now: datetime, my_side: str | None = None) -> dict:
+    history = History(sub, since=now - timedelta(days=7))
+    spark = [history.at(now - timedelta(days=6 - i)) for i in range(6)] + [sub.prob]
+    stats = Trade.objects.filter(question=sub).aggregate(
+        volume=Sum("cost", filter=Q(cost__gt=0)), traders=Count("trader", distinct=True))
+    return {
+        "id": sub.pk, "label": sub.option_label or sub.title, "title": sub.title,
+        "category": sub.category, "prob": round(sub.prob, 4),
+        "change_24h": round((sub.prob - history.at(now - timedelta(days=1))) * 100, 1),
+        "spark": [round(p, 4) for p in spark],
+        "participants": stats["traders"] or 0, "volume": money(stats["volume"]),
+        "closes_at": iso(sub.deadline), "resolves_at": iso(sub.resolves_at),
+        "status": market_status(sub), "outcome": sub.outcome, "starred": False, "my_side": my_side,
+    }
+
+
 def card(question: Question, *, starred: set[int] | None = None, now: datetime | None = None,
-         my_side: str | None = None) -> dict:
+         my_side: str | None = None, trader: Trader | None = None) -> dict:
     now = now or timezone.now()
     history = History(question, since=now - timedelta(days=7))
     spark = [history.at(now - timedelta(days=6 - i)) for i in range(6)] + [question.prob]
-    stats = Trade.objects.filter(question=question).aggregate(
+    submarkets = list(question.submarkets.all().order_by("id"))
+    q_ids = [question.pk, *[s.pk for s in submarkets]]
+    stats = Trade.objects.filter(question_id__in=q_ids).aggregate(
         volume=Sum("cost", filter=Q(cost__gt=0)), traders=Count("trader", distinct=True))
-    return {
+    result = {
         "id": question.pk, "title": question.title, "category": question.category,
         "prob": round(question.prob, 4),
         "change_24h": round((question.prob - history.at(now - timedelta(days=1))) * 100, 1),
@@ -160,6 +178,10 @@ def card(question: Question, *, starred: set[int] | None = None, now: datetime |
         "status": market_status(question),
         "outcome": question.outcome, "starred": question.pk in (starred or set()), "my_side": my_side,
     }
+    if submarkets:
+        sub_sides = my_sides(trader, [s.pk for s in submarkets]) if trader else {}
+        result["submarkets"] = [_submarket_card(s, now=now, my_side=sub_sides.get(s.pk)) for s in submarkets]
+    return result
 
 
 def starred_ids(trader: Trader) -> set[int]:
@@ -190,9 +212,32 @@ def resolution(question: Question, trader: Trader) -> dict | None:
     return public_state(question, trader)
 
 
+def _submarket_detail(sub: Question, trader: Trader, *, now: datetime) -> dict:
+    from .. import services
+    my_side = my_sides(trader, [sub.pk]).get(sub.pk)
+    data = _submarket_card(sub, now=now, my_side=my_side)
+    pos = Position.objects.filter(trader=trader, question=sub).first()
+    block = trade_block(sub, trader)
+    trades = Trade.objects.filter(question=sub).order_by("-created_at", "-id")[:20]
+    data.update({
+        "can_trade": block is None, "trade_block": block,
+        "max_amount": money(services.max_buy_amount(trader, sub)),
+        "my_position": position(pos, sub),
+        "b": sub.b,
+        "trades": [{"side": t.side, "amount": money(abs(t.cost)), "prob_before": round(t.prob_before, 4),
+                    "prob_after": round(t.prob_after, 4),
+                    "at": iso(t.created_at), "sell": t.cost < 0} for t in trades],
+        "resolution": resolution(sub, trader),
+        "top_moves": top_moves(sub),
+    })
+    return data
+
+
 def detail(question: Question, trader: Trader) -> dict:
     from .. import services
-    data = card(question, starred=starred_ids(trader), my_side=my_sides(trader, [question.pk]).get(question.pk))
+    now = timezone.now()
+    data = card(question, starred=starred_ids(trader), now=now,
+                my_side=my_sides(trader, [question.pk]).get(question.pk), trader=trader)
     pos = Position.objects.filter(trader=trader, question=question).first()
     block = trade_block(question, trader)
     is_creator = question.creator_id == trader.pk
@@ -212,6 +257,9 @@ def detail(question: Question, trader: Trader) -> dict:
         "resolution": resolution(question, trader),
         "top_moves": top_moves(question),
     })
+    submarkets = list(question.submarkets.all().order_by("id"))
+    if submarkets:
+        data["submarkets"] = [_submarket_detail(s, trader, now=now) for s in submarkets]
     return data
 
 
