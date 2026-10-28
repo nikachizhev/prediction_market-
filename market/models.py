@@ -164,7 +164,6 @@ class Notification(models.Model):
 CATEGORIES = [
     ("games", "Игры"),
     ("study", "Учёба"),
-    ("weather", "Погода"),
     ("tech", "Технологии"),
     ("sport", "Спорт"),
     ("fun", "Фан"),

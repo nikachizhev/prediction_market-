@@ -15,7 +15,7 @@ pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("bot_token")]
 
 
 def team_market(title="Рынок"):
-    return services.create_question(title=title, resolution_criteria="Итог", category="weather",
+    return services.create_question(title=title, resolution_criteria="Итог", category="fun",
                                     deadline=timezone.now() + timedelta(days=2),
                                     resolves_at=timezone.now() + timedelta(days=3))
 
