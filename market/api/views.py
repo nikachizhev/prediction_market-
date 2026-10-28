@@ -328,7 +328,7 @@ def report(request, pk):
                 MarketComplaint.objects.create(question=question, trader=request.trader, reason=reason)
         except IntegrityError:
             return {"ok": True}
-        if not question.hidden_at and question.complaints.count() >= settings.COMPLAINTS_TO_HIDE:
+        if not question.hidden_at and question.complaints.filter(status=MarketComplaint.Status.PENDING).count() >= settings.COMPLAINTS_TO_HIDE:
             question.hidden_at = timezone.now()
             question.save(update_fields=["hidden_at"])
     return {"ok": True}
@@ -355,7 +355,7 @@ def mine(request):
     created = []
     for q in visible.filter(creator=trader).order_by("-created_at"):
         item = s.card(q, starred=starred, now=now)
-        item["fee_expected"] = s.money(q.fee_pool * Decimal(settings.CREATOR_FEE_SHARE))
+        item["fee_expected"] = s.money(0 if q.status == Question.Status.ANNULLED else q.fee_pool * Decimal(settings.CREATOR_FEE_SHARE))
         item["needs_resolution"] = (q.status in (Question.Status.OPEN, Question.Status.CLOSED)
                                     and not q.accepting_entries and s.market_status(q) == "closed")
         item["resolve_link"] = f"https://t.me/{settings.TELEGRAM_BOT_USERNAME}?start=resolve_{q.pk}"

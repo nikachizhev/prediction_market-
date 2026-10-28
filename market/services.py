@@ -274,10 +274,11 @@ def close_betting(question: Question) -> Question:
     return question
 
 
-def _lock_positions(question: Question) -> tuple[list[Position], dict[int, Trader]]:
+def _lock_positions(question: Question, extra_trader_ids=()) -> tuple[list[Position], dict[int, Trader]]:
     """Lock positions, their holders and the creator (in pk order, one object per trader)."""
     positions = list(Position.objects.select_for_update().filter(question=question).order_by("trader_id"))
     ids = {p.trader_id for p in positions}
+    ids.update(extra_trader_ids)
     if question.creator_id:
         ids.add(question.creator_id)
     traders = {t.pk: t for t in Trader.objects.select_for_update().filter(pk__in=ids).order_by("pk")}
@@ -370,6 +371,51 @@ def annul(question: Question, *, refund_subsidy: bool = True) -> Question:
     question.save(update_fields=["status", "outcome", "resolved_at"])
     from .notifications import market_finished
     market_finished(question)
+    return question
+
+
+@transaction.atomic
+def cancel_moderated(question: Question) -> Question:
+    """Full net-investment refunds, platform-funded shortfall, no creator subsidy return.
+
+    Separate from normal annulment: existing cancellation policies are unchanged.
+    The caller must check moderator permissions; all money mutations remain here.
+    """
+    from django.db.models import Sum
+    from .models import Dispute
+    question = Question.objects.select_for_update().get(pk=question.pk)
+    if question.status not in (Question.Status.OPEN, Question.Status.CLOSED):
+        raise MarketError("Рынок уже завершён или отменён. Повторный возврат невозможен.")
+    if not question.is_trading:
+        raise MarketError("Отмена с возвратом доступна только для торгового рынка.")
+    net = dict(Trade.objects.filter(question=question).values('trader_id').annotate(
+        amount=Sum('cost')).values_list('trader_id', 'amount'))
+    disputes = list(Dispute.objects.select_for_update().filter(question=question, upheld__isnull=True).order_by('trader_id'))
+    _, traders = _lock_positions(question, set(net) | {d.trader_id for d in disputes})
+    wanted = {tid: amount for tid, amount in net.items() if amount > 0}
+    total = sum(wanted.values(), Decimal(0))
+    available = max(Decimal(0), question.subsidy+sum(net.values(), Decimal(0)))
+    question.refund_compensation = max(Decimal(0), total-available)
+    for tid, amount in sorted(wanted.items()):
+        _credit(traders[tid], amount, LedgerEntry.Kind.REFUND, question)
+        Payout.objects.create(trader=traders[tid], question=question, amount=amount, kind=Payout.Kind.REFUND)
+    for dispute in disputes:
+        _credit(traders[dispute.trader_id], dispute.stake, LedgerEntry.Kind.DISPUTE_REFUND, question)
+        dispute.upheld = True
+        dispute.save(update_fields=['upheld'])
+    question.status = Question.Status.ANNULLED
+    question.outcome = None
+    question.resolution_state = Question.Resolution.FINAL
+    question.creator_at_fault = True
+    question.moderation_hidden = True
+    question.hidden_at = question.hidden_at or timezone.now()
+    question.resolved_at = timezone.now()
+    question.dispute_until = None
+    question.save(update_fields=['status', 'outcome', 'resolution_state', 'creator_at_fault',
+        'moderation_hidden', 'hidden_at', 'resolved_at', 'dispute_until', 'refund_compensation'])
+    from .notifications import market_finished
+    market_finished(question)
+    # The ordinary worker sends final result notifications from committed state.
     return question
 
 

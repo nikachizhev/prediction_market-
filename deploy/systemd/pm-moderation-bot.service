@@ -1,0 +1,16 @@
+[Unit]
+Description=Prediction market: private moderation bot
+Requires=pm-db.service
+After=pm-db.service network-online.target
+
+[Service]
+User=pm
+Group=pm
+WorkingDirectory=/opt/prediction_market/app
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/prediction_market/venv/bin/python manage.py run_moderation_bot
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

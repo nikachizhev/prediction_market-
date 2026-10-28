@@ -25,4 +25,14 @@ if grep -q '^TELEGRAM_BOT_TOKEN=.' .env; then
 else
 	echo "TELEGRAM_BOT_TOKEN is empty in .env: the bot is not started."
 fi
-systemctl --no-pager --lines=0 status pm-db pm-web pm-worker pm-bot | grep -E '^●|Active:' || true
+# Install a new unit on existing servers too, not only during first-time setup.
+cp deploy/systemd/pm-moderation-bot.service /etc/systemd/system/
+systemctl daemon-reload
+if grep -q '^MODERATION_BOT_TOKEN=.' .env && grep -q '^MODERATION_ADMIN_IDS=.' .env; then
+	systemctl enable pm-moderation-bot >/dev/null
+	systemctl restart pm-moderation-bot
+else
+	systemctl disable --now pm-moderation-bot >/dev/null 2>&1 || true
+	echo "Moderation bot not configured: set MODERATION_BOT_TOKEN and MODERATION_ADMIN_IDS in .env."
+fi
+systemctl --no-pager --lines=0 status pm-db pm-web pm-worker pm-bot pm-moderation-bot | grep -E '^●|Active:' || true
