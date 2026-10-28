@@ -75,9 +75,9 @@ docker compose up -d --wait                                  # PostgreSQL
 ## Сервер (прод)
 
 - `root@91.108.241.25`, вход по SSH-ключу. Сайт и Mini App: `https://91-108-241-25.sslip.io` (`/app/` — Mini App), TLS даёт Caddy (`deploy/Caddyfile`).
-- Код — `/opt/prediction_market/app`, ветка **`miniapp`**, владелец пользователь `pm`; venv — `/opt/prediction_market/venv`; `.env` сервера лежит там же и в git не попадает.
+- Код — `/opt/prediction_market/app`, ветка **`main`**, владелец пользователь `pm`; venv — `/opt/prediction_market/venv`; `.env` сервера лежит там же и в git не попадает.
 - Сервисы systemd (`deploy/systemd/`): `pm-db` (PostgreSQL в docker compose), `pm-web` (gunicorn), `pm-worker` (`run_worker`), `pm-bot` (`run_telegram_bot`, long polling).
-- **Обновить прод** (после пуша в `miniapp`): `ssh root@91.108.241.25 bash /opt/prediction_market/app/deploy/update.sh` — pull, `npm ci` + сборка Mini App, зависимости, миграции, collectstatic, рестарт всех сервисов.
+- **Обновить прод** (после пуша в `main`): `ssh root@91.108.241.25 bash /opt/prediction_market/app/deploy/update.sh` — pull, `npm ci` + сборка Mini App, зависимости, миграции, collectstatic, рестарт всех сервисов.
 - После изменений в `setup_bot` (кнопка меню, команды бота) — ещё `ssh root@91.108.241.25 "cd /opt/prediction_market/app && sudo -u pm /opt/prediction_market/venv/bin/python manage.py setup_bot"`.
 - Логи: `ssh root@91.108.241.25 journalctl -u pm-bot -u pm-worker -u pm-web -n 100 --no-pager`.
 - Git на сервере запускать от `pm` (`sudo -u pm git ...`), иначе «dubious ownership».
@@ -88,8 +88,10 @@ docker compose up -d --wait                                  # PostgreSQL
 
 ## Git
 
-- Не коммить в `main` и не пушь без явной просьбы пользователя.
-- Интеграционная ветка новой версии — `miniapp`; задачи — в ветках `miniapp-<эпик>-<коротко>` от неё (через дефис: git не даёт завести `miniapp/...` рядом с веткой `miniapp`).
+- Интеграционная ветка — **`main`** (с 28.10.2026, так договорились с командой). Команда вливает свои ветки в `main` через PR на GitHub; прод обновляется из `main`.
+- Ветка `miniapp` заморожена на `8fabaa9` (слияние 28.10.2026) — новых коммитов в неё не делаем.
+- Задачи — в ветках `<эпик>-<коротко>` от свежего `main` (например `e9-assist`): сначала `git pull --ff-only` на `main`. Готовую ветку с зелёными тестами сливаем в `main` через `git merge --no-ff`.
+- Пушить в `origin/main` — только по явной просьбе пользователя. Перед пушем подтяни `origin/main`: команда могла что-то влить. Конфликты — особенно одинаковые номера миграций — решаем до пуша: `makemigrations --check`, у `market` один лист миграций.
 - Сообщения коммитов — коротко, по-английски, в повелительном наклонении.
 - **Никаких строк `Co-Authored-By` и подписей «Generated with Claude Code»** ни в коммитах, ни в PR — требование пользователя.
 - Не коммить `.env`, базы, архивы и сборки фронтенда.
