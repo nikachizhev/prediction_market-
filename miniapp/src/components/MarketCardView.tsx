@@ -17,8 +17,6 @@ interface MarketCardViewProps {
   drawDelay?: number;
   onTrade: (market: MarketCard, side: Side) => void;
   onStar: (market: MarketCard) => void;
-  onHide?: (market: MarketCard) => void;
-  hiding?: boolean;
   onImpression?: (market: MarketCard) => void;
   onOpen?: (market: MarketCard) => void;
 }
@@ -31,8 +29,6 @@ export const MarketCardView = memo(function MarketCardView({
   drawDelay = 0,
   onTrade,
   onStar,
-  onHide,
-  hiding = false,
   onImpression,
   onOpen,
 }: MarketCardViewProps) {
@@ -56,7 +52,7 @@ export const MarketCardView = memo(function MarketCardView({
   const mine = positionSummary(position);
 
   return (
-    <article ref={article} className="card market-card" aria-busy={pending || hiding || undefined}>
+    <article ref={article} className="card market-card" aria-busy={pending || undefined}>
       <div className="market-meta">
         <span className="sub market-meta-text">
           {[categoryLabel, formatEnds(market.closes_at)].filter(Boolean).join(' · ')}
@@ -120,9 +116,6 @@ export const MarketCardView = memo(function MarketCardView({
           НЕТ · {pct.no}%
         </button>
       </div>
-      {onHide && <button type="button" className="not-interested-button" disabled={hiding || pending} onClick={() => onHide(market)} aria-label={`Неинтересно: ${market.title}`}>
-        {hiding ? 'Скрываем…' : 'Неинтересно'}
-      </button>}
     </article>
   );
 });
