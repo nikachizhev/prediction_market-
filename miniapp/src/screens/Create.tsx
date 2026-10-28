@@ -21,6 +21,7 @@ import {
   saveDraft,
   stepOfField,
   TITLE_MAX,
+  TITLE_MIN,
   type CreateDraft,
   type CreateField,
   type CreateStep,
@@ -86,7 +87,7 @@ export function CreateScreen() {
       if (keys.includes('criteria')) delete cleared.criteria;
       if (keys.includes('category')) delete cleared.category;
       if (keys.some((k) => k === 'closeDate' || k === 'closeTime')) delete cleared.closes;
-      if (keys.some((k) => k === 'resultDate' || k === 'closeDate' || k === 'closeTime')) delete cleared.resolves;
+      if (keys.some((k) => k === 'resultDate' || k === 'resultTime' || k === 'closeDate' || k === 'closeTime')) delete cleared.resolves;
       return cleared;
     });
   }, []);
@@ -186,7 +187,7 @@ export function CreateScreen() {
   const notEnough = step === 3 && !!me && rest === null;
   const nextLabel = step === 3 ? `Опубликовать за ${formatMoney(cost)}` : 'Далее';
   const resolves = resolvesAtIso(draft);
-  const resolutionDay = resolves ? formatDayMonth(resolves, now) : 'В дату итога';
+  const resolutionDay = resolves ? `${formatDayMonth(resolves, now)} в ${draft.resultTime}` : 'В дату итога';
 
   return (
     <div className="screen create" ref={mainRef}>
@@ -233,6 +234,7 @@ export function CreateScreen() {
               />
               <span id="create-q-hint" className="sub field-hint">
                 Вопрос должен иметь однозначный ответ ДА или НЕТ, дату и понятный способ проверить итог.
+                {' '}От {TITLE_MIN} до {TITLE_MAX} символов без пробелов по краям.
               </span>
               {fieldError('title') && <span className="field-error">{fieldError('title')}</span>}
             </div>
@@ -293,6 +295,16 @@ export function CreateScreen() {
                 onChange={(e) => update({ resultDate: e.target.value })}
                 aria-invalid={!!fieldError('resolves') || undefined}
               />
+              <label htmlFor="create-result-time" className="field-label">Время итога</label>
+              <input
+                id="create-result-time"
+                type="time"
+                className="input input-short"
+                value={draft.resultTime}
+                onChange={(e) => update({ resultTime: e.target.value })}
+                aria-invalid={!!fieldError('resolves') || undefined}
+              />
+              <span className="sub field-hint">Дата и время по часовому поясу твоего устройства.</span>
               {fieldError('resolves') && <span className="field-error">{fieldError('resolves')}</span>}
             </div>
             <div className="field">

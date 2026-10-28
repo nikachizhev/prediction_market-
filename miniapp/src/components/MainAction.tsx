@@ -42,14 +42,15 @@ export function MainAction({ text, onClick, disabled = false, color, busy = fals
     const theme = tg.themeParams;
     const fill = color ?? theme.button_color;
     const ink = color ? '#FFFFFF' : theme.button_text_color;
+    // Telegram hideProgress may re-enable the button; apply validation afterwards.
+    if (!busy) tg.MainButton.hideProgress();
     tg.MainButton.setParams({
       text,
-      is_active: !disabled,
+      is_active: !disabled && !busy,
       ...(fill ? { color: fill } : {}),
       ...(ink ? { text_color: ink } : {}),
     });
     if (busy) tg.MainButton.showProgress();
-    else tg.MainButton.hideProgress();
   }, [inTelegram, text, disabled, color, busy]);
 
   if (inTelegram) return null;

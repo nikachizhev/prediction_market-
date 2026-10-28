@@ -38,6 +38,7 @@ interface MarketCard {
   closes_at: string; resolves_at: string | null; status: MarketStatus; outcome: Side | null;
   starred: boolean;
   my_side: Side | null;              // куда склоняется моя позиция — «Твой прогноз» в ленте
+  recommendation_reason?: string;  // пояснение порядка только для sort=recommended
 }
 
 interface Position { yes_shares: string; no_shares: string; spent: Money; value: Money; payout_if_yes: Money; payout_if_no: Money }
@@ -67,7 +68,7 @@ interface LedgerEntry { kind: string; label: string; amount: Money; at: string; 
 | `GET /api/me` | — | `Me` |
 | `PATCH /api/me` | `{pseudonym?, show_real_name?, onboarded?, interests?: string[]}` — `interests` только из ключей категорий | `Me` |
 | `GET /api/categories` | — | `{slug, label}[]`: games «Игры», study «Учёба», weather «Погода», tech «Технологии», sport «Спорт» |
-| `GET /api/markets` | `?category=&q=&sort=hot\|new\|soon&page=` (20 на страницу) | `{items: MarketCard[], next_page: number \| null, total: number}` |
+| `GET /api/markets` | `?category=&q=&sort=recommended\|hot\|new\|soon&page=` (20 на страницу) | `{items: MarketCard[], next_page: number \| null, total: number}` |
 | `GET /api/markets/{id}` | — | `MarketDetail` |
 | `GET /api/markets/{id}/history` | `?period=d\|w\|m\|all` | `{points: {t: string, p: number}[]}` |
 | `POST /api/markets/{id}/quote` | `{side, amount}` | `Quote` |

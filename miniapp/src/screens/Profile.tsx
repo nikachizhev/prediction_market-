@@ -15,6 +15,7 @@ import {
   type ReferralSummary,
 } from '../api';
 import { BottomSheet } from '../components/BottomSheet';
+import { InterestSettings } from '../components/InterestSettings';
 import { NotificationBell } from '../components/NotificationBell';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { Avatar } from '../components/Avatar';
@@ -140,6 +141,7 @@ export function ProfileScreen() {
       />
       {me.notify && <SettingsNav />}
       <NameCard />
+      <InterestSettings />
 
       {state === 'ready' && data && <Ledger entries={data.ledger} />}
     </div>
