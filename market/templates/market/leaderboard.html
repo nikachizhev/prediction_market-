@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Лидерборд{% endblock %}
+{% block content %}
+<div class="page-intro"><span class="eyebrow">ПРОГНОЗЫ, КОТОРЫЕ ПРИНЕСЛИ РЕЗУЛЬТАТ</span><h1>Лидеры рынка</h1><p class="muted">{{ participants }} участников · Рейтинг по торговой прибыли. Ежедневные бонусы исключены.</p></div>
+<div class="leader-podium">{% for r in podium %}<article class="card podium-place place-{{ r.rank }}"><span class="podium-medal">{% if r.rank == 1 %}♛{% elif r.rank == 2 %}✦{% else %}✧{% endif %}</span><span class="eyebrow">МЕСТО {{ r.rank }}</span><h2>{{ r.trader.display_name }}{% if me.pk == r.trader.pk %} · вы{% endif %}</h2><strong class="{% if r.profit >= 0 %}pos{% else %}neg{% endif %}">{{ r.profit|floatformat:2 }}</strong><p class="muted small">монет прибыли</p></article>{% endfor %}</div>
+{% if rows %}<section class="card"><h2>Десятка лидеров</h2><p class="small muted">Текущее сравнение прибыли, включая оценку открытых позиций.</p><div class="chart-box leaderboard-chart"><canvas id="leaders-chart" aria-label="Прибыль десяти лидеров" role="img"></canvas></div></section>{% endif %}
+<div class="card">
+<h2>Турнирная таблица</h2><p class="muted small" style="margin-top:0">Прибыль = баланс + оценка позиций − стартовый капитал − бонусы. Оценка позиций не гарантирует такую же сумму при продаже.</p>
+<table>
+<tr><th>#</th><th>Участник</th><th class="num">Прибыль</th></tr>
+{% for r in rows %}
+<tr{% if me and r.trader.pk == me.pk %} style="background:#eff6ff"{% endif %}><td>{{ r.rank }}</td><td>{{ r.trader.display_name }}</td>
+  <td class="num {% if r.profit >= 0 %}pos{% else %}neg{% endif %}">{{ r.profit }}</td></tr>
+{% empty %}<tr><td colspan="3" class="muted">Участников пока нет.</td></tr>{% endfor %}
+{% if my_row %}
+<tr><td colspan="3" class="muted small">&hellip;</td></tr>
+<tr style="background:#eff6ff"><td>{{ my_row.rank }}</td><td>{{ my_row.trader.display_name }} (вы)</td>
+  <td class="num {% if my_row.profit >= 0 %}pos{% else %}neg{% endif %}">{{ my_row.profit }}</td></tr>
+{% endif %}
+</table></div>
+{% endblock %}
+{% block scripts %}
+{{ chart|json_script:"leaders-chart-data" }}
+<script>
+if(typeof Chart!=='undefined' && document.getElementById('leaders-chart')){
+const data=JSON.parse(document.getElementById('leaders-chart-data').textContent);
+new Chart(document.getElementById('leaders-chart'),{type:'bar',data:{labels:data.labels,datasets:[{label:'Прибыль, монеты',data:data.values,backgroundColor:data.values.map(v=>v>=0?'#72966e':'#c98777'),borderRadius:6}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true},y:{grid:{display:false}}}}});
+}
+</script>
+{% endblock %}

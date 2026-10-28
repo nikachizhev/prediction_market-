@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="market-breadcrumb"><a href="{% url 'market:markets' %}">← Все рынки</a>{% if request.user.is_authenticated %}<a href="{% url 'market:invite_friend' question.pk %}">Предложить друзьям ↗</a>{% endif %}</div>
+<div class="card market-hero hero-{{ question.display_state }}">{% include "market/_badges.html" %}<h1>{{ question.title }}</h1><p class="muted">{{ question.get_kind_display }} · {{ participants }} участников</p>{% if question.result_label %}<div class="hero-result">{{ question.result_label }}</div>{% endif %}</div>
+<div class="card participation-card"><h2>Ваш прогноз</h2>
+{% include 'market/subscription_button.html' %}
+<div class="market-rules">{{ question.resolution_criteria|linebreaks }}</div>
+{% if question.deadline %}<p>Ответы до {{ question.deadline }}</p>{% endif %}
+{% if question.kind == 'poll' %}<p class="muted">Имена и индивидуальные ответы не публикуются. Для защиты от повторного голосования связь с аккаунтом хранится в базе и доступна администратору.</p>{% endif %}
+{% if response %}<div class="answer-success">✓ Ваш ответ принят. Следите за результатом здесь.</div>{% elif not current_trader %}<a class="btn" href="{% url 'market:login' %}">Войти для участия</a>{% elif is_creator %}<p>Автор не участвует в собственном вопросе.</p>{% elif question.accepting_entries %}
+<form method="post" action="{% url 'market:respond' question.pk %}">{% csrf_token %}{{ response_form.as_p }}<button class="btn">Отправить ответ</button></form>
+{% else %}<div class="answer-success">Приём ответов завершён.</div>{% endif %}</div>
+{% if question.kind == 'poll' and question.status == 'closed' or question.status == 'resolved' %}
+<div class="card"><h2>Результаты</h2>
+{% for row in counts %}<p>{{ row.label }}: {{ row.count }}{% if row.correct %} — правильный вариант{% endif %}</p>{% endfor %}
+{% if question.kind == 'number' %}<p>Фактическое число: {{ question.answer }}, допустимая ошибка: {{ question.tolerance }}</p>{% endif %}
+</div>{% endif %}
+{% if is_creator and question.status == 'open' or is_creator and question.status == 'closed' and question.kind != 'poll' %}
+<div class="card"><h2>Завершить вопрос</h2><p>Результат фиксируется окончательно.</p>
+<form method="post" action="{% url 'market:finish' question.pk %}">{% csrf_token %}{% if question.kind != 'poll' %}{{ result_form.as_p }}{% endif %}<button class="btn">Завершить</button></form></div>
+{% endif %}{% endblock %}

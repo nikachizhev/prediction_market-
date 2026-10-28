@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-shell"><div class="card auth-card">
+  <span class="eyebrow">ВАШ СЛЕДУЮЩИЙ ТОЧНЫЙ ПРОГНОЗ</span>
+  <h1>{% if register %}Регистрация{% else %}Вход{% endif %}</h1>
+  <form method="post">{% csrf_token %}
+    {{ form.as_p }}
+    {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+    <button class="btn" type="submit">{% if register %}Зарегистрироваться{% else %}Войти{% endif %}</button>
+  </form>
+  <p>{% if register %}<a href="{% url 'market:login' %}">Уже есть аккаунт? Войти</a>{% else %}<a href="{% url 'market:register' %}">Создать аккаунт</a>{% endif %}</p>
+  <div class="divider">или</div>
+  {% if register %}<p><a href="{% url 'market:email_pending' %}">Отправить подтверждение почты повторно</a></p>
+  {% else %}<p><a href="{% url 'market:password_reset' %}">Не помню пароль</a></p>{% endif %}
+  <form method="post" action="{% url 'market:telegram_start' %}">{% csrf_token %}<button class="btn telegram-btn" type="submit">Продолжить через Telegram ↗</button></form>
+</div></div>
+{% endblock %}

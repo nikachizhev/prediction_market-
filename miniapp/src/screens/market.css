@@ -1,0 +1,558 @@
+/* Market card (docs/mockups/Market.dc.html). */
+.mk {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.mk-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: var(--bg);
+}
+
+.mk-header-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mk-header-side {
+  min-width: 88px;
+  display: flex;
+}
+
+.mk-header-actions {
+  justify-content: flex-end;
+}
+
+.mk-icon-button {
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.mk-icon-button:disabled {
+  opacity: 0.4;
+}
+
+.mk-body {
+  flex: 1;
+  padding: 4px var(--gutter) 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mk-message {
+  padding: 32px var(--gutter);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.mk-message p {
+  margin: 0;
+}
+
+.mk-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--sub);
+}
+
+.mk-status {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--line);
+}
+
+.mk-status.is-yes {
+  background: var(--yes-tint);
+  color: var(--yes);
+}
+
+.mk-status.is-gold {
+  background: var(--line);
+  background: color-mix(in srgb, var(--gold) 18%, var(--card));
+}
+
+.mk-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.mk-author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mk-avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--yes-tint);
+  color: var(--yes);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  object-fit: cover;
+}
+
+.mk-author-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mk-author-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mk-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.mk-section-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mk-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-line;
+}
+
+.mk-text.small {
+  font-size: 13px;
+}
+
+.mk-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mk-row.is-baseline {
+  align-items: baseline;
+}
+
+.mk-row.is-end {
+  align-items: flex-end;
+}
+
+.mk-strong {
+  font-weight: 600;
+}
+
+.mk-outcome {
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 700;
+}
+
+.mk-outcome.is-yes,
+.mk .is-up {
+  color: var(--yes);
+}
+
+.mk-outcome.is-no,
+.mk .is-down {
+  color: var(--no);
+}
+
+.mk-evidence {
+  display: block;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.mk-evidence img {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+}
+
+.mk-evidence.is-empty {
+  height: 180px;
+  border: 1px dashed var(--line);
+  color: var(--sub);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.mk-evidence.is-compact {
+  width: 112px;
+  height: 84px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+}
+
+.mk-evidence.is-compact img {
+  height: 100%;
+}
+
+.mk-resolved {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mk-resolved-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mk-result {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mk-outline-button {
+  width: 100%;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink);
+  font: 600 15px/1 var(--font);
+  cursor: pointer;
+}
+
+.mk-outline-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mk-sell-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+/* Chart */
+.mk-prob {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mk-pct {
+  font-size: 44px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.mk-delta {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mk-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+  user-select: none;
+}
+
+.mk-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.mk-axis {
+  font-size: 11px;
+  fill: var(--sub);
+}
+
+.mk-dot {
+  fill: var(--yes);
+  stroke: var(--card);
+  stroke-width: 2;
+}
+
+.mk-cursor {
+  stroke: var(--sub);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.mk-tip {
+  fill: var(--ink);
+}
+
+.mk-tip-value {
+  font-size: 13px;
+  font-weight: 700;
+  fill: var(--card);
+}
+
+.mk-tip-ago {
+  font-size: 11px;
+  fill: var(--card);
+}
+
+.mk-periods {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.mk-periods .chip-button {
+  height: 36px;
+  font-size: 13px;
+}
+
+/* Tiles and position */
+.mk-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mk-tile {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mk-tile-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mk-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.mk-side-chip {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.mk-side-chip.is-yes {
+  background: var(--yes-tint);
+  color: var(--yes);
+}
+
+.mk-side-chip.is-no {
+  background: var(--no-tint);
+  color: var(--no);
+}
+
+.mk-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mk-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mk-figure-value {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* Trades */
+.mk-trades {
+  gap: 4px;
+  padding: 8px 16px;
+}
+
+.mk-trades .mk-section-title {
+  margin: 8px 0 4px;
+}
+
+.mk-trades > .mk-text {
+  padding: 4px 0 10px;
+}
+
+.mk-trade-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mk-trade {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.mk-trade:first-child {
+  border-top-color: transparent;
+}
+
+.mk-trade-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+.mk-trade-dot.is-yes {
+  background: var(--yes);
+}
+
+.mk-trade-dot.is-no {
+  background: var(--no);
+}
+
+.mk-trade-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mk-trade-what {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.mk-trade-move {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mk-move-arrow {
+  width: 14px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  text-align: center;
+}
+
+.mk-link-button {
+  align-self: center;
+  height: 44px;
+  padding: 0 16px;
+  border: none;
+  background: transparent;
+  color: var(--sub);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* Bottom bar */
+.mk-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 12px var(--gutter) calc(20px + env(safe-area-inset-bottom, 0px));
+  background: var(--card);
+  border-top: 1px solid var(--line);
+}
+
+.mk-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mk-buy {
+  height: 52px;
+  border: none;
+  border-radius: 14px;
+  color: #FFFFFF;
+  font: 600 16px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.mk-buy.is-yes {
+  background: var(--yes-fill);
+}
+
+.mk-buy.is-no {
+  background: var(--no-fill);
+}
+
+.mk-block {
+  margin: 0;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 14px;
+  color: var(--sub);
+}
+
+.mk-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}

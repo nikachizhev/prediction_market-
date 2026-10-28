@@ -1,0 +1,12 @@
+<details class="account-menu notification-menu" id="notification-menu"><summary aria-label="Уведомления"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span id="notification-count" class="notification-count" {% if not notification_unread %}hidden{% endif %}>{{ notification_unread }}</span></summary>
+<div class="account-dropdown notification-dropdown"><div class="notification-heading"><strong>Уведомления</strong><a href="{% url 'market:notifications' %}">Все →</a></div>
+<div id="notification-preview">{% for item in recent_notifications %}<form method="post" action="{% url 'market:notification_read' item.pk %}" class="notification-preview-item {% if not item.read_at %}is-unread{% endif %}">{% csrf_token %}<button type="submit">{{ item.text }}</button></form>{% empty %}<p class="muted small">Пока нет новых событий.</p>{% endfor %}</div>
+<form method="post" action="{% url 'market:notifications_read_all' %}">{% csrf_token %}<button>Прочитать все</button></form></div></details>
+<script>
+(function(){
+const menu=document.getElementById('notification-menu'),badge=document.getElementById('notification-count'),preview=document.getElementById('notification-preview');
+const csrf=menu.querySelector('[name=csrfmiddlewaretoken]')?.value || document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+async function refresh(){if(document.hidden)return;try{const response=await fetch('{% url "market:notification_feed" %}',{credentials:'same-origin',cache:'no-store'});if(!response.ok)return;const data=await response.json();badge.textContent=data.unread;badge.hidden=!data.unread;preview.replaceChildren();if(!data.items.length){const p=document.createElement('p');p.textContent='Пока нет новых событий.';p.className='muted small';preview.append(p);}data.items.forEach(item=>{const form=document.createElement('form');form.method='post';form.action='{% url "market:notifications" %}'+item.id+'/read/';form.className='notification-preview-item'+(item.read?'':' is-unread');const input=document.createElement('input');input.type='hidden';input.name='csrfmiddlewaretoken';input.value=csrf||'';const button=document.createElement('button');button.type='submit';button.textContent=item.text;form.append(input,button);preview.append(form);});}catch(error){}}
+menu.addEventListener('toggle',()=>{if(menu.open)refresh();});setInterval(refresh,30000);
+})();
+</script>

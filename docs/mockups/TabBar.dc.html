@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Нижние вкладки</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<nav aria-label="Разделы" style="width: 390px; box-sizing: border-box; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: center; height: 72px; padding: 0 8px 8px; background: {{t.tab}}; border-top: 1px solid {{t.line}}; font-family: Inter, system-ui, -apple-system, sans-serif">
+  <a href="Main.dc.html" aria-current="{{feed.current}}" style="height: 56px; text-decoration: none; color: {{feed.ink}}; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: {{feed.weight}}">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>
+    Лента
+  </a>
+  <a href="Mine.dc.html" aria-current="{{mine.current}}" style="height: 56px; text-decoration: none; color: {{mine.ink}}; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: {{mine.weight}}">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 4h11v16l-5.5-3.8L6.5 20z"></path></svg>
+    Мои
+  </a>
+  <a href="Create.dc.html" aria-current="{{create.current}}" style="height: 56px; text-decoration: none; color: {{create.ink}}; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: {{create.weight}}">
+    <span style="width: 40px; height: 32px; border-radius: 12px; background: {{t.ink}}; color: {{t.card}}; display: flex; align-items: center; justify-content: center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+    </span>
+    Создать
+  </a>
+  <a href="Rating.dc.html" aria-current="{{rating.current}}" style="height: 56px; text-decoration: none; color: {{rating.ink}}; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: {{rating.weight}}">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 20v-8M12 20V5M19 20v-12"></path></svg>
+    Рейтинг
+  </a>
+  <a href="Profile.dc.html" aria-current="{{profile.current}}" style="height: 56px; text-decoration: none; color: {{profile.ink}}; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: {{profile.weight}}">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4.5 20c1.4-3.8 4.3-5.8 7.5-5.8s6.1 2 7.5 5.8"></path></svg>
+    Профиль
+  </a>
+</nav>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"active":{"editor":"enum","options":["feed","mine","create","rating","profile"],"default":"feed"},"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":72}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? false;
+    const t = dark
+      ? { tab: '#14171C', line: '#2A2E36', ink: '#F1F3F5', sub: '#9AA3AE', card: '#181B21' }
+      : { tab: '#FFFFFF', line: '#E3E5E8', ink: '#111418', sub: '#5F6672', card: '#FFFFFF' };
+    const active = this.props.active ?? 'feed';
+    const item = (key) => ({
+      current: key === active ? 'page' : 'false',
+      ink: key === active ? t.ink : t.sub,
+      weight: key === active ? 600 : 500
+    });
+    return { t: t, feed: item('feed'), mine: item('mine'), create: item('create'), rating: item('rating'), profile: item('profile') };
+  }
+}
+</script>
+</body>
+</html>

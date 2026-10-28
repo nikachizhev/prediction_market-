@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Карточка рынка</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; display: flex; flex-direction: column; background: {{t.bg}}; color: {{t.ink}}; font-family: Inter, system-ui, -apple-system, sans-serif">
+
+  <header style="display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; background: {{t.bg}}">
+    <a href="Main.dc.html" aria-label="Назад к ленте" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: {{t.ink}}">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+    </a>
+    <span style="font-size: 16px; font-weight: 600">Рынок</span>
+    <div style="display: flex">
+      <button aria-label="Поделиться" style="width: 44px; height: 44px; border: none; background: transparent; color: {{t.ink}}; display: flex; align-items: center; justify-content: center; cursor: pointer">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"></path><path d="M5 13v5.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V13"></path></svg>
+      </button>
+      <button onClick="{{toggleWatch}}" aria-label="{{watchLabel}}" style="width: 44px; height: 44px; border: none; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="{{watchFill}}" stroke="{{watchStroke}}" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <main style="flex: 1; overflow-y: auto; scrollbar-width: none; padding: 4px 16px 20px; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: {{t.sub}}">
+      <span>Игры · до 31 декабря</span>
+      <span style="display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; background: {{statusBg}}; color: {{statusInk}}; font-size: 12px; font-weight: 600">{{statusLabel}}</span>
+    </div>
+
+    <h1 style="margin: 0; font-size: 22px; line-height: 1.25; font-weight: 700; letter-spacing: -0.01em">Выйдет ли GTA VI до конца 2026 года?</h1>
+
+    <div style="display: flex; align-items: center; gap: 10px">
+      <span style="width: 32px; height: 32px; border-radius: 999px; background: {{t.yesTint}}; color: {{t.yes}}; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700">АК</span>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 14px; font-weight: 600">Аня К.</span>
+        <span style="font-size: 12px; color: {{t.sub}}">Автор · 12 рынков · 0 проигранных споров</span>
+      </div>
+    </div>
+
+    <sc-if value="{{isReview}}" hint-placeholder-val="{{ false }}">
+      <section aria-label="Итог на проверке" style="background: {{t.card}}; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; align-items: baseline; justify-content: space-between">
+          <span style="font-size: 13px; color: {{t.sub}}">Итог от автора</span>
+          <span style="font-size: 13px; font-weight: 600; color: {{t.sub}}">Окно спора: ещё 18 ч 24 мин</span>
+        </div>
+        <span style="font-size: 28px; font-weight: 700; color: {{t.yes}}">ДА</span>
+        <button style="height: 180px; border: 1px dashed {{t.line}}; border-radius: 12px; background: {{t.bg}}; color: {{t.sub}}; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font: 500 13px/1.3 Inter, system-ui, sans-serif; cursor: pointer">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"></rect><circle cx="9" cy="10" r="1.6"></circle><path d="M5 17l4.5-4.5 3 3 2.5-2.5 4 4"></path></svg>
+          Фото-доказательство от автора
+        </button>
+        <span style="font-size: 13px; line-height: 1.4; color: {{t.sub}}">Если никто не оспорит итог, выплаты придут автоматически. Твоя выплата при ДА: 152.</span>
+        <button style="height: 44px; border: 1px solid {{t.line}}; border-radius: 12px; background: transparent; color: {{t.ink}}; font: 600 15px/1 Inter, system-ui, sans-serif; cursor: pointer">Оспорить итог · 20 монет</button>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{isDone}}" hint-placeholder-val="{{ false }}">
+      <section aria-label="Итог" style="background: {{t.card}}; border-radius: 16px; padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="font-size: 13px; color: {{t.sub}}">Итог</span>
+          <span style="font-size: 28px; font-weight: 700; color: {{t.yes}}">ДА</span>
+          <span style="font-size: 14px; font-weight: 600">Ты получил 152 <span style="color: {{t.yes}}">(+52)</span></span>
+        </div>
+        <button aria-label="Открыть фото-доказательство" style="width: 112px; height: 84px; border: 1px dashed {{t.line}}; border-radius: 10px; background: {{t.bg}}; color: {{t.sub}}; display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"></rect><circle cx="9" cy="10" r="1.6"></circle><path d="M5 17l4.5-4.5 3 3 2.5-2.5 4 4"></path></svg>
+        </button>
+      </section>
+    </sc-if>
+
+    <section aria-label="Вероятность во времени" style="background: {{t.card}}; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="font-size: 44px; line-height: 1; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">{{pct}}</span>
+          <span style="font-size: 13px; color: {{t.sub}}">вероятность ДА</span>
+        </div>
+        <span style="font-size: 14px; font-weight: 600; color: {{deltaColor}}">{{delta}}</span>
+      </div>
+      <svg width="358" height="180" viewBox="0 0 358 180" role="img" aria-label="{{chartLabel}}" onPointerMove="{{onScrub}}" onPointerLeave="{{endScrub}}" style="display: block; max-width: 100%; height: auto; touch-action: none">
+        <line x1="0" y1="45" x2="322" y2="45" stroke="{{t.line}}" stroke-width="1"></line>
+        <line x1="0" y1="80" x2="322" y2="80" stroke="{{t.line}}" stroke-width="1"></line>
+        <line x1="0" y1="115" x2="322" y2="115" stroke="{{t.line}}" stroke-width="1"></line>
+        <line x1="0" y1="150" x2="322" y2="150" stroke="{{t.line}}" stroke-width="1"></line>
+        <text x="358" y="49" text-anchor="end" font-size="11" fill="{{t.sub}}">75%</text>
+        <text x="358" y="84" text-anchor="end" font-size="11" fill="{{t.sub}}">50%</text>
+        <text x="358" y="119" text-anchor="end" font-size="11" fill="{{t.sub}}">25%</text>
+        <path d="{{area}}" fill="{{t.yes}}" fill-opacity="0.08"></path>
+        <path d="{{line}}" fill="none" stroke="{{t.yes}}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+        <circle cx="{{endX}}" cy="{{endY}}" r="4" fill="{{t.yes}}" stroke="{{t.card}}" stroke-width="2" opacity="{{endOp}}"></circle>
+        <g opacity="{{hov.op}}">
+          <line x1="{{hov.x}}" y1="10" x2="{{hov.x}}" y2="150" stroke="{{t.sub}}" stroke-width="1" stroke-dasharray="3 3"></line>
+          <circle cx="{{hov.x}}" cy="{{hov.y}}" r="4" fill="{{t.yes}}" stroke="{{t.card}}" stroke-width="2"></circle>
+          <rect x="{{hov.boxX}}" y="0" width="104" height="38" rx="8" fill="{{t.ink}}"></rect>
+          <text x="{{hov.textX}}" y="16" font-size="13" font-weight="700" fill="{{t.card}}">{{hov.value}}</text>
+          <text x="{{hov.textX}}" y="31" font-size="11" fill="{{t.card}}">{{hov.ago}}</text>
+        </g>
+        <text x="0" y="172" font-size="11" fill="{{t.sub}}">{{startLabel}}</text>
+        <text x="322" y="172" text-anchor="end" font-size="11" fill="{{t.sub}}">сейчас</text>
+      </svg>
+      <div role="group" aria-label="Период" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+        <sc-for list="{{periods}}" as="pr" hint-placeholder-count="4">
+          <button onClick="{{pr.pick}}" aria-pressed="{{pr.pressed}}" style="height: 36px; border: none; border-radius: 10px; background: {{pr.bg}}; color: {{pr.ink}}; font: 600 13px/1 Inter, system-ui, sans-serif; cursor: pointer">{{pr.label}}</button>
+        </sc-for>
+      </div>
+    </section>
+
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+      <div style="background: {{t.card}}; border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 12px; color: {{t.sub}}">Участники</span>
+        <span style="font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums">1 284</span>
+      </div>
+      <div style="background: {{t.card}}; border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 12px; color: {{t.sub}}">Объём</span>
+        <span style="font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums">52,6 тыс.</span>
+      </div>
+      <div style="background: {{t.card}}; border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 12px; color: {{t.sub}}">До итога</span>
+        <span style="font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums">67 дней</span>
+      </div>
+    </div>
+
+    <sc-if value="{{isOpen}}" hint-placeholder-val="{{ true }}">
+      <section aria-label="Моя позиция" style="background: {{t.card}}; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; align-items: center; justify-content: space-between">
+          <span style="font-size: 15px; font-weight: 600">Твоя позиция</span>
+          <span style="height: 26px; padding: 0 10px; border-radius: 999px; background: {{posTint}}; color: {{posInk}}; display: inline-flex; align-items: center; font-size: 13px; font-weight: 700">{{posSide}} · {{posShares}} акций</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; font-variant-numeric: tabular-nums">
+          <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: {{t.sub}}">Вложено</span><span style="font-size: 15px; font-weight: 600">{{posInvested}}</span></div>
+          <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: {{t.sub}}">Стоит сейчас</span><span style="font-size: 15px; font-weight: 600">{{posValue}}</span></div>
+          <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: {{t.sub}}">Если угадаешь</span><span style="font-size: 15px; font-weight: 600">{{posPayout}}</span></div>
+        </div>
+        <button style="height: 44px; border: 1px solid {{t.line}}; border-radius: 12px; background: transparent; color: {{t.ink}}; font: 600 15px/1 Inter, system-ui, sans-serif; cursor: pointer">Продать позицию</button>
+      </section>
+    </sc-if>
+
+    <section aria-label="Как определяем результат" style="background: {{t.card}}; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600">Как определяем результат</h2>
+      <p style="margin: 0; font-size: 14px; line-height: 1.45; color: {{t.sub}}">ДА, если игра официально выйдет хотя бы на одной платформе до 23:59 31 декабря 2026 по Москве. Перенос релиза или только трейлер — НЕТ. Итог автор подтвердит скриншотом из магазина.</p>
+    </section>
+
+    <section aria-label="Последние прогнозы" style="background: {{t.card}}; border-radius: 16px; padding: 8px 16px; display: flex; flex-direction: column">
+      <h2 style="margin: 8px 0 4px; font-size: 15px; font-weight: 600">Последние прогнозы</h2>
+      <sc-for list="{{trades}}" as="tr" hint-placeholder-count="5">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid {{tr.line}}">
+          <span style="width: 8px; height: 8px; border-radius: 999px; background: {{tr.dot}}; flex: 0 0 auto"></span>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 14px; font-weight: 500">{{tr.who}}: {{tr.side}} на {{tr.amount}}</span>
+            <span style="font-size: 12px; color: {{t.sub}}">{{tr.ago}}</span>
+          </div>
+          <span style="font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: {{t.sub}}">{{tr.move}}</span>
+        </div>
+      </sc-for>
+    </section>
+  </main>
+
+  <sc-if value="{{isOpen}}" hint-placeholder-val="{{ true }}">
+    <div style="flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 12px 16px 20px; background: {{t.card}}; border-top: 1px solid {{t.line}}">
+      <button onClick="{{buyYes}}" style="height: 52px; border: none; border-radius: 14px; background: {{t.yesFill}}; color: #FFFFFF; font: 600 16px/1 Inter, system-ui, sans-serif; font-variant-numeric: tabular-nums; cursor: pointer">{{yesLabel}}</button>
+      <button onClick="{{buyNo}}" style="height: 52px; border: none; border-radius: 14px; background: {{t.noFill}}; color: #FFFFFF; font: 600 16px/1 Inter, system-ui, sans-serif; font-variant-numeric: tabular-nums; cursor: pointer">{{noLabel}}</button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{sheetOpen}}" hint-placeholder-val="{{ false }}">
+    <button onClick="{{sheet.close}}" aria-label="Закрыть панель прогноза" style="position: absolute; inset: 0; border: none; padding: 0; background: {{t.overlay}}; cursor: pointer"></button>
+    <section aria-label="Панель прогноза" style="position: absolute; left: 0; right: 0; bottom: 0; background: {{t.card}}; border-radius: 20px 20px 0 0; padding: 8px 20px 24px; display: flex; flex-direction: column; gap: 14px">
+      <div style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: {{t.line}}"></div>
+      <div style="font-size: 16px; line-height: 1.3; font-weight: 600">Выйдет ли GTA VI до конца 2026 года?</div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 14px; background: {{t.bg}}">
+        <button onClick="{{sheet.pickYes}}" style="height: 44px; border: none; border-radius: 10px; background: {{sheet.yesBg}}; color: {{sheet.yesInk}}; font: 600 15px/1 Inter, system-ui, sans-serif; font-variant-numeric: tabular-nums; cursor: pointer">{{yesLabel}}</button>
+        <button onClick="{{sheet.pickNo}}" style="height: 44px; border: none; border-radius: 10px; background: {{sheet.noBg}}; color: {{sheet.noInk}}; font: 600 15px/1 Inter, system-ui, sans-serif; font-variant-numeric: tabular-nums; cursor: pointer">{{noLabel}}</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; align-items: flex-end; justify-content: space-between">
+          <label for="market-amount" style="font-size: 13px; color: {{t.sub}}">Сумма</label>
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 34px; line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="{{t.gold}}" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><circle cx="12" cy="12" r="4"></circle></svg>
+            {{sheet.amount}}
+          </div>
+        </div>
+        <input id="market-amount" type="range" min="1" max="{{sheet.max}}" value="{{sheet.amountNum}}" onChange="{{sheet.onRange}}" style="width: 100%; margin: 4px 0; accent-color: {{sheet.fill}}">
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px">
+          <sc-for list="{{sheet.quick}}" as="k" hint-placeholder-count="4">
+            <button onClick="{{k.pick}}" style="height: 40px; border: none; border-radius: 10px; background: {{k.bg}}; color: {{k.ink}}; font: 600 14px/1 Inter, system-ui, sans-serif; cursor: pointer">{{k.label}}</button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 14px; background: {{t.bg}}; font-size: 14px">
+        <div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: {{t.sub}}">Выплата, если угадаешь</span><span style="font-weight: 700; font-variant-numeric: tabular-nums">{{sheet.payout}} <span style="color: {{t.yes}}; font-weight: 600">({{sheet.profit}})</span></span></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: {{t.sub}}">Вероятность ДА после сделки</span><span style="font-weight: 600; font-variant-numeric: tabular-nums">{{sheet.move}}</span></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: {{t.sub}}">Комиссия 2%</span><span style="font-weight: 600; font-variant-numeric: tabular-nums">{{sheet.fee}}</span></div>
+      </div>
+      <button onClick="{{sheet.confirm}}" style="height: 52px; border: none; border-radius: 14px; background: {{sheet.fill}}; color: #FFFFFF; font: 600 16px/1 Inter, system-ui, sans-serif; cursor: pointer">{{sheet.confirmLabel}}</button>
+      <div style="margin-top: -6px; text-align: center; font-size: 12px; color: {{t.sub}}">{{sheet.limitNote}}</div>
+    </section>
+  </sc-if>
+
+  <sc-if value="{{toastOn}}" hint-placeholder-val="{{ false }}">
+    <div role="status" style="position: absolute; top: 12px; left: 16px; right: 16px; display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 14px; background: {{t.ink}}; color: {{t.card}}; font-size: 14px; font-weight: 600; line-height: 1.35">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 auto"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+      <span>{{toast}}</span>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"status":{"editor":"enum","options":["Идёт приём","Итог на проверке","Завершён"],"default":"Идёт приём","section":"Состояние"},"dark":{"editor":"boolean","default":false,"section":"Тема"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      p: 0.71, period: 'Н', hi: null, watched: true, balance: 1240,
+      pos: { side: 'yes', shares: 152, invested: 100 },
+      sheet: null, toast: '',
+      series: {
+        'Д': { step: 2, word: 'за сутки', data: [68, 69, 69, 70, 69, 70, 71, 70, 71, 72, 71, 71] },
+        'Н': { step: 14, word: 'за неделю', data: [52, 54, 55, 58, 57, 61, 60, 62, 64, 63, 67, 69, 71] },
+        'М': { step: 36, word: 'за месяц', data: [41, 43, 40, 45, 47, 46, 50, 52, 51, 55, 58, 57, 60, 62, 61, 64, 67, 66, 69, 71] },
+        'Всё': { step: 88, word: 'за всё время', data: [50, 46, 44, 41, 43, 47, 52, 55, 53, 58, 61, 64, 62, 67, 71] }
+      },
+      trades: [
+        { side: 'yes', amount: 50, move: '68% → 71%', ago: '2 ч назад' },
+        { side: 'no', amount: 30, move: '70% → 68%', ago: '3 ч назад' },
+        { side: 'yes', amount: 120, move: '64% → 70%', ago: '5 ч назад' },
+        { side: 'yes', amount: 20, move: '63% → 64%', ago: '8 ч назад' },
+        { side: 'no', amount: 80, move: '67% → 63%', ago: '11 ч назад' }
+      ]
+    };
+  }
+
+  componentWillUnmount() {
+    clearTimeout(this.toastTimer);
+  }
+
+  theme() {
+    if (this.props.dark ?? false) {
+      return { bg: '#0E1014', card: '#181B21', ink: '#F1F3F5', sub: '#9AA3AE', line: '#2A2E36', yes: '#7DB0FF', yesTint: '#1E2A3C', no: '#FF9E6B', noTint: '#33241D', yesFill: '#1F6FD6', noFill: '#C2410C', gold: '#F2B632', goldTint: '#3A3020', overlay: 'rgba(0, 0, 0, 0.6)' };
+    }
+    return { bg: '#F2F3F5', card: '#FFFFFF', ink: '#111418', sub: '#5F6672', line: '#E3E5E8', yes: '#1A5FB8', yesTint: '#E7EFFA', no: '#B23A0B', noTint: '#FBEDE6', yesFill: '#1F6FD6', noFill: '#C2410C', gold: '#D99A00', goldTint: '#FBF1D9', overlay: 'rgba(17, 20, 24, 0.45)' };
+  }
+
+  maxAmount(balance) {
+    return Math.max(1, Math.min(200, Math.floor(balance * 0.2)));
+  }
+
+  // LMSR, b = 144 (subsidy 100 = b·ln2), 2% fee taken from the stake
+  quote(p, side, amount) {
+    const b = 144;
+    const net = amount * 0.98;
+    const ps = side === 'yes' ? p : 1 - p;
+    const shares = b * (Math.log(Math.exp(net / b) - 1 + ps) - Math.log(ps));
+    const psAfter = 1 / (1 + ((1 - ps) / ps) * Math.exp(-shares / b));
+    return { shares: shares, yesAfter: side === 'yes' ? psAfter : 1 - psAfter };
+  }
+
+  ago(hours) {
+    if (hours === 0) return 'сейчас';
+    if (hours < 24) return hours + ' ч назад';
+    return Math.round(hours / 24) + ' дн. назад';
+  }
+
+  patchSheet(patch) {
+    this.setState((st) => ({ sheet: st.sheet ? Object.assign({}, st.sheet, patch) : null }));
+  }
+
+  confirm() {
+    const s = this.state;
+    if (!s.sheet) return;
+    const amount = Math.min(s.sheet.amount, this.maxAmount(s.balance));
+    const side = s.sheet.side;
+    const q = this.quote(s.p, side, amount);
+    const before = Math.round(s.p * 100);
+    const after = Math.round(q.yesAfter * 100);
+    const series = {};
+    Object.keys(s.series).forEach((k) => {
+      const sr = s.series[k];
+      series[k] = Object.assign({}, sr, { data: sr.data.slice(0, -1).concat([after]) });
+    });
+    const pos = s.pos.side === side
+      ? { side: side, shares: s.pos.shares + q.shares, invested: s.pos.invested + amount }
+      : { side: side, shares: q.shares, invested: amount };
+    this.setState({
+      p: q.yesAfter, series: series, pos: pos, balance: s.balance - amount, sheet: null,
+      trades: [{ side: side, amount: amount, move: before + '% → ' + after + '%', ago: 'только что', mine: true }].concat(s.trades).slice(0, 6),
+      toast: 'Принято: ' + (side === 'yes' ? 'ДА' : 'НЕТ') + ' на ' + amount + '. Выплата, если угадаешь: ' + Math.round(q.shares)
+    });
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => this.setState({ toast: '' }), 2600);
+  }
+
+  renderVals() {
+    const t = this.theme();
+    const s = this.state;
+    const status = this.props.status ?? 'Идёт приём';
+    const isOpen = status === 'Идёт приём';
+    const isReview = status === 'Итог на проверке';
+    const isDone = status === 'Завершён';
+
+    const sr = s.series[s.period];
+    const n = sr.data.length;
+    const X = (i) => i * 322 / (n - 1);
+    const Y = (v) => 150 - v / 100 * 140;
+    const pts = sr.data.map((v, i) => X(i).toFixed(1) + ' ' + Y(v).toFixed(1));
+    const line = 'M' + pts.join(' L');
+    const area = line + ' L322 150 L0 150 Z';
+    const change = sr.data[n - 1] - sr.data[0];
+
+    let hov = { op: 0, x: 0, y: 0, boxX: 0, textX: 0, value: '', ago: '' };
+    if (s.hi !== null && s.hi >= 0 && s.hi < n) {
+      const hx = X(s.hi);
+      const boxX = Math.min(Math.max(hx - 52, 0), 322 - 104);
+      hov = { op: 1, x: hx, y: Y(sr.data[s.hi]), boxX: boxX, textX: boxX + 10, value: 'ДА ' + sr.data[s.hi] + '%', ago: this.ago((n - 1 - s.hi) * sr.step) };
+    }
+
+    const pct = Math.round(s.p * 100);
+    const statusStyle = isOpen
+      ? { label: 'Идёт приём прогнозов', bg: t.yesTint, ink: t.yes }
+      : isReview
+        ? { label: 'Итог на проверке', bg: t.goldTint, ink: t.ink }
+        : { label: 'Завершён', bg: t.line, ink: t.ink };
+
+    let sheet = {};
+    if (s.sheet) {
+      const max = this.maxAmount(s.balance);
+      const amount = Math.min(s.sheet.amount, max);
+      const q = this.quote(s.p, s.sheet.side, amount);
+      const yes = s.sheet.side === 'yes';
+      sheet = {
+        amount: String(amount), amountNum: amount, max: max,
+        yesBg: yes ? t.yesFill : 'transparent', yesInk: yes ? '#FFFFFF' : t.ink,
+        noBg: yes ? 'transparent' : t.noFill, noInk: yes ? t.ink : '#FFFFFF',
+        pickYes: () => this.patchSheet({ side: 'yes' }),
+        pickNo: () => this.patchSheet({ side: 'no' }),
+        quick: [10, 50, 100, max].map((v, i) => ({ label: i === 3 ? 'Макс' : String(v), pick: () => this.patchSheet({ amount: v }), bg: amount === v ? t.ink : t.bg, ink: amount === v ? t.card : t.ink })),
+        onRange: (e) => this.patchSheet({ amount: Number(e.target.value) }),
+        payout: String(Math.round(q.shares)),
+        profit: '+' + Math.round(q.shares - amount),
+        move: pct + '% → ' + Math.round(q.yesAfter * 100) + '%',
+        fee: String(Math.round(amount * 0.02 * 10) / 10).replace('.', ','),
+        fill: yes ? t.yesFill : t.noFill,
+        confirmLabel: 'Прогноз ' + (yes ? 'ДА' : 'НЕТ') + ' на ' + amount,
+        limitNote: 'Не больше ' + max + ' за сделку — это 20% баланса',
+        confirm: () => this.confirm(),
+        close: () => this.setState({ sheet: null })
+      };
+    }
+
+    const posYes = s.pos.side === 'yes';
+    const openSheet = (side) => this.setState((st) => ({ sheet: { side: side, amount: Math.min(100, this.maxAmount(st.balance)) } }));
+
+    return {
+      t: t, isOpen: isOpen, isReview: isReview, isDone: isDone,
+      statusLabel: statusStyle.label, statusBg: statusStyle.bg, statusInk: statusStyle.ink,
+      watchFill: s.watched ? t.gold : 'none', watchStroke: s.watched ? t.gold : t.sub,
+      watchLabel: s.watched ? 'Не следить за рынком' : 'Следить за рынком',
+      toggleWatch: () => this.setState((st) => ({ watched: !st.watched })),
+      pct: pct + '%',
+      delta: (change >= 0 ? '▲ ' : '▼ ') + Math.abs(change) + ' ' + sr.word,
+      deltaColor: change >= 0 ? t.yes : t.no,
+      chartLabel: 'Вероятность ДА ' + sr.word + ': от ' + sr.data[0] + '% до ' + sr.data[n - 1] + '%',
+      line: line, area: area,
+      endX: X(n - 1), endY: Y(sr.data[n - 1]), endOp: s.hi === null ? 1 : 0,
+      hov: hov,
+      startLabel: this.ago((n - 1) * sr.step),
+      onScrub: (e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        const fx = (e.clientX - r.left) / r.width * 358;
+        const i = Math.max(0, Math.min(n - 1, Math.round(fx / 322 * (n - 1))));
+        if (i !== this.state.hi) this.setState({ hi: i });
+      },
+      endScrub: () => this.setState({ hi: null }),
+      periods: Object.keys(s.series).map((k) => ({
+        label: k, pressed: k === s.period ? 'true' : 'false',
+        bg: k === s.period ? t.ink : t.bg, ink: k === s.period ? t.card : t.ink,
+        pick: () => this.setState({ period: k, hi: null })
+      })),
+      posSide: posYes ? 'ДА' : 'НЕТ', posTint: posYes ? t.yesTint : t.noTint, posInk: posYes ? t.yes : t.no,
+      posShares: Math.round(s.pos.shares),
+      posInvested: String(s.pos.invested),
+      posValue: String(Math.round(s.pos.shares * (posYes ? s.p : 1 - s.p))),
+      posPayout: String(Math.round(s.pos.shares)),
+      trades: s.trades.map((tr, i) => ({
+        who: tr.mine ? 'Ты' : 'Кто-то', side: tr.side === 'yes' ? 'ДА' : 'НЕТ', amount: tr.amount, move: tr.move, ago: tr.ago,
+        dot: tr.side === 'yes' ? t.yes : t.no, line: i === 0 ? 'transparent' : t.line
+      })),
+      yesLabel: 'ДА · ' + pct + '%', noLabel: 'НЕТ · ' + (100 - pct) + '%',
+      buyYes: () => openSheet('yes'), buyNo: () => openSheet('no'),
+      sheetOpen: !!s.sheet, sheet: sheet,
+      toastOn: !!s.toast, toast: s.toast
+    };
+  }
+}
+</script>
+</body>
+</html>

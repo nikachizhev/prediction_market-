@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-prediction_market}
+      POSTGRES_USER: ${POSTGRES_USER:-prediction_market}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-password}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  # Team dashboard (spec E7). Started only on request: docker compose --profile metabase up -d
+  # Reads the database as metabase_ro (manage.py setup_metabase_role), host "db", port 5432.
+  metabase:
+    image: metabase/metabase:v0.64.3.5
+    profiles: ["metabase"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+      MB_ANON_TRACKING_ENABLED: "false"
+      MB_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "127.0.0.1:${METABASE_PORT:-3000}:3000"
+    volumes:
+      - metabase_data:/metabase-data
+volumes:
+  postgres_data:
+  metabase_data:

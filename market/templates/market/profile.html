@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Настройки профиля{% endblock %}
+{% block content %}
+<div class="page-intro"><span class="eyebrow">ВАШ АККАУНТ</span><h1>Настройки профиля</h1><p class="muted">Личные данные и связанные аккаунты. Дополнительные сведения необязательны и видны только вам.</p></div>
+<div class="profile-column">
+<div class="card"><h2>Личные данные</h2>
+<p class="small muted">Логин: {{ request.user.username }}<br>Почта: {{ request.user.email }}</p>
+<form method="post">{% csrf_token %}{{ form.as_p }}
+<p class="small muted">Логин GitHub указывается вручную для учёта конфликта интересов. Это не подтверждённая привязка через GitHub.</p>
+<button class="btn" type="submit">Сохранить изменения</button></form>
+</div>
+<section class="card" id="telegram"><h2>Telegram</h2>
+<form method="post" action="{% url 'market:telegram' %}">{% csrf_token %}
+<input type="hidden" name="return_to" value="profile">
+{% if trader.telegram_chat_id %}<p class="pos">Аккаунт подключён</p><p class="small muted">В боте доступны рынки, ваши ставки и статистика.</p>
+<button class="btn" name="action" value="test">Проверить связь</button>
+<button class="btn ghost" name="action" value="disconnect">Отключить</button>
+{% else %}<p class="muted">Подключите бота, чтобы следить за прогнозами в Telegram.</p>
+<button class="btn" name="action" value="connect">Подключить Telegram</button>
+{% if request.session.telegram_link %}<p><a href="{{ request.session.telegram_link }}" target="_blank" rel="noopener noreferrer">Открыть бота и нажать Start ↗</a></p><p class="small muted">Ссылка действует 10 минут.</p>{% endif %}
+{% endif %}</form></section>
+<section class="card"><h2>Безопасность</h2><a href="{% url 'market:password_reset' %}">Восстановить пароль по почте</a></section>
+</div>
+{% endblock %}

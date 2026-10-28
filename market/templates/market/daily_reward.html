@@ -1,0 +1,19 @@
+<dialog id="daily-gift" class="daily-gift" aria-labelledby="gift-title" aria-describedby="gift-description">
+<button class="gift-close" type="button" aria-label="Закрыть подарок">×</button>
+<div class="gift-stars" aria-hidden="true">✧ · ✦ · ✧</div>
+<div class="gift-emblem" aria-hidden="true">✦</div>
+<span class="eyebrow">МАЛЕНЬКИЙ ШАГ К БОЛЬШИМ ПРОГНОЗАМ</span>
+<h2 id="gift-title">Рады видеть вас снова</h2>
+<p id="gift-description">Ваш ежедневный подарок уже зачислен.<br>Пусть сегодня чутьё вас не подведёт.</p>
+<div class="gift-rewards"><div><strong>+{{ daily_reward.coins|floatformat:0 }}</strong><span>монет на баланс</span></div><div><strong>+{{ daily_reward.xp }} XP</strong><span>вашему проводнику</span></div></div>
+<button type="button" class="btn gift-continue" autofocus>Отлично, к прогнозам →</button>
+<p class="small muted gift-note">Следующий подарок — завтра по московскому времени.</p>
+</dialog>
+<script>
+(function(){
+const gift=document.getElementById('daily-gift');
+if(typeof gift.showModal==='function')gift.showModal();else gift.setAttribute('open','');
+gift.querySelectorAll('.gift-close,.gift-continue').forEach(button=>button.addEventListener('click',()=>gift.close()));
+gift.addEventListener('click',event=>{if(event.target===gift){const r=gift.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)gift.close();}});
+})();
+</script>

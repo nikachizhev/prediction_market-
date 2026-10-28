@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Закрытый чат: Группа ПИ-24</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; display: flex; flex-direction: column; background: {{t.bg}}; color: {{t.ink}}; font-family: Inter, system-ui, -apple-system, sans-serif">
+
+  <header style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 4px">
+    <a href="Main.dc.html" aria-label="Назад к ленте" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: {{t.ink}}">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+    </a>
+    <span style="width: 44px; height: 44px; flex: 0 0 auto; border-radius: 14px; background: {{t.ink}}; color: {{t.card}}; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700">ПИ</span>
+    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 17px; font-weight: 700">Группа ПИ-24</span>
+      <span style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: {{t.sub}}">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+        закрытый чат · 28 участников
+      </span>
+    </div>
+  </header>
+
+  <div style="flex: 0 0 auto; padding: 4px 16px 12px; display: flex; flex-direction: column; gap: 12px">
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+      <div style="background: {{t.card}}; border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: {{t.sub}}">Рынков</span><span style="font-size: 17px; font-weight: 700">4</span></div>
+      <div style="background: {{t.card}}; border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: {{t.sub}}">Объём</span><span style="font-size: 17px; font-weight: 700">3,2 тыс.</span></div>
+      <div style="background: {{t.card}}; border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: {{t.sub}}">Ты в чате</span><span style="font-size: 17px; font-weight: 700">3 место</span></div>
+    </div>
+    <div role="tablist" aria-label="Разделы чата" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 14px; background: {{t.card}}">
+      <sc-for list="{{tabs}}" as="tb" hint-placeholder-count="2">
+        <button role="tab" aria-selected="{{tb.selected}}" onClick="{{tb.pick}}" style="height: 40px; border: none; border-radius: 10px; background: {{tb.bg}}; color: {{tb.ink}}; font: 600 14px/1 Inter, system-ui, sans-serif; cursor: pointer">{{tb.label}}</button>
+      </sc-for>
+    </div>
+  </div>
+
+  <main style="flex: 1; overflow-y: auto; scrollbar-width: none; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 10px">
+    <sc-if value="{{showMarkets}}" hint-placeholder-val="{{ true }}">
+      <sc-for list="{{markets}}" as="m" hint-placeholder-count="4">
+        <article style="background: {{t.card}}; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: {{t.sub}}">
+            <span>{{m.meta}}</span>
+            <sc-if value="{{m.isNew}}" hint-placeholder-val="{{ false }}">
+              <span style="height: 22px; padding: 0 8px; border-radius: 999px; background: {{t.yesTint}}; color: {{t.yes}}; display: inline-flex; align-items: center; font-size: 12px; font-weight: 600">новый</span>
+            </sc-if>
+          </div>
+          <h2 style="margin: 0; font-size: 16px; line-height: 1.3; font-weight: 600"><a href="Market.dc.html" style="color: inherit; text-decoration: none">{{m.q}}</a></h2>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+            <div style="display: flex; align-items: baseline; gap: 8px">
+              <span style="font-size: 26px; line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums">{{m.pct}}</span>
+              <span style="font-size: 13px; font-weight: 600; color: {{m.deltaColor}}">{{m.delta}}</span>
+            </div>
+            <div style="display: flex; gap: 6px">
+              <a href="Market.dc.html" style="height: 40px; padding: 0 14px; border-radius: 10px; background: {{t.yesTint}}; color: {{t.yes}}; display: flex; align-items: center; text-decoration: none; font-size: 14px; font-weight: 600">ДА</a>
+              <a href="Market.dc.html" style="height: 40px; padding: 0 14px; border-radius: 10px; background: {{t.noTint}}; color: {{t.no}}; display: flex; align-items: center; text-decoration: none; font-size: 14px; font-weight: 600">НЕТ</a>
+            </div>
+          </div>
+        </article>
+      </sc-for>
+      <div style="display: flex; gap: 10px; padding: 12px 14px; border-radius: 14px; background: {{t.card}}; font-size: 13px; line-height: 1.4; color: {{t.sub}}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex: 0 0 auto; margin-top: 1px"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+        <span>Эти рынки видят только участники чата: бот проверяет членство при каждом входе. Выйдешь из чата — доступ закроется, а открытые прогнозы доживут до итога.</span>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{showRating}}" hint-placeholder-val="{{ false }}">
+      <ol aria-label="Рейтинг чата" style="margin: 0; padding: 4px 16px; list-style: none; background: {{t.card}}; border-radius: 16px">
+        <sc-for list="{{rating}}" as="r" hint-placeholder-count="8">
+          <li style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid {{r.line}}; background: {{r.bg}}">
+            <span style="width: 28px; height: 28px; flex: 0 0 auto; border-radius: 999px; background: {{r.rankBg}}; color: {{r.rankInk}}; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700">{{r.rank}}</span>
+            <span style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 15px; font-weight: 600">{{r.name}}</span>
+              <span style="font-size: 12px; color: {{t.sub}}">{{r.sub}}</span>
+            </span>
+            <span style="font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums">{{r.value}}</span>
+          </li>
+        </sc-for>
+      </ol>
+      <p style="margin: 4px 4px 0; font-size: 12px; line-height: 1.4; color: {{t.sub}}">Считается только прибыль на рынках этого чата. Баланс у тебя один на всё приложение.</p>
+    </sc-if>
+  </main>
+
+  <div style="flex: 0 0 auto; padding: 12px 16px 20px; background: {{t.card}}; border-top: 1px solid {{t.line}}">
+    <a href="Create.dc.html" style="height: 52px; border-radius: 14px; background: {{t.ink}}; color: {{t.card}}; display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; font-size: 16px; font-weight: 600">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+      Создать рынок для чата
+    </a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Тема"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { tab: 'markets' };
+  }
+
+  theme() {
+    if (this.props.dark ?? false) {
+      return { bg: '#0E1014', card: '#181B21', ink: '#F1F3F5', sub: '#9AA3AE', line: '#2A2E36', yes: '#7DB0FF', yesTint: '#1E2A3C', no: '#FF9E6B', noTint: '#33241D', gold: '#4A3B17', silver: '#2E333B', bronze: '#43291A', meBg: '#1B212B' };
+    }
+    return { bg: '#F2F3F5', card: '#FFFFFF', ink: '#111418', sub: '#5F6672', line: '#E3E5E8', yes: '#1A5FB8', yesTint: '#E7EFFA', no: '#B23A0B', noTint: '#FBEDE6', gold: '#F7E3AE', silver: '#E3E7EC', bronze: '#F1D7C4', meBg: '#F6F9FE' };
+  }
+
+  renderVals() {
+    const t = this.theme();
+    const s = this.state;
+    const markets = [
+      { q: 'Перенесут ли коллоквиум по алгоритмам?', meta: 'Учёба · ещё 4 дня · 19 участников', pct: 57, d: 12, isNew: true },
+      { q: 'Сдадим матан всей группой без пересдач?', meta: 'Учёба · ещё 12 дней · 27 участников', pct: 38, d: -6 },
+      { q: 'Защитим курсовые всей группой до 25 декабря?', meta: 'Учёба · до 25 декабря · 22 участника', pct: 46, d: 3 },
+      { q: 'Получит ли автомат по физре хотя бы половина группы?', meta: 'Спорт · до 20 декабря · 15 участников', pct: 33, d: -1 }
+    ].map((m) => ({
+      q: m.q, meta: m.meta, isNew: !!m.isNew, pct: m.pct + '%',
+      delta: (m.d >= 0 ? '▲ ' : '▼ ') + Math.abs(m.d), deltaColor: m.d >= 0 ? t.yes : t.no
+    }));
+    const medal = [t.gold, t.silver, t.bronze];
+    const rating = [
+      { name: 'Сова', profit: 410, cnt: 9, acc: 78 },
+      { name: 'Ёж', profit: 254, cnt: 7, acc: 71 },
+      { name: 'Капибара (ты)', profit: 186, cnt: 6, acc: 67, me: true },
+      { name: 'Барсук', profit: 140, cnt: 8, acc: 63 },
+      { name: 'Выдра', profit: 92, cnt: 5, acc: 60 },
+      { name: 'Кот', profit: 41, cnt: 4, acc: 50 },
+      { name: 'Бобр', profit: -38, cnt: 6, acc: 50 },
+      { name: 'Рысь', profit: -75, cnt: 3, acc: 33 }
+    ].map((r, i) => ({
+      rank: i + 1, name: r.name,
+      sub: r.cnt + ' прогнозов в чате · точность ' + r.acc + '%',
+      value: (r.profit >= 0 ? '+' : '−') + Math.abs(r.profit),
+      rankBg: i < 3 ? medal[i] : 'transparent', rankInk: i < 3 ? t.ink : t.sub,
+      line: i === 0 ? 'transparent' : t.line,
+      bg: r.me ? t.meBg : 'transparent'
+    }));
+
+    return {
+      t: t,
+      tabs: [['markets', 'Рынки чата'], ['rating', 'Рейтинг чата']].map(([k, label]) => {
+        const on = k === s.tab;
+        return { label: label, selected: on ? 'true' : 'false', bg: on ? t.ink : 'transparent', ink: on ? t.card : t.ink, pick: () => this.setState({ tab: k }) };
+      }),
+      showMarkets: s.tab === 'markets', showRating: s.tab === 'rating',
+      markets: markets, rating: rating
+    };
+  }
+}
+</script>
+</body>
+</html>

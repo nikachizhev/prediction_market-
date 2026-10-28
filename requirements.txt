@@ -1,0 +1,8 @@
+Django>=5.0,<6
+requests
+python-dotenv
+pytest
+pytest-django
+psycopg[binary]>=3.2,<4
+gunicorn>=23,<24
+matplotlib>=3.9,<4

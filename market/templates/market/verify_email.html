@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block content %}<div class="auth-shell"><div class="card auth-card">
+{% if valid %}<h1>Подтвердите адрес</h1><p>Нажмите кнопку, чтобы завершить регистрацию.</p><form method="post">{% csrf_token %}<button class="btn">Подтвердить почту</button></form>
+{% else %}<h1>Ссылка недействительна</h1><p>Она истекла или уже использована.</p><a class="btn" href="{% url 'market:email_pending' %}">Запросить новое письмо</a>{% endif %}
+</div></div>{% endblock %}

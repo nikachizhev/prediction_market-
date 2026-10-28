@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Рынки{% endblock %}
+{% block content %}
+<div class="head">
+  <div><span class="eyebrow">КАК ВЫ ДУМАЕТЕ, ЧТО БУДЕТ ДАЛЬШЕ?</span><h1 style="margin:8px 0">Рынки и прогнозы</h1><p class="muted">Выберите вопрос, поделитесь чутьём и следите за результатом.</p></div>
+  <a class="btn" href="{% url 'market:create' %}">Создать рынок</a>
+  {% if request.user.is_staff %}<form method="post" action="{% url 'sources:sync' %}">{% csrf_token %}
+    <button class="btn ghost" type="submit">Обновить источники</button>
+  </form>{% endif %}
+</div>
+<div class="market-tabs" aria-label="Фильтр по состоянию">
+<a href="{% querystring status='' %}" {% if not filters.status %}aria-current="page"{% endif %}>Все</a>
+<a href="{% querystring status='open' %}" {% if filters.status == 'open' %}aria-current="page"{% endif %}>● Можно участвовать</a>
+<a href="{% querystring status='closed' %}" {% if filters.status == 'closed' %}aria-current="page"{% endif %}>◷ Ждём результат</a>
+<a href="{% querystring status='resolved' %}" {% if filters.status == 'resolved' %}aria-current="page"{% endif %}>✓ Завершённые</a>
+<a href="{% querystring status='annulled' %}" {% if filters.status == 'annulled' %}aria-current="page"{% endif %}>Отменённые</a>
+</div>
+<form class="card filters" method="get">
+  <div><label for="q">Поиск</label><input type="text" id="q" name="q" value="{{ filters.search }}" placeholder="Название или критерий разрешения"></div>
+  <div><label for="status">Статус</label><select id="status" name="status"><option value="">Все статусы</option>{% for value, label in statuses %}<option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div><label for="source">Источник</label><select id="source" name="source"><option value="">Все источники</option>{% for value, label in sources %}<option value="{{ value }}" {% if filters.source == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div><label for="sort">Сортировка</label><select id="sort" name="sort">{% for value, label in sorts %}<option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div class="filter-actions"><button class="btn" type="submit">Показать</button><a href="{% url 'market:markets' %}">Сбросить</a></div>
+</form>
+<p class="small muted">Найдено вопросов: {{ questions|length }} · Время указано по МСК</p>
+<div class="market-cards">
+{% for question in questions %}
+<article class="card market-card market-card-{{ question.display_state }}">
+  <div class="market-card-top">{% include "market/_badges.html" %}</div>
+  <a class="market-title" href="{% url 'market:question' question.pk %}">{{ question.title }}</a>
+  <div class="market-type">{% if question.is_trading %}Рынок ДА / НЕТ{% else %}{{ question.get_kind_display }}{% endif %}</div>
+  {% if question.result_label %}<div class="market-result">{{ question.result_label }}</div>
+  {% elif question.is_trading %}<div class="market-probability" aria-label="Вероятность ДА {{ question.pct }}%"><strong>{{ question.pct }}<small>%</small></strong><span>вероятность ДА</span></div><meter class="prob-meter" min="0" max="100" value="{{ question.pct }}" aria-label="Вероятность ДА {{ question.pct }} процентов"></meter>
+  {% else %}<div class="market-prompt">{% if question.kind == 'poll' %}Выберите свой вариант{% elif question.kind == 'number' %}Какое число окажется ближе к истине?{% else %}Отметьте верные варианты{% endif %}</div>{% endif %}
+  <div class="market-card-meta"><span>◎ {% if question.is_trading %}{{ question.n_traders }}{% else %}{{ question.n_answers }}{% endif %} участников</span>{% if question.is_trading %}<span>{{ question.volume|floatformat:0 }} монет в обороте</span>{% endif %}</div>
+  <div class="market-card-footer"><span class="small muted">{% if question.deadline %}До {{ question.deadline|date:"d.m.Y · H:i" }}{% else %}Без указанного срока{% endif %}</span><a class="market-action" href="{% url 'market:question' question.pk %}">{% if question.display_state == 'open' %}Участвовать{% elif question.display_state == 'resolved' %}Результаты{% else %}Подробнее{% endif %} →</a></div>
+</article>
+{% empty %}
+<div class="card muted">Подходящих рынков пока нет. Измените фильтры или обновите источники.</div>
+{% endfor %}
+</div>
+{% endblock %}

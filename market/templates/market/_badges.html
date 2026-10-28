@@ -1,0 +1,3 @@
+<span class="badge">{{ question.get_source_type_display }}</span>
+{% if question.group_id %}<span class="badge">🔒 {{ question.group.name }}</span>{% endif %}
+<span class="market-state state-{{ question.display_state }}"><span aria-hidden="true">{% if question.display_state == 'open' %}●{% elif question.display_state == 'resolved' %}✓{% elif question.display_state == 'annulled' %}×{% else %}◷{% endif %}</span> {{ question.state_label }}</span>

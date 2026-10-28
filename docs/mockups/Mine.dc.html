@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Мои рынки</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; display: flex; flex-direction: column; background: {{t.bg}}; color: {{t.ink}}; font-family: Inter, system-ui, -apple-system, sans-serif">
+
+  <header style="padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 14px">
+    <h1 style="margin: 0; font-size: 28px; line-height: 1.1; font-weight: 700; letter-spacing: -0.02em">Мои</h1>
+    <div role="tablist" aria-label="Разделы" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 14px; background: {{t.card}}">
+      <sc-for list="{{tabs}}" as="tb" hint-placeholder-count="3">
+        <button role="tab" aria-selected="{{tb.selected}}" onClick="{{tb.pick}}" style="height: 40px; border: none; border-radius: 10px; background: {{tb.bg}}; color: {{tb.ink}}; font: 600 14px/1 Inter, system-ui, sans-serif; cursor: pointer">{{tb.label}}</button>
+      </sc-for>
+    </div>
+  </header>
+
+  <main style="flex: 1; overflow-y: auto; scrollbar-width: none; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 10px">
+
+    <sc-if value="{{showPositions}}" hint-placeholder-val="{{ true }}">
+      <section aria-label="Итог по позициям" style="background: {{t.card}}; border-radius: 16px; padding: 14px 16px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; font-variant-numeric: tabular-nums">
+        <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: {{t.sub}}">Вложено</span><span style="font-size: 18px; font-weight: 700">420</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: {{t.sub}}">Оценка сейчас</span><span style="font-size: 18px; font-weight: 700">344</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: {{t.sub}}">Если всё угадаю</span><span style="font-size: 18px; font-weight: 700">610</span></div>
+      </section>
+      <sc-for list="{{positions}}" as="ps" hint-placeholder-count="3">
+        <a href="Market.dc.html" style="text-decoration: none; color: inherit; background: {{t.card}}; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+          <span style="font-size: 15px; line-height: 1.3; font-weight: 600">{{ps.q}}</span>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+            <span style="height: 26px; padding: 0 10px; border-radius: 999px; background: {{ps.tint}}; color: {{ps.ink}}; display: inline-flex; align-items: center; font-size: 13px; font-weight: 700">{{ps.side}}</span>
+            <span style="font-size: 13px; color: {{t.sub}}">сейчас ДА {{ps.pct}}</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; font-variant-numeric: tabular-nums">
+            <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: {{t.sub}}">Вложено</span><span style="font-size: 15px; font-weight: 600">{{ps.invested}}</span></div>
+            <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: {{t.sub}}">Стоит сейчас</span><span style="font-size: 15px; font-weight: 600">{{ps.value}} <span style="font-size: 13px; color: {{ps.diffColor}}">{{ps.diff}}</span></span></div>
+            <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: {{t.sub}}">Если угадаю</span><span style="font-size: 15px; font-weight: 600">{{ps.payout}}</span></div>
+          </div>
+        </a>
+      </sc-for>
+    </sc-if>
+
+    <sc-if value="{{showWatch}}" hint-placeholder-val="{{ false }}">
+      <section aria-label="Отслеживаемые рынки" style="background: {{t.card}}; border-radius: 16px; padding: 4px 8px 4px 16px; display: flex; flex-direction: column">
+        <sc-for list="{{watched}}" as="w" hint-placeholder-count="4">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid {{w.line}}">
+            <a href="Market.dc.html" style="flex: 1; min-width: 0; text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: 4px">
+              <span style="font-size: 15px; line-height: 1.3; font-weight: 500">{{w.q}}</span>
+              <span style="font-size: 13px; color: {{t.sub}}"><span style="font-weight: 700; color: {{t.ink}}">{{w.pct}}</span> · <span style="font-weight: 600; color: {{w.deltaColor}}">{{w.delta}}</span></span>
+            </a>
+            <button onClick="{{w.toggle}}" aria-label="{{w.label}}" style="width: 44px; height: 44px; flex: 0 0 auto; border: none; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="{{w.fill}}" stroke="{{w.stroke}}" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"></path></svg>
+            </button>
+          </div>
+        </sc-for>
+      </section>
+      <p style="margin: 4px 4px 0; font-size: 13px; line-height: 1.4; color: {{t.sub}}">Этот же список приходит в боте по команде «Мои рынки» — с анимацией графика.</p>
+    </sc-if>
+
+    <sc-if value="{{showCreated}}" hint-placeholder-val="{{ false }}">
+      <section aria-label="Нужно указать итог" style="background: {{t.card}}; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; border: 2px solid {{t.gold}}">
+        <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.02em; color: {{t.goldInk}}">НУЖНО УКАЗАТЬ ИТОГ · ОСТАЛОСЬ 52 Ч</span>
+        <span style="font-size: 15px; line-height: 1.3; font-weight: 600">Пройдёт ли хакатон без ночёвки в универе?</span>
+        <span style="font-size: 13px; color: {{t.sub}}">Приём прогнозов закрыт · 41 участник</span>
+        <a href="Bot.dc.html" style="height: 44px; border-radius: 12px; background: {{t.ink}}; color: {{t.card}}; display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; font-size: 15px; font-weight: 600">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4L3 11l6 2.5L11.5 20 21 4z"></path><path d="M9 13.5L21 4"></path></svg>
+          Указать итог в боте
+        </a>
+      </section>
+      <sc-for list="{{created}}" as="c" hint-placeholder-count="2">
+        <a href="Market.dc.html" style="text-decoration: none; color: inherit; background: {{t.card}}; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px">
+          <span style="font-size: 15px; line-height: 1.3; font-weight: 600">{{c.q}}</span>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px">
+            <span style="color: {{t.sub}}">{{c.status}}</span>
+            <span style="font-weight: 600; color: {{t.yes}}">{{c.fee}}</span>
+          </div>
+        </a>
+      </sc-for>
+      <p style="margin: 4px 4px 0; font-size: 13px; line-height: 1.4; color: {{t.sub}}">Половина комиссии со всех сделок на твоём рынке достаётся тебе.</p>
+    </sc-if>
+  </main>
+
+  <div style="flex: 0 0 auto">
+    <dc-import name="TabBar" active="mine" dark="{{dark}}" hint-size="390px,72px"></dc-import>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Тема"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      tab: 'positions',
+      stars: { gta: true, snow: true, mat: true, ege: true }
+    };
+  }
+
+  theme() {
+    if (this.props.dark ?? false) {
+      return { bg: '#0E1014', card: '#181B21', ink: '#F1F3F5', sub: '#9AA3AE', line: '#2A2E36', yes: '#7DB0FF', yesTint: '#1E2A3C', no: '#FF9E6B', noTint: '#33241D', gold: '#F2B632', goldInk: '#F2B632' };
+    }
+    return { bg: '#F2F3F5', card: '#FFFFFF', ink: '#111418', sub: '#5F6672', line: '#E3E5E8', yes: '#1A5FB8', yesTint: '#E7EFFA', no: '#B23A0B', noTint: '#FBEDE6', gold: '#D99A00', goldInk: '#7A5600' };
+  }
+
+  renderVals() {
+    const t = this.theme();
+    const s = this.state;
+
+    const tabs = [['positions', 'Позиции · 3'], ['watch', 'Слежу · 4'], ['created', 'Мои рынки · 3']].map(([key, label]) => {
+      const on = key === s.tab;
+      return { label: label, selected: on ? 'true' : 'false', bg: on ? t.ink : 'transparent', ink: on ? t.card : t.ink, pick: () => this.setState({ tab: key }) };
+    });
+
+    const positions = [
+      { q: 'Выйдет ли GTA VI до конца 2026 года?', side: 'ДА', yes: true, pct: '71%', invested: 100, value: 108, payout: 152 },
+      { q: 'Выпадет снег в Москве до 1 декабря?', side: 'НЕТ', yes: false, pct: '64%', invested: 120, value: 65, payout: 182 },
+      { q: 'Сдадим матан всей группой без пересдач?', side: 'НЕТ', yes: false, pct: '38%', invested: 200, value: 171, payout: 276 }
+    ].map((p) => {
+      const diff = p.value - p.invested;
+      return Object.assign({}, p, {
+        tint: p.yes ? t.yesTint : t.noTint, ink: p.yes ? t.yes : t.no,
+        diff: (diff >= 0 ? '+' : '−') + Math.abs(diff), diffColor: diff >= 0 ? t.yes : t.no
+      });
+    });
+
+    const watched = [
+      { id: 'gta', q: 'Выйдет ли GTA VI до конца 2026 года?', pct: '71%', d: 4 },
+      { id: 'snow', q: 'Выпадет снег в Москве до 1 декабря?', pct: '64%', d: 9 },
+      { id: 'mat', q: 'Сдадим матан всей группой без пересдач?', pct: '38%', d: -6 },
+      { id: 'ege', q: 'Нейросеть наберёт 100 баллов на ЕГЭ по профильной математике в 2027 году?', pct: '22%', d: -2 }
+    ].map((w, i) => {
+      const on = !!s.stars[w.id];
+      return {
+        q: w.q, pct: w.pct,
+        delta: (w.d >= 0 ? '▲ ' : '▼ ') + Math.abs(w.d) + ' за сутки', deltaColor: w.d >= 0 ? t.yes : t.no,
+        line: i === 0 ? 'transparent' : t.line,
+        fill: on ? t.gold : 'none', stroke: on ? t.gold : t.sub, label: on ? 'Не следить за рынком' : 'Следить за рынком',
+        toggle: () => this.setState((st) => ({ stars: Object.assign({}, st.stars, { [w.id]: !st.stars[w.id] }) }))
+      };
+    });
+
+    const created = [
+      { q: 'Сдадим матан всей группой без пересдач?', status: 'Идёт приём · 27 участников · ещё 12 дней', fee: 'комиссия +7' },
+      { q: 'Будет ли в столовой новая пицца до ноября?', status: 'Завершён · итог ДА', fee: 'комиссия +14' }
+    ];
+
+    return {
+      t: t, dark: this.props.dark ?? false, tabs: tabs,
+      showPositions: s.tab === 'positions', showWatch: s.tab === 'watch', showCreated: s.tab === 'created',
+      positions: positions, watched: watched, created: created
+    };
+  }
+}
+</script>
+</body>
+</html>

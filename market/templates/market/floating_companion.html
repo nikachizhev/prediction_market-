@@ -1,0 +1,34 @@
+<aside class="floating-companion" id="floating-companion" aria-label="Ваш проводник">
+  <div id="companion-expanded" {% if not current_trader.show_companion %}hidden{% endif %}>
+    <button type="button" class="companion-hide" id="companion-hide" aria-label="Скрыть проводника" title="Скрыть проводника">×</button>
+    <a class="floating-companion-link" href="{% url 'market:personal_rating' %}" title="{{ floating_character.name }} — открыть прогресс">
+      <span class="mascot-art mascot-{{ floating_character.key }}" role="img" aria-label="{{ floating_character.name }}"></span>
+      <span class="companion-name">{{ floating_character.name }} ✧</span>
+    </a>
+  </div>
+  <button type="button" id="companion-show" class="companion-show" {% if current_trader.show_companion %}hidden{% endif %} aria-label="Показать проводника" title="Показать проводника">✧</button>
+  <form id="companion-visibility-form" action="{% url 'market:mascot_visibility' %}" method="post" hidden>{% csrf_token %}</form>
+  <span id="companion-save-status" class="companion-save-status" role="status"></span>
+</aside>
+<script>
+(() => {
+  const form = document.getElementById('companion-visibility-form');
+  const expanded = document.getElementById('companion-expanded');
+  const show = document.getElementById('companion-show');
+  const hide = document.getElementById('companion-hide');
+  const status = document.getElementById('companion-save-status');
+  async function setVisible(visible) {
+    hide.disabled = show.disabled = true; status.textContent = '';
+    try {
+      const data = new FormData(form); data.set('visible', visible ? '1' : '0');
+      const response = await fetch(form.action, { method: 'POST', body: data, headers: { 'Accept': 'application/json' } });
+      if (!response.ok || !response.headers.get('Content-Type')?.includes('application/json')) throw new Error();
+      const saved = await response.json(); expanded.hidden = !saved.visible; show.hidden = saved.visible;
+      (saved.visible ? hide : show).focus();
+    } catch { status.textContent = 'Не удалось сохранить. Попробуйте ещё раз.'; }
+    finally { hide.disabled = show.disabled = false; }
+  }
+  hide.addEventListener('click', () => setVisible(false));
+  show.addEventListener('click', () => setVisible(true));
+})();
+</script>

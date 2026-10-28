@@ -1,0 +1,288 @@
+/* Market creation wizard (docs/mockups/Create.dc.html). */
+
+.create {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.create-header {
+  padding: 6px 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.create-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.icon-button {
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.create-heading {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.create-step {
+  width: 44px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.create-progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.create-progress span {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background 200ms ease;
+}
+
+.create-progress span.is-done {
+  background: var(--ink);
+}
+
+.create-body {
+  flex: 1;
+  padding: 20px var(--gutter) 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.field-head {
+  display: flex;
+  justify-content: space-between;
+}
+
+.field-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field-counter {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.field-hint {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.field-error {
+  color: var(--no);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.create-tight {
+  margin-top: -10px;
+}
+
+.input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--ink);
+  font: 400 16px/1.4 var(--font);
+  resize: none;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.input:focus {
+  border-color: var(--ink);
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--no);
+}
+
+.input::placeholder {
+  color: var(--sub);
+}
+
+.input-short {
+  height: 48px;
+  padding: 0 12px;
+  border-radius: 12px;
+  font-size: 15px;
+  line-height: 48px;
+}
+
+.create-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.create-examples,
+.create-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.example-button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  font: 500 14px/1.3 var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.create-note {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--card);
+}
+
+.create-warning {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--no-tint);
+  color: var(--no);
+}
+
+.create-preview {
+  pointer-events: none;
+}
+
+.create-cost {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.create-cost-note {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.create-rules {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.create-rules li {
+  display: flex;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.create-rules svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.create-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  padding: 12px var(--gutter) 12px;
+  background: var(--card);
+  border-top: 1px solid var(--line);
+}
+
+.create-bar.is-native {
+  display: none;
+}
+
+.create-next {
+  flex: 1;
+}
+
+.create-back {
+  height: 52px;
+  padding: 0 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--ink);
+  font: 600 16px/1 var(--font);
+  cursor: pointer;
+}
+
+/* ---- «Разреши боту писать тебе» before publishing (Как указать итог, Main.dc.html) ---- */
+
+.create-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.create-ask-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  background: var(--yes-tint);
+  color: var(--yes);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.create-ask-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.create-ask-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.create-ask-skip {
+  height: 44px;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--sub);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}

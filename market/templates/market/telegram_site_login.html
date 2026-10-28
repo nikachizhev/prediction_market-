@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-shell"><div class="card auth-card">
+<span class="eyebrow">ВХОД ИЗ TELEGRAM</span><h1>Добро пожаловать</h1>
+<p>Нажмите кнопку, чтобы войти в свой аккаунт. Ссылка действует 10 минут и используется один раз.</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="token" id="login-token"><button class="btn" id="continue-login" disabled>Войти на сайт →</button></form>
+<p id="missing-token" hidden>Ссылка неполная. Отправьте /login вашему боту, чтобы получить новую.</p>
+</div></div>
+{% endblock %}
+{% block scripts %}<script>
+const token = location.hash.slice(1);
+history.replaceState(null, '', location.pathname);
+document.getElementById('login-token').value = token;
+document.getElementById('continue-login').disabled = !token;
+document.getElementById('missing-token').hidden = Boolean(token);
+</script>{% endblock %}

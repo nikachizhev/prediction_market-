@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Рейтинг прогнозистов</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; display: flex; flex-direction: column; background: {{t.bg}}; color: {{t.ink}}; font-family: Inter, system-ui, -apple-system, sans-serif">
+
+  <header style="padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 12px">
+    <h1 style="margin: 0; font-size: 28px; line-height: 1.1; font-weight: 700; letter-spacing: -0.02em">Рейтинг</h1>
+    <div role="tablist" aria-label="Кого показывать" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 14px; background: {{t.card}}">
+      <sc-for list="{{scopes}}" as="sc" hint-placeholder-count="2">
+        <button role="tab" aria-selected="{{sc.selected}}" onClick="{{sc.pick}}" style="height: 40px; border: none; border-radius: 10px; background: {{sc.bg}}; color: {{sc.ink}}; font: 600 14px/1 Inter, system-ui, sans-serif; cursor: pointer">{{sc.label}}</button>
+      </sc-for>
+    </div>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+      <div role="group" aria-label="Показатель" style="display: flex; gap: 6px">
+        <sc-for list="{{metrics}}" as="mt" hint-placeholder-count="2">
+          <button onClick="{{mt.pick}}" aria-pressed="{{mt.pressed}}" style="height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid {{mt.border}}; background: {{mt.bg}}; color: {{mt.ink}}; font: 500 13px/1 Inter, system-ui, sans-serif; cursor: pointer">{{mt.label}}</button>
+        </sc-for>
+      </div>
+      <div role="group" aria-label="Период" style="display: flex; gap: 2px">
+        <sc-for list="{{periods}}" as="pr" hint-placeholder-count="3">
+          <button onClick="{{pr.pick}}" aria-pressed="{{pr.pressed}}" style="height: 36px; padding: 0 8px; border: none; border-bottom: 2px solid {{pr.line}}; background: transparent; color: {{pr.ink}}; font: {{pr.weight}} 13px/1 Inter, system-ui, sans-serif; cursor: pointer">{{pr.label}}</button>
+        </sc-for>
+      </div>
+    </div>
+  </header>
+
+  <main style="flex: 1; overflow-y: auto; scrollbar-width: none; padding: 4px 16px 12px">
+    <ol aria-label="Таблица лидеров" style="margin: 0; padding: 4px 16px; list-style: none; background: {{t.card}}; border-radius: 16px">
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="10">
+        <li style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid {{r.line}}">
+          <span style="width: 28px; height: 28px; flex: 0 0 auto; border-radius: 999px; background: {{r.rankBg}}; color: {{r.rankInk}}; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums">{{r.rank}}</span>
+          <span style="width: 36px; height: 36px; flex: 0 0 auto; border-radius: 999px; background: {{t.bg}}; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700">{{r.initial}}</span>
+          <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 15px; font-weight: 600">{{r.name}}</span>
+            <span style="font-size: 12px; color: {{t.sub}}">{{r.sub}}</span>
+          </span>
+          <span style="font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums">{{r.value}}</span>
+        </li>
+      </sc-for>
+    </ol>
+    <p style="margin: 12px 4px 0; font-size: 12px; line-height: 1.4; color: {{t.sub}}">Прибыль считается без бонусов. В рейтинг по точности попадают те, у кого от 20 завершённых прогнозов.</p>
+  </main>
+
+  <section aria-label="Твоё место" style="flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 10px 32px 10px 32px; background: {{t.card}}; border-top: 1px solid {{t.line}}">
+    <span style="width: 28px; height: 28px; flex: 0 0 auto; border-radius: 999px; background: {{t.ink}}; color: {{t.card}}; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums">{{me.rank}}</span>
+    <span style="width: 36px; height: 36px; flex: 0 0 auto; border-radius: 999px; background: {{t.yesTint}}; color: {{t.yes}}; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700">Ты</span>
+    <span style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 15px; font-weight: 600">Ты</span>
+      <span style="font-size: 12px; color: {{t.sub}}">{{me.sub}}</span>
+    </span>
+    <span style="font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums">{{me.value}}</span>
+  </section>
+
+  <div style="flex: 0 0 auto">
+    <dc-import name="TabBar" active="rating" dark="{{dark}}" hint-size="390px,72px"></dc-import>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Тема"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { scope: 'all', metric: 'profit', period: 'all' };
+  }
+
+  theme() {
+    if (this.props.dark ?? false) {
+      return { bg: '#0E1014', card: '#181B21', ink: '#F1F3F5', sub: '#9AA3AE', line: '#2A2E36', yes: '#7DB0FF', yesTint: '#1E2A3C', gold: '#4A3B17', silver: '#2E333B', bronze: '#43291A' };
+    }
+    return { bg: '#F2F3F5', card: '#FFFFFF', ink: '#111418', sub: '#5F6672', line: '#E3E5E8', yes: '#1A5FB8', yesTint: '#E7EFFA', gold: '#F7E3AE', silver: '#E3E7EC', bronze: '#F1D7C4' };
+  }
+
+  plural(n, one, few, many) {
+    const a = n % 10, b = n % 100;
+    if (a === 1 && b !== 11) return one;
+    if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return few;
+    return many;
+  }
+
+  renderVals() {
+    const t = this.theme();
+    const s = this.state;
+    const people = [
+      { name: 'Сова', profit: 1240, acc: 78, cnt: 112 },
+      { name: 'Енот', profit: 986, acc: 71, cnt: 94, friend: true },
+      { name: 'Лиса', profit: 812, acc: 74, cnt: 61 },
+      { name: 'Филин', profit: 640, acc: 69, cnt: 88 },
+      { name: 'Барсук', profit: 577, acc: 66, cnt: 53 },
+      { name: 'Рысь', profit: 430, acc: 72, cnt: 40 },
+      { name: 'Выдра', profit: 388, acc: 63, cnt: 71, friend: true },
+      { name: 'Бобр', profit: 351, acc: 61, cnt: 49 },
+      { name: 'Ёж', profit: 322, acc: 65, cnt: 37, friend: true },
+      { name: 'Кот', profit: 318, acc: 60, cnt: 58, friend: true }
+    ];
+    const me = { name: 'Ты', profit: 312, acc: 64, cnt: 47, me: true };
+    const mult = { week: 0.12, month: 0.4, all: 1 }[s.period];
+    const shape = (p, i) => {
+      const wobble = s.period === 'all' ? 0 : ((i * 37) % 11 - 5) / 12;
+      return Object.assign({}, p, {
+        profitP: Math.round(p.profit * mult * (1 + wobble)),
+        accP: Math.max(40, Math.min(95, p.acc + (s.period === 'all' ? 0 : ((i * 13) % 7) - 3))),
+        cntP: Math.max(1, Math.round(p.cnt * (s.period === 'week' ? 0.15 : s.period === 'month' ? 0.45 : 1)))
+      });
+    };
+    let pool = people.map(shape);
+    const meP = shape(me, 4);
+    if (s.scope === 'friends') pool = pool.filter((p) => p.friend).concat([meP]);
+    const key = s.metric === 'profit' ? 'profitP' : 'accP';
+    pool.sort((a, b) => b[key] - a[key]);
+
+    const fmtProfit = (v) => (v >= 0 ? '+' : '−') + Math.abs(v).toLocaleString('ru-RU');
+    const sub = (p) => p.cntP + ' ' + this.plural(p.cntP, 'прогноз', 'прогноза', 'прогнозов') + ' · ' + (s.metric === 'profit' ? 'точность ' + p.accP + '%' : 'прибыль ' + fmtProfit(p.profitP));
+    const value = (p) => (s.metric === 'profit' ? fmtProfit(p.profitP) : p.accP + '%');
+    const medal = [t.gold, t.silver, t.bronze];
+
+    const rows = pool.map((p, i) => ({
+      rank: i + 1, name: p.me ? 'Ты' : p.name, initial: p.me ? 'Ты' : p.name.charAt(0),
+      sub: sub(p), value: value(p),
+      rankBg: i < 3 ? medal[i] : 'transparent', rankInk: i < 3 ? t.ink : t.sub,
+      line: i === 0 ? 'transparent' : t.line
+    }));
+    const meRank = s.scope === 'friends' ? pool.findIndex((p) => p.me) + 1 : (s.metric === 'profit' ? 18 : 23);
+
+    const seg = (on) => ({ bg: on ? t.ink : 'transparent', ink: on ? t.card : t.ink, selected: on ? 'true' : 'false' });
+    return {
+      t: t, dark: this.props.dark ?? false,
+      scopes: [['all', 'Все'], ['friends', 'Друзья']].map(([k, label]) => Object.assign({ label: label, pick: () => this.setState({ scope: k }) }, seg(k === s.scope))),
+      metrics: [['profit', 'Прибыль'], ['acc', 'Точность']].map(([k, label]) => {
+        const on = k === s.metric;
+        return { label: label, pressed: on ? 'true' : 'false', bg: on ? t.ink : t.card, ink: on ? t.card : t.ink, border: on ? t.ink : t.line, pick: () => this.setState({ metric: k }) };
+      }),
+      periods: [['week', 'Неделя'], ['month', 'Месяц'], ['all', 'Всё время']].map(([k, label]) => {
+        const on = k === s.period;
+        return { label: label, pressed: on ? 'true' : 'false', ink: on ? t.ink : t.sub, weight: on ? 600 : 500, line: on ? t.ink : 'transparent', pick: () => this.setState({ period: k }) };
+      }),
+      rows: s.scope === 'friends' ? rows : rows.slice(0, 10),
+      me: { rank: meRank, sub: sub(meP), value: value(meP) }
+    };
+  }
+}
+</script>
+</body>
+</html>

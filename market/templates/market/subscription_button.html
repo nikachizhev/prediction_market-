@@ -1,0 +1,7 @@
+{% if current_trader %}
+{% if subscribed or question.display_state == 'open' or question.display_state == 'closed' %}
+<form method="post" action="{% url 'market:subscribe' question.pk %}" class="subscription-control">{% csrf_token %}
+{% if subscribed %}<input type="hidden" name="action" value="unsubscribe"><button class="btn ghost">✓ Вы следите · Отписаться</button>
+{% else %}<button class="btn ghost" name="action" value="subscribe">♧ Следить без ставки</button>{% endif %}
+<span class="small muted">Результат и изменения от 10 п.п. — в колокольчике. Не чаще раза в час для изменений.</span></form>
+{% endif %}{% endif %}
