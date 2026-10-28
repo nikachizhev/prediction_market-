@@ -1,0 +1,76 @@
+name: prediction-observability
+x-app: &app
+  build:
+    context: .
+    dockerfile: deploy/observability/Dockerfile
+  environment: &env
+    DJANGO_SETTINGS_MODULE: config.observability_settings
+    POSTGRES_HOST: db
+    POSTGRES_DB: observability_demo
+    POSTGRES_USER: observability
+    POSTGRES_PASSWORD: local-demo-only
+    DJANGO_SECRET_KEY: isolated-local-demo-only
+    METRICS_ENABLED: '1'
+    METRICS_TOKEN: local-observability-scrape
+  restart: unless-stopped
+services:
+  db:
+    image: postgres:17.6
+    environment:
+      POSTGRES_DB: observability_demo
+      POSTGRES_USER: observability
+      POSTGRES_PASSWORD: local-demo-only
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U observability -d observability_demo']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  app:
+    <<: *app
+    ports: ['127.0.0.1:18000:8000']
+    depends_on:
+      db: {condition: service_healthy}
+    healthcheck:
+      test: ['CMD', 'python', '-c', "import urllib.request; r=urllib.request.Request('http://localhost:8000/metrics',headers={'Authorization':'Bearer local-observability-scrape'}); urllib.request.urlopen(r)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+  worker:
+    <<: *app
+    command: ['python', 'manage.py', 'run_worker', '--interval', '10']
+    environment:
+      <<: *env
+      WORKER_METRICS_HOST: 0.0.0.0
+      WORKER_METRICS_PORT: '9101'
+    depends_on:
+      app: {condition: service_healthy}
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    ports: ['127.0.0.1:19090:9090']
+    volumes:
+      - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command: ['--config.file=/etc/prometheus/prometheus.yml', '--storage.tsdb.retention.time=15d']
+    depends_on:
+      app: {condition: service_healthy}
+  grafana:
+    image: grafana/grafana:12.1.1
+    ports: ['127.0.0.1:13000:3000']
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: local-observability
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/prediction-market.json
+    volumes:
+      - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus]
+volumes:
+  db-data:
+  prometheus-data:
+  grafana-data:

@@ -23,6 +23,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "market.http_metrics.MetricsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -137,3 +138,10 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "no
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT", BASE_DIR / "media"))
 MINIAPP_DIST = Path(os.environ.get("MINIAPP_DIST", BASE_DIR / "miniapp" / "dist"))
+
+# Opt-in internal monitoring; never expose without a bearer token.
+METRICS_ENABLED = os.environ.get("METRICS_ENABLED", "0") == "1"
+METRICS_TOKEN = os.environ.get("METRICS_TOKEN", "")
+WORKER_METRICS_PORT = int(os.environ.get("WORKER_METRICS_PORT", "0"))
+WORKER_METRICS_HOST = os.environ.get("WORKER_METRICS_HOST", "127.0.0.1")
+OBSERVABILITY_DEMO = False

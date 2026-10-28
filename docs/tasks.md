@@ -58,6 +58,10 @@ MVP = E1–E5 + минимум бота (кнопка «Открыть прил�
 - **«Получено» в приглашениях** — только награды за приглашённых мной друзей, без моей собственной награды как приглашённого.
 - **Metabase** запускается профилем: `docker compose --profile metabase up -d`; обычный `docker compose up` его не трогает.
 
+## Локальная наблюдаемость (28.10.2026)
+
+- **T16 — done:** бизнес-снимки БД, HTTP/worker-метрики, изолированный Prometheus + Grafana с отдельными бизнес- и техническим дашбордами; ветка `miniapp2-observability`. Запуск и определения: `docs/observability.md`. Проверки: после rebase на `main` (`c75699a`): SQLite 362 passed/8 skipped, PostgreSQL 368 passed/2 skipped, frontend 159 passed и сборка, 35 PromQL-запросов панелей, multiprocess restart и headless-проверка интерфейса. Только локально; production-деплой не изменён.
+
 ## Ответы на открытые вопросы спеки
 
 Решено пользователем 25.10.2026:
