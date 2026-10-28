@@ -63,6 +63,13 @@ describe('defaultDraft', () => {
 });
 
 describe('dateErrors', () => {
+  it('uses selected result time and rejects a result before trading closes', () => {
+    const valid = draft({ closeDate: '2026-11-01', closeTime: '14:00', resultDate: '2026-11-01', resultTime: '15:30' });
+    expect(createPayload(valid)!.resolves_at).toMatch(/^2026-11-01T15:30:00/);
+    expect(dateErrors(valid, NOW).resolves).toBeUndefined();
+    expect(dateErrors({ ...valid, resultTime: '13:00' }, NOW).resolves).toMatch(/раньше/);
+    expect(dateErrors({ ...valid, resultTime: '' }, NOW).resolves).toBe('Укажите дату и время итога.');
+  });
   it('needs at least an hour of trading', () => {
     expect(dateErrors(draft({ closeDate: '2026-10-25', closeTime: '12:30' }), NOW).closes).toBe(
       'Приём прогнозов — хотя бы час.',
@@ -91,7 +98,7 @@ describe('dateErrors', () => {
   it('asks for missing dates', () => {
     const errors = dateErrors(draft({ closeDate: '', resultDate: '' }), NOW);
     expect(errors.closes).toBe('Укажите дату и время.');
-    expect(errors.resolves).toBe('Укажите дату.');
+    expect(errors.resolves).toBe('Укажите дату и время итога.');
   });
 });
 
@@ -183,7 +190,7 @@ describe('draft storage', () => {
 describe('resolutionRule', () => {
   it('names the result date and what the bot will ask for', () => {
     expect(resolutionRule(draft({ resultDate: '2026-11-16' }), NOW)).toBe(
-      '16 ноября бот спросит, чем закончилось: нажмёшь ДА или НЕТ и пришлёшь фото или скриншот',
+      '16 ноября в 23:59 бот спросит, чем закончилось: нажмёшь ДА или НЕТ и пришлёшь фото или скриншот',
     );
   });
 

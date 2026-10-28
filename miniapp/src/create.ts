@@ -14,8 +14,9 @@ export interface CreateDraft {
   closeDate: string;
   /** "HH:MM" in the user's local time. */
   closeTime: string;
-  /** "YYYY-MM-DD"; the result is due by the end of that day. */
+  /** Local date and time when the result becomes known. */
   resultDate: string;
+  resultTime: string;
 }
 
 export type CreateField = 'title' | 'criteria' | 'category' | 'closes' | 'resolves';
@@ -51,6 +52,7 @@ export function defaultDraft(now: Date = new Date()): CreateDraft {
     closeDate: dateInputValue(close),
     closeTime: RESULT_TIME,
     resultDate: dateInputValue(result),
+    resultTime: RESULT_TIME,
   };
 }
 
@@ -86,7 +88,7 @@ export function closesAtIso(draft: CreateDraft): string | null {
 }
 
 export function resolvesAtIso(draft: CreateDraft): string | null {
-  return localIso(draft.resultDate, RESULT_TIME);
+  return localIso(draft.resultDate, draft.resultTime);
 }
 
 /** Problems with the dates, worded like the server's errors. */
@@ -95,7 +97,7 @@ export function dateErrors(draft: CreateDraft, now: Date = new Date()): Partial<
   const closes = closesAtIso(draft);
   const resolves = resolvesAtIso(draft);
   if (!closes) errors.closes = 'Укажите дату и время.';
-  if (!resolves) errors.resolves = 'Укажите дату.';
+  if (!resolves) errors.resolves = 'Укажите дату и время итога.';
   if (closes) {
     const left = Date.parse(closes) - now.getTime();
     if (left < MIN_OPEN_MS) errors.closes = 'Приём прогнозов — хотя бы час.';
@@ -192,7 +194,7 @@ export function loadDraft(now: Date = new Date()): CreateDraft {
   try {
     const raw = window.sessionStorage.getItem(STORAGE_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : null;
-    if (isDraft(parsed)) return (memoryDraft = parsed);
+    if (isDraft(parsed)) return (memoryDraft = { ...parsed, resultTime: typeof parsed.resultTime === 'string' ? parsed.resultTime : RESULT_TIME });
   } catch {
     // Storage may be unavailable (private mode, WebView restrictions).
   }
@@ -220,6 +222,6 @@ export function clearDraft(): void {
 /** «16 ноября бот спросит, чем закончилось…» for the review step; the date is the result date. */
 export function resolutionRule(draft: CreateDraft, now: Date = new Date()): string {
   const resolves = resolvesAtIso(draft);
-  const when = resolves ? formatDayMonth(resolves, now) : 'В дату итога';
+  const when = resolves ? `${formatDayMonth(resolves, now)} в ${draft.resultTime}` : 'В дату итога';
   return `${when} бот спросит, чем закончилось: нажмёшь ДА или НЕТ и пришлёшь фото или скриншот`;
 }

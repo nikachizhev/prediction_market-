@@ -13,6 +13,27 @@ afterEach(() => {
 });
 
 describe('api client', () => {
+  it('requests the personalized feed and reports dismiss/undo with booleans', async () => {
+    const fetch = mockFetch(200, {});
+    await api.markets({ sort: 'recommended' });
+    expect(fetch.mock.calls[0][0]).toBe('/api/markets?sort=recommended');
+    await api.dismissMarket(7);
+    await api.dismissMarket(7, false);
+    expect(fetch.mock.calls[1][0]).toBe('/api/markets/7/dismiss');
+    expect(JSON.parse(fetch.mock.calls[1][1]!.body as string)).toEqual({ dismissed: true });
+    expect(JSON.parse(fetch.mock.calls[2][1]!.body as string)).toEqual({ dismissed: false });
+    await api.resetHiddenMarkets();
+    expect(fetch.mock.calls[3][0]).toBe('/api/feed/reset-hidden');
+    expect(fetch.mock.calls[3][1]!.method).toBe('POST');
+  });
+
+  it('can clear all interests and send a market impression', async () => {
+    const fetch = mockFetch(200, {});
+    await api.updateMe({ interests: [] });
+    expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toEqual({ interests: [] });
+    await api.event('feed_impression', { market: 8, sort: 'recommended' });
+    expect(JSON.parse(fetch.mock.calls[1][1]!.body as string)).toEqual({ name: 'feed_impression', props: { market: 8, sort: 'recommended' } });
+  });
   it('sends initData in the Authorization header', async () => {
     vi.stubEnv('VITE_DEV_INIT_DATA', 'query_id=1&hash=abc');
     const fetch = mockFetch(200, { id: 1 });
