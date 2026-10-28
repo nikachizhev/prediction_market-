@@ -65,7 +65,7 @@ def people(db):
 def market(people):
     creator, anya, boris, _ = people
     now = timezone.now()
-    q = services.create_market(creator, title="Снег до декабря?", criteria="Росгидромет", category="weather",
+    q = services.create_market(creator, title="Снег до декабря?", criteria="Росгидромет", category="fun",
                                closes_at=now + timedelta(hours=2), resolves_at=now + timedelta(hours=3))
     services.buy(anya, q, "yes", 100)
     services.buy(boris, q, "no", 50)

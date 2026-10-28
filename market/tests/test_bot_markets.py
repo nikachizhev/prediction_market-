@@ -180,7 +180,7 @@ def test_callbacks_still_reach_resolution_dialog(bot, people):
 def test_chart_caption_with_position_and_upload_then_file_id(bot, render, people):
     anya, boris = people
     now = timezone.now()
-    q = services.create_market(boris, title="Снег до декабря?", criteria="Росгидромет", category="weather",
+    q = services.create_market(boris, title="Снег до декабря?", criteria="Росгидромет", category="fun",
                                closes_at=now + timedelta(days=2), resolves_at=now + timedelta(days=3))
     services.buy(anya, q, "yes", 100)
     q.refresh_from_db()

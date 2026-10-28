@@ -24,7 +24,7 @@ function draft(patch: Partial<CreateDraft> = {}): CreateDraft {
     ...defaultDraft(NOW),
     title: 'Будет ли снег в Москве до 1 декабря?',
     criteria: 'ДА, если Гидрометцентр сообщит о снеге.',
-    category: 'weather',
+    category: 'fun',
     ...patch,
   };
 }
@@ -120,7 +120,7 @@ describe('createPayload', () => {
     const payload = createPayload(draft({ title: '  Вопрос про снег?  ', criteria: ' ДА, если снег. ' }))!;
     expect(payload.title).toBe('Вопрос про снег?');
     expect(payload.criteria).toBe('ДА, если снег.');
-    expect(payload.category).toBe('weather');
+    expect(payload.category).toBe('fun');
     expect(payload.closes_at).toMatch(/^2026-11-01T23:59:00[+-]\d{2}:\d{2}$/);
     expect(payload.resolves_at).toMatch(/^2026-11-02T23:59:00[+-]\d{2}:\d{2}$/);
   });
@@ -159,7 +159,7 @@ describe('preview and cost', () => {
     expect(card.prob).toBe(0.5);
     expect(card.change_24h).toBe(0);
     expect(card.participants).toBe(0);
-    expect(card.category).toBe('weather');
+    expect(card.category).toBe('fun');
     expect(previewCard(draft({ title: '  ' })).title).toBe('Твой вопрос появится здесь');
   });
 
