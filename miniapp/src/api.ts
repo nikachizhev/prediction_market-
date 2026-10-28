@@ -43,6 +43,23 @@ export interface Me {
   unread_notifications?: number;
 }
 
+export interface SubmarketCard extends MarketCard {
+  label: string;
+  can_trade?: boolean;
+  trade_block?: string | null;
+  max_amount?: Money;
+  my_position?: Position | null;
+  trades?: { side: Side; amount: Money; prob_after: number; at: string; sell: boolean }[];
+  top_moves?: TopMove[];
+  resolution?: {
+    proposed_outcome: Side | 'cancel' | null;
+    evidence_url: string | null;
+    note: string;
+    dispute_until: string | null;
+    can_dispute: boolean;
+  } | null;
+}
+
 export interface MarketCard {
   id: number;
   title: string;
@@ -58,6 +75,8 @@ export interface MarketCard {
   starred: boolean;
   /** Where my position leans («Твой прогноз»). */
   my_side?: Side | null;
+  /** Child binary options for a multiple-choice market. */
+  submarkets?: SubmarketCard[];
 }
 
 export interface Position {
@@ -68,6 +87,8 @@ export interface Position {
   payout_if_yes: Money;
   payout_if_no: Money;
 }
+
+export type SubmarketDetail = SubmarketCard;
 
 export interface MarketDetail extends MarketCard {
   criteria: string;
@@ -371,7 +392,14 @@ export const api = {
 
   /** request_key makes creation idempotent; pass the same key when retrying the same submission. */
   createMarket: (
-    data: { title: string; criteria: string; category: string; closes_at: string; resolves_at: string },
+    data: {
+      title: string;
+      criteria: string;
+      category: string;
+      closes_at: string;
+      resolves_at: string;
+      options?: string[];
+    },
     request_key: string = newRequestKey(),
   ) =>
     request<{

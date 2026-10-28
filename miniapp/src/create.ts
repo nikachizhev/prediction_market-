@@ -4,6 +4,7 @@ import type { MarketCard } from './api';
 import { formatDayMonth } from './format';
 
 export type CreateStep = 1 | 2 | 3;
+export type CreateMode = 'binary' | 'multiple';
 
 export interface CreateDraft {
   step: CreateStep;
@@ -16,11 +17,16 @@ export interface CreateDraft {
   closeTime: string;
   /** "YYYY-MM-DD"; the result is due by the end of that day. */
   resultDate: string;
+  mode?: CreateMode;
+  options?: string[];
 }
 
-export type CreateField = 'title' | 'criteria' | 'category' | 'closes' | 'resolves';
+export type CreateField = 'title' | 'options' | 'criteria' | 'category' | 'closes' | 'resolves';
 
 export const TITLE_MAX = 120;
+export const OPTION_MAX = 80;
+export const OPTIONS_MIN = 2;
+export const OPTIONS_MAX = 10;
 /** Below these lengths «Далее» stays disabled, as in the mockup. */
 export const TITLE_MIN = 10;
 export const CRITERIA_MIN = 15;
@@ -109,10 +115,23 @@ export function dateErrors(draft: CreateDraft, now: Date = new Date()): Partial<
   return errors;
 }
 
+export function cleanedOptions(draft: CreateDraft): string[] {
+  return (draft.options ?? []).map((o) => o.trim()).filter((o) => o.length > 0);
+}
+
+export function optionsOk(draft: CreateDraft): boolean {
+  if (draft.mode !== 'multiple') return true;
+  const opts = cleanedOptions(draft);
+  if (opts.length < OPTIONS_MIN || opts.length > OPTIONS_MAX) return false;
+  if (opts.some((o) => o.length > OPTION_MAX)) return false;
+  const unique = new Set(opts.map((o) => o.toLowerCase()));
+  return unique.size === opts.length;
+}
+
 /** Whether the step is filled in enough to go on (and, on step 2, the dates are valid). */
 export function canProceed(draft: CreateDraft, step: CreateStep, now: Date = new Date()): boolean {
   const title = draft.title.trim();
-  const titleOk = title.length >= TITLE_MIN && title.length <= TITLE_MAX;
+  const titleOk = title.length >= TITLE_MIN && title.length <= TITLE_MAX && optionsOk(draft);
   if (step === 1) return titleOk;
   const rulesOk =
     draft.criteria.trim().length >= CRITERIA_MIN &&
@@ -126,18 +145,23 @@ export function createPayload(draft: CreateDraft) {
   const closes_at = closesAtIso(draft);
   const resolves_at = resolvesAtIso(draft);
   if (!closes_at || !resolves_at) return null;
-  return {
+  const base = {
     title: draft.title.trim(),
     criteria: draft.criteria.trim(),
     category: draft.category,
     closes_at,
     resolves_at,
   };
+  if (draft.mode === 'multiple') {
+    return { ...base, options: cleanedOptions(draft) };
+  }
+  return base;
 }
 
 /** Which field a server validation error belongs to; null means "show as a toast". */
 export function errorField(message: string): CreateField | null {
   if (/вопрос/i.test(message)) return 'title';
+  if (/вариант/i.test(message)) return 'options';
   if (/определяем результат/i.test(message)) return 'criteria';
   if (/категори/i.test(message)) return 'category';
   if (/^Итог/.test(message)) return 'resolves';
@@ -146,25 +170,46 @@ export function errorField(message: string): CreateField | null {
 }
 
 export function stepOfField(field: CreateField): CreateStep {
-  return field === 'title' ? 1 : 2;
+  return field === 'title' || field === 'options' ? 1 : 2;
 }
 
 /** The card exactly as the feed will show a brand-new market: 50%, no history yet. */
 export function previewCard(draft: CreateDraft): MarketCard {
-  return {
+  const closes_at = closesAtIso(draft) ?? new Date().toISOString();
+  const title = draft.title.trim() || 'Твой вопрос появится здесь';
+  const card: MarketCard = {
     id: 0,
-    title: draft.title.trim() || 'Твой вопрос появится здесь',
+    title,
     category: draft.category,
     prob: 0.5,
     change_24h: 0,
     spark: [0.5, 0.5],
     participants: 0,
     volume: '0.00',
-    closes_at: closesAtIso(draft) ?? new Date().toISOString(),
+    closes_at,
     status: 'open',
     outcome: null,
     starred: false,
   };
+  if (draft.mode === 'multiple') {
+    const opts = cleanedOptions(draft);
+    card.submarkets = (opts.length > 0 ? opts : ['Вариант 1', 'Вариант 2']).map((label, idx) => ({
+      id: -(idx + 1),
+      label,
+      title: `${title} — ${label}`,
+      category: draft.category,
+      prob: 0.5,
+      change_24h: 0,
+      spark: [0.5, 0.5],
+      participants: 0,
+      volume: '0.00',
+      closes_at,
+      status: 'open',
+      outcome: null,
+      starred: false,
+    }));
+  }
+  return card;
 }
 
 /** Balance after paying for the market, or null if it is not enough. */

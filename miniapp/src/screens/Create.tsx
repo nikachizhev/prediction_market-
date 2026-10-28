@@ -20,6 +20,9 @@ import {
   resolvesAtIso,
   saveDraft,
   stepOfField,
+  OPTION_MAX,
+  OPTIONS_MAX,
+  OPTIONS_MIN,
   TITLE_MAX,
   type CreateDraft,
   type CreateField,
@@ -83,6 +86,7 @@ export function CreateScreen() {
       const keys = Object.keys(patch);
       const cleared = { ...prev };
       if (keys.includes('title')) delete cleared.title;
+      if (keys.includes('options') || keys.includes('mode')) delete cleared.options;
       if (keys.includes('criteria')) delete cleared.criteria;
       if (keys.includes('category')) delete cleared.category;
       if (keys.some((k) => k === 'closeDate' || k === 'closeTime')) delete cleared.closes;
@@ -212,6 +216,34 @@ export function CreateScreen() {
           <>
             <h1 className="screen-title">О чём спрашиваем?</h1>
             <div className="field">
+              <span className="field-label">Формат рынка</span>
+              <div className="create-mode-tabs" role="tablist" aria-label="Формат рынка">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={(draft.mode ?? 'binary') === 'binary'}
+                  className={`create-mode-tab ${(draft.mode ?? 'binary') === 'binary' ? 'is-active' : ''}`}
+                  onClick={() => update({ mode: 'binary' })}
+                >
+                  ДА / НЕТ
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={draft.mode === 'multiple'}
+                  className={`create-mode-tab ${draft.mode === 'multiple' ? 'is-active' : ''}`}
+                  onClick={() =>
+                    update({
+                      mode: 'multiple',
+                      options: draft.options && draft.options.length >= OPTIONS_MIN ? draft.options : ['', ''],
+                    })
+                  }
+                >
+                  Несколько вариантов
+                </button>
+              </div>
+            </div>
+            <div className="field">
               <div className="field-head">
                 <label htmlFor="create-q" className="field-label">
                   Вопрос
@@ -227,15 +259,74 @@ export function CreateScreen() {
                 maxLength={TITLE_MAX}
                 value={draft.title}
                 onChange={(e) => update({ title: e.target.value.slice(0, TITLE_MAX) })}
-                placeholder="Например: Сдам ли я сессию без троек?"
+                placeholder={
+                  draft.mode === 'multiple'
+                    ? 'Например: Оживет ли e-mkn?'
+                    : 'Например: Сдам ли я сессию без троек?'
+                }
                 aria-invalid={!!fieldError('title') || undefined}
                 aria-describedby="create-q-hint"
               />
               <span id="create-q-hint" className="sub field-hint">
-                Вопрос должен иметь однозначный ответ ДА или НЕТ, дату и понятный способ проверить итог.
+                {draft.mode === 'multiple'
+                  ? 'По каждому варианту участники смогут отдельно ставить ДА или НЕТ.'
+                  : 'Вопрос должен иметь однозначный ответ ДА или НЕТ, дату и понятный способ проверить итог.'}
               </span>
               {fieldError('title') && <span className="field-error">{fieldError('title')}</span>}
             </div>
+            {draft.mode === 'multiple' && (
+              <div className="field">
+                <div className="field-head">
+                  <span className="field-label">Варианты ответа</span>
+                  <span className="sub field-counter">
+                    {(draft.options ?? ['', '']).length} / {OPTIONS_MAX}
+                  </span>
+                </div>
+                <div className="create-options-list">
+                  {(draft.options ?? ['', '']).map((opt, idx) => {
+                    const opts = draft.options ?? ['', ''];
+                    return (
+                      <div key={idx} className="create-option-row">
+                        <input
+                          type="text"
+                          className="input input-short"
+                          maxLength={OPTION_MAX}
+                          value={opt}
+                          placeholder={`Вариант ${idx + 1} (например: ${
+                            idx === 0 ? 'до конца октября' : idx === 1 ? 'до конца ноября' : 'до конца года'
+                          })`}
+                          onChange={(e) => {
+                            const nextOpts = [...opts];
+                            nextOpts[idx] = e.target.value.slice(0, OPTION_MAX);
+                            update({ options: nextOpts });
+                          }}
+                        />
+                        {opts.length > OPTIONS_MIN && (
+                          <button
+                            type="button"
+                            className="create-option-remove"
+                            aria-label={`Удалить вариант ${idx + 1}`}
+                            onClick={() => update({ options: opts.filter((_, i) => i !== idx) })}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {(draft.options ?? ['', '']).length < OPTIONS_MAX && (
+                  <button
+                    type="button"
+                    className="create-option-add"
+                    onClick={() => update({ options: [...(draft.options ?? ['', '']), ''] })}
+                  >
+                    + Добавить вариант
+                  </button>
+                )}
+                {fieldError('options') && <span className="field-error">{fieldError('options')}</span>}
+              </div>
+            )}
             <div className="field">
               <span className="field-label">Примеры</span>
               <div className="create-examples">

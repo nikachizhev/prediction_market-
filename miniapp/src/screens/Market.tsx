@@ -62,10 +62,18 @@ export function MarketScreen() {
   const [history, setHistory] = useState<{ period: HistoryPeriod; points: HistoryPoint[] } | null>(null);
   const [historyKey, setHistoryKey] = useState(0);
   const [reportOpen, setReportOpen] = useState(false);
+  const [selectedSubId, setSelectedSubId] = useState<number | null>(null);
 
   const marketRef = useRef<MarketDetail | null>(null);
   marketRef.current = market;
   const snapshot = useRef<MarketDetail | null>(null);
+
+  const activeSub = useMemo(() => {
+    if (!market?.submarkets || market.submarkets.length === 0) return null;
+    return market.submarkets.find((s) => s.id === selectedSubId) ?? market.submarkets[0];
+  }, [market, selectedSubId]);
+
+  const historyTargetId = activeSub ? activeSub.id : marketId;
 
   useEffect(() => {
     if (!Number.isInteger(marketId) || marketId <= 0) {
@@ -99,13 +107,13 @@ export function MarketScreen() {
     if (state !== 'ready') return;
     let cancelled = false;
     api
-      .history(marketId, period)
+      .history(historyTargetId, period)
       .then((res) => !cancelled && setHistory({ period, points: res.points }))
       .catch(() => !cancelled && setHistory({ period, points: [] }));
     return () => {
       cancelled = true;
     };
-  }, [marketId, period, historyKey, state]);
+  }, [historyTargetId, period, historyKey, state]);
 
   const category = market?.category;
   useEffect(() => {
@@ -129,23 +137,82 @@ export function MarketScreen() {
   };
   const commit = (fresh: MarketDetail) => {
     snapshot.current = null;
-    setMarket(fresh);
+    if (fresh.id === marketId) {
+      setMarket(fresh);
+    } else {
+      setMarket((prev) =>
+        prev && prev.submarkets
+          ? {
+              ...prev,
+              submarkets: prev.submarkets.map((s) =>
+                s.id === fresh.id
+                  ? {
+                      ...s,
+                      prob: fresh.prob,
+                      change_24h: fresh.change_24h,
+                      spark: fresh.spark,
+                      participants: fresh.participants,
+                      volume: fresh.volume,
+                      status: fresh.status,
+                      outcome: fresh.outcome,
+                      can_trade: fresh.can_trade,
+                      trade_block: fresh.trade_block,
+                      max_amount: fresh.max_amount,
+                      my_position: fresh.my_position,
+                      trades: fresh.trades,
+                      top_moves: fresh.top_moves,
+                      resolution: fresh.resolution,
+                    }
+                  : s,
+              ),
+            }
+          : prev,
+      );
+      api
+        .market(marketId)
+        .then((parentFresh) => setMarket(parentFresh))
+        .catch(() => {});
+    }
     setHistoryKey((k) => k + 1);
   };
 
   const trade = useTradeSheet({
-    onOptimistic: (_id, prob) => {
+    onOptimistic: (id, prob) => {
       remember();
-      setMarket((m) => (m ? applyProbability(m, prob) : m));
+      setMarket((m) => {
+        if (!m) return m;
+        if (m.id === id) return applyProbability(m, prob);
+        if (m.submarkets?.some((s) => s.id === id)) {
+          return {
+            ...m,
+            submarkets: m.submarkets.map((s) => (s.id === id ? applyProbability(s, prob) : s)),
+          };
+        }
+        return m;
+      });
     },
     onCommit: (result) => commit(result.market),
     onRollback: restore,
   });
 
   const sell = useSell({
-    onOptimistic: (_id, side, proceeds) => {
+    onOptimistic: (id, side, proceeds) => {
       remember();
-      setMarket((m) => (m && m.my_position ? { ...m, my_position: positionAfterSell(m.my_position, side, proceeds) } : m));
+      setMarket((m) => {
+        if (!m) return m;
+        if (m.id === id && m.my_position) {
+          return { ...m, my_position: positionAfterSell(m.my_position, side, proceeds) };
+        }
+        if (m.submarkets?.some((s) => s.id === id)) {
+          return {
+            ...m,
+            submarkets: m.submarkets.map((s) =>
+              s.id === id && s.my_position ? { ...s, my_position: positionAfterSell(s.my_position, side, proceeds) } : s,
+            ),
+          };
+        }
+        return m;
+      });
     },
     onCommit: (result) => commit(result.market),
     onRollback: restore,
@@ -261,15 +328,16 @@ export function MarketScreen() {
   }
 
   const m = market!;
-  const view = statusView(m.status);
-  const pct = splitPercents(m.prob);
-  const stats = m.my_position ? positionStats(m.my_position) : null;
-  const sides = heldSides(m.my_position);
+  const target = activeSub ?? m;
+  const view = statusView(target.status);
+  const pct = splitPercents(target.prob);
+  const stats = target.my_position ? positionStats(target.my_position) : null;
+  const sides = heldSides(target.my_position);
   const showPosition = !!stats && sides.length > 0 && (view.phase === 'open' || view.phase === 'closed' || view.phase === 'review');
-  const sellable = canSell(m);
+  const sellable = canSell(target);
   const until = untilResult(m.resolves_at);
-  const blocked = !m.can_trade || view.phase !== 'open';
-  const blockText = m.trade_block ?? (m.is_creator ? 'Создатель рынка не может делать прогнозы на свой рынок.' : 'Приём прогнозов закрыт.');
+  const blocked = !(target.can_trade ?? m.can_trade) || view.phase !== 'open';
+  const blockText = target.trade_block ?? m.trade_block ?? (m.is_creator ? 'Создатель рынка не может делать прогнозы на свой рынок.' : 'Приём прогнозов закрыт.');
 
   return (
     <div className="screen mk">
@@ -300,6 +368,70 @@ export function MarketScreen() {
           </div>
         </div>
 
+        {m.submarkets && m.submarkets.length > 0 && (
+          <section className="card mk-section mk-options-card" aria-label="Варианты ответа">
+            <span className="mk-section-title">Варианты</span>
+            <div className="mk-options-list">
+              {m.submarkets.map((sub) => {
+                const subPct = splitPercents(sub.prob);
+                const isSelected = activeSub?.id === sub.id;
+                const subBlocked = !sub.can_trade || statusView(sub.status).phase !== 'open';
+                return (
+                  <div
+                    key={sub.id}
+                    role="button"
+                    tabIndex={0}
+                    className={`mk-option-row ${isSelected ? 'is-selected' : ''}`}
+                    onClick={() => {
+                      tg.HapticFeedback.selection();
+                      setSelectedSubId(sub.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedSubId(sub.id);
+                      }
+                    }}
+                  >
+                    <div className="mk-option-info">
+                      <span className="mk-option-label">{sub.label}</span>
+                      {sub.my_position && heldSides(sub.my_position).length > 0 && (
+                        <span className="sub small">Есть позиция</span>
+                      )}
+                    </div>
+                    <div className="mk-option-actions">
+                      <button
+                        type="button"
+                        className="market-sub-btn is-yes"
+                        disabled={subBlocked}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedSubId(sub.id);
+                          void trade.open(sub, 'yes');
+                        }}
+                      >
+                        ДА · {subPct.yes}%
+                      </button>
+                      <button
+                        type="button"
+                        className="market-sub-btn is-no"
+                        disabled={subBlocked}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedSubId(sub.id);
+                          void trade.open(sub, 'no');
+                        }}
+                      >
+                        НЕТ · {subPct.no}%
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         {view.phase === 'closed' && (
           <section className="card mk-section" aria-label="Ждём итог">
             <span className="mk-section-title">Приём прогнозов закрыт</span>
@@ -309,16 +441,16 @@ export function MarketScreen() {
           </section>
         )}
 
-        {view.phase === 'review' && m.resolution && (
+        {view.phase === 'review' && target.resolution && (
           <ReviewSection
-            market={m}
-            disputed={m.status === 'disputed'}
+            market={{ ...m, ...target }}
+            disputed={target.status === 'disputed'}
             disputeCost={me?.limits.dispute_cost}
             onDispute={openDispute}
           />
         )}
 
-        {view.phase === 'resolved' && <ResolvedSection market={m} />}
+        {view.phase === 'resolved' && <ResolvedSection market={{ ...m, ...target }} />}
 
         {view.phase === 'annulled' && (
           <section className="card mk-section" aria-label="Итог">
@@ -329,8 +461,8 @@ export function MarketScreen() {
         )}
 
         <ChartSection
-          prob={m.prob}
-          change24h={m.change_24h}
+          prob={target.prob}
+          change24h={target.change_24h}
           period={period}
           history={history && history.period === period ? history.points : null}
           onPeriod={(p) => {
@@ -349,11 +481,13 @@ export function MarketScreen() {
         {showPosition && stats && (
           <section className="card mk-section" aria-label="Моя позиция">
             <div className="mk-row">
-              <span className="mk-section-title">Твоя позиция</span>
+              <span className="mk-section-title">
+                {activeSub ? `Твоя позиция · ${activeSub.label}` : 'Твоя позиция'}
+              </span>
               <span className="mk-chips">
                 {sides.map((side) => (
                   <span key={side} className={`mk-side-chip is-${side}`}>
-                    {sideLabel(side)} · {sharesLabel(sharesOf(m.my_position!, side))}
+                    {sideLabel(side)} · {sharesLabel(sharesOf(target.my_position!, side))}
                   </span>
                 ))}
               </span>
@@ -377,8 +511,13 @@ export function MarketScreen() {
                     key={side}
                     type="button"
                     className="mk-outline-button"
-                    disabled={sell.sellingId === m.id}
-                    onClick={() => sell.request({ id: m.id, title: m.title, prob: m.prob, position: m.my_position! }, side)}
+                    disabled={sell.sellingId === target.id}
+                    onClick={() =>
+                      sell.request(
+                        { id: target.id, title: target.title, prob: target.prob, position: target.my_position! },
+                        side,
+                      )
+                    }
                   >
                     {sides.length === 1 ? 'Продать позицию' : `Продать ${sideLabel(side)}`}
                   </button>
@@ -394,9 +533,9 @@ export function MarketScreen() {
           <p className="mk-text small sub">{datesLine(m.closes_at, m.resolves_at)}</p>
         </section>
 
-        <TopMovesSection moves={m.top_moves} />
+        <TopMovesSection moves={target.top_moves} />
 
-        <TradesSection trades={m.trades} />
+        <TradesSection trades={target.trades ?? m.trades} />
 
         {!m.is_creator && (
           <button type="button" className="mk-link-button" onClick={() => setReportOpen(true)}>
@@ -413,11 +552,11 @@ export function MarketScreen() {
             </p>
           ) : (
             <div className="mk-actions">
-              <button type="button" className="mk-buy is-yes" onClick={() => void trade.open(m, 'yes')}>
-                ДА · {pct.yes}%
+              <button type="button" className="mk-buy is-yes" onClick={() => void trade.open(target, 'yes')}>
+                {activeSub ? `ДА (${activeSub.label}) · ${pct.yes}%` : `ДА · ${pct.yes}%`}
               </button>
-              <button type="button" className="mk-buy is-no" onClick={() => void trade.open(m, 'no')}>
-                НЕТ · {pct.no}%
+              <button type="button" className="mk-buy is-no" onClick={() => void trade.open(target, 'no')}>
+                {activeSub ? `НЕТ (${activeSub.label}) · ${pct.no}%` : `НЕТ · ${pct.no}%`}
               </button>
             </div>
           )}

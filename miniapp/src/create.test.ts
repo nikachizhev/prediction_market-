@@ -191,3 +191,26 @@ describe('resolutionRule', () => {
     expect(resolutionRule(draft({ resultDate: '' }), NOW)).toMatch(/^В дату итога бот спросит/);
   });
 });
+
+describe('multiple choice mode', () => {
+  it('validates 2..10 unique non-empty options in multiple mode', () => {
+    expect(canProceed(draft({ mode: 'multiple', options: ['до конца октября', ''] }), 1, NOW)).toBe(false);
+    expect(canProceed(draft({ mode: 'multiple', options: ['до конца октября', 'до конца октября'] }), 1, NOW)).toBe(false);
+    expect(
+      canProceed(
+        draft({ mode: 'multiple', options: ['до конца октября', 'до конца ноября', 'в целом'] }),
+        1,
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it('includes options in createPayload and submarkets in previewCard', () => {
+    const d = draft({ mode: 'multiple', options: [' до конца октября ', 'до конца ноября', 'в целом'] });
+    const payload = createPayload(d)!;
+    expect(payload).toHaveProperty('options', ['до конца октября', 'до конца ноября', 'в целом']);
+    const card = previewCard(d);
+    expect(card.submarkets).toHaveLength(3);
+    expect(card.submarkets?.[0].label).toBe('до конца октября');
+  });
+});

@@ -67,37 +67,76 @@ export const MarketCardView = memo(function MarketCardView({
         </Link>
       </h2>
 
-      <div className="market-stats">
-        <div className="market-prob">
-          <AnimatedNumber value={market.prob * 100} format={(n) => Math.round(n) + '%'} className="market-pct" />
-          <span className={`market-delta ${up ? 'is-up' : 'is-down'}`}>
-            {up ? '▲' : '▼'} {Math.abs(delta)} за сутки
-          </span>
-        </div>
-        <Sparkline points={market.spark} color={up ? 'var(--yes)' : 'var(--no)'} delay={drawDelay} />
-      </div>
+      {market.submarkets && market.submarkets.length > 0 ? (
+        <>
+          <div className="market-submarkets">
+            {market.submarkets.map((sub) => {
+              const subPct = splitPercents(sub.prob);
+              return (
+                <div key={sub.id} className="market-sub-row">
+                  <span className="market-sub-label">{sub.label}</span>
+                  <div className="market-sub-right">
+                    <button
+                      type="button"
+                      className="market-sub-btn is-yes"
+                      disabled={pending}
+                      onClick={() => onTrade(sub, 'yes')}
+                    >
+                      ДА · {subPct.yes}%
+                    </button>
+                    <button
+                      type="button"
+                      className="market-sub-btn is-no"
+                      disabled={pending}
+                      onClick={() => onTrade(sub, 'no')}
+                    >
+                      НЕТ · {subPct.no}%
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
 
-      <div className="sub market-people">
-        {pluralize(market.participants, 'участник', 'участника', 'участников')} · объём {formatCompact(market.volume)}
-      </div>
+          <div className="sub market-people">
+            {pluralize(market.participants, 'участник', 'участника', 'участников')} · объём {formatCompact(market.volume)}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="market-stats">
+            <div className="market-prob">
+              <AnimatedNumber value={market.prob * 100} format={(n) => Math.round(n) + '%'} className="market-pct" />
+              <span className={`market-delta ${up ? 'is-up' : 'is-down'}`}>
+                {up ? '▲' : '▼'} {Math.abs(delta)} за сутки
+              </span>
+            </div>
+            <Sparkline points={market.spark} color={up ? 'var(--yes)' : 'var(--no)'} delay={drawDelay} />
+          </div>
 
-      {mine && (
-        <div className="market-position">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--yes)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M5 12.5l4.5 4.5L19 7.5" />
-          </svg>
-          Твой прогноз: {sideLabel(mine.side)} · выплата {formatMoney(Math.floor(mine.payout), 0)}
-        </div>
+          <div className="sub market-people">
+            {pluralize(market.participants, 'участник', 'участника', 'участников')} · объём {formatCompact(market.volume)}
+          </div>
+
+          {mine && (
+            <div className="market-position">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--yes)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M5 12.5l4.5 4.5L19 7.5" />
+              </svg>
+              Твой прогноз: {sideLabel(mine.side)} · выплата {formatMoney(Math.floor(mine.payout), 0)}
+            </div>
+          )}
+
+          <div className="market-actions">
+            <button type="button" className="side-button is-yes" disabled={pending} onClick={() => onTrade(market, 'yes')}>
+              ДА · {pct.yes}%
+            </button>
+            <button type="button" className="side-button is-no" disabled={pending} onClick={() => onTrade(market, 'no')}>
+              НЕТ · {pct.no}%
+            </button>
+          </div>
+        </>
       )}
-
-      <div className="market-actions">
-        <button type="button" className="side-button is-yes" disabled={pending} onClick={() => onTrade(market, 'yes')}>
-          ДА · {pct.yes}%
-        </button>
-        <button type="button" className="side-button is-no" disabled={pending} onClick={() => onTrade(market, 'no')}>
-          НЕТ · {pct.no}%
-        </button>
-      </div>
     </article>
   );
 });

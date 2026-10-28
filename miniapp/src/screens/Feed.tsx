@@ -113,15 +113,26 @@ export function FeedScreen() {
     onOptimistic: (id, prob) =>
       setItems((prev) => {
         const card = prev.find((m) => m.id === id);
-        if (!card) return prev;
-        if (!snapshots.current.has(id)) snapshots.current.set(id, card);
-        return replaceCard(prev, applyProbability(card, prob));
+        if (card) {
+          if (!snapshots.current.has(id)) snapshots.current.set(id, card);
+          return replaceCard(prev, applyProbability(card, prob));
+        }
+        return prev.map((m) =>
+          m.submarkets?.some((s) => s.id === id)
+            ? { ...m, submarkets: m.submarkets.map((s) => (s.id === id ? applyProbability(s, prob) : s)) }
+            : m,
+        );
       }),
     onCommit: ({ market }) => {
       snapshots.current.delete(market.id);
       setItems((prev) => {
         const card = prev.find((m) => m.id === market.id);
-        return card ? replaceCard(prev, mergeMarket(card, market)) : prev;
+        if (card) return replaceCard(prev, mergeMarket(card, market));
+        return prev.map((m) =>
+          m.submarkets?.some((s) => s.id === market.id)
+            ? { ...m, submarkets: m.submarkets.map((s) => (s.id === market.id ? { ...s, prob: market.prob } : s)) }
+            : m,
+        );
       });
       if (market.my_position) setPositions((prev) => ({ ...prev, [market.id]: market.my_position! }));
     },
