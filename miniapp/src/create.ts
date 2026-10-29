@@ -5,7 +5,9 @@ import type {
   AssistOutcome,
   AssistResult,
   AssistState,
+  ChatSpace,
   CreateMarketData,
+  Limits,
   MarketCard,
   MarketTemplate,
   TemplateBlank,
@@ -65,6 +67,8 @@ export interface CreateDraft {
   /** What became of the latest suggestion, sent as `assist`; null when the helper was not used. */
   assist: AssistOutcome | null;
   suggestion: QuestionSuggestion | null;
+  /** «Кто увидит»: code of the closed chat; null — everyone (the public feed). */
+  chat: string | null;
 }
 
 export type CreateField = 'title' | 'criteria' | 'category' | 'closes' | 'resolves';
@@ -107,6 +111,7 @@ export function defaultDraft(now: Date = new Date()): CreateDraft {
     before: null,
     assist: null,
     suggestion: null,
+    chat: null,
   };
 }
 
@@ -197,6 +202,7 @@ export function createPayload(draft: CreateDraft): CreateMarketData | null {
     resolves_at,
     ...(draft.assist ? { assist: draft.assist } : {}),
     ...(draft.templateId ? { template: draft.templateId } : {}),
+    ...(draft.chat ? { chat: draft.chat } : {}),
   };
 }
 
@@ -231,7 +237,10 @@ export function changedFields(prev: CreateDraft, next: CreateDraft): CreateField
 // ---- Edits by the creator: marks go away, the helper's outcome becomes «edited» ----
 
 export type DraftEdit = Partial<
-  Pick<CreateDraft, 'step' | 'title' | 'criteria' | 'category' | 'closeDate' | 'closeTime' | 'resultDate' | 'resultTime'>
+  Pick<
+    CreateDraft,
+    'step' | 'title' | 'criteria' | 'category' | 'closeDate' | 'closeTime' | 'resultDate' | 'resultTime' | 'chat'
+  >
 >;
 
 const GROUP_OF: Partial<Record<keyof DraftEdit, FilledGroup>> = {
@@ -480,6 +489,77 @@ export function balanceAfterCreation(balance: number | string, cost: number | st
   return rest >= 0 ? rest : null;
 }
 
+// ---- «Кто увидит»: the public feed or a closed chat (spec E8.3, E5 «Цена создания зависит от места») ----
+
+export interface AudienceOption {
+  /** Chat code; null — everyone. */
+  chat: string | null;
+  label: string;
+  sub: string;
+}
+
+/** Chats a market can be created for: frozen ones take no new markets. */
+export function openChats(chats: ChatSpace[] | null | undefined): ChatSpace[] {
+  return (chats ?? []).filter((c) => !c.frozen);
+}
+
+/** Options of the «Кто увидит» block; empty — no block, the wizard works as before. */
+export function audienceOptions(chats: ChatSpace[] | null | undefined): AudienceOption[] {
+  const open = openChats(chats);
+  if (open.length === 0) return [];
+  return [
+    { chat: null, label: 'Все', sub: 'Рынок появится в общей ленте' },
+    ...open.map((c) => ({
+      chat: c.code,
+      label: `Только чат «${c.title}»`,
+      sub: 'Увидят и смогут ставить только участники чата',
+    })),
+  ];
+}
+
+/**
+ * The chat picked in the draft, or null for the public feed. `undefined` while the
+ * chat list is unknown (not loaded or failed) and the draft names a chat: price unknown.
+ */
+export function pickedChat(draft: Pick<CreateDraft, 'chat'>, chats: ChatSpace[] | null): ChatSpace | null | undefined {
+  if (!draft.chat) return null;
+  if (chats === null) return undefined;
+  return openChats(chats).find((c) => c.code === draft.chat) ?? null;
+}
+
+/**
+ * Draft after the chat list arrived: a chat that is not available any more (left, frozen,
+ * unknown code) falls back to everyone. Same object when nothing changes.
+ */
+export function settleChat(draft: CreateDraft, chats: ChatSpace[]): CreateDraft {
+  if (!draft.chat) return draft;
+  return openChats(chats).some((c) => c.code === draft.chat) ? draft : { ...draft, chat: null };
+}
+
+/** Price and depth of a new market at the picked place; null while the chat is not known yet. */
+export function creationTerms(
+  limits: Pick<Limits, 'creation_cost' | 'b'>,
+  chat: ChatSpace | null | undefined,
+): { cost: number; b: number } | null {
+  if (chat === undefined) return null;
+  if (chat === null) return { cost: Number(limits.creation_cost), b: limits.b };
+  return { cost: Number(chat.creation_cost), b: chat.b };
+}
+
+/** The helper is off for a chat whose admin (or the server) switched it off. */
+export function assistForChat(
+  assist: AssistState | undefined,
+  chat: Pick<ChatSpace, 'assist'> | null | undefined,
+): AssistState | undefined {
+  if (!assist || !chat || chat.assist) return assist;
+  return { ...assist, enabled: false };
+}
+
+/** « · Группа ПИ-24» after the preview's meta for a chat market. */
+export function previewMetaSuffix(chat: Pick<ChatSpace, 'title'> | null | undefined): string {
+  return chat ? ` · ${chat.title}` : '';
+}
+
 // ---- Draft storage: survives switching tabs (memory) and reloads (sessionStorage). ----
 
 const STORAGE_KEY = 'create-draft';
@@ -541,6 +621,7 @@ export function readDraft(value: unknown): CreateDraft | null {
     before: readSnapshot(value.before),
     assist: assist === 'accepted' || assist === 'edited' || assist === 'undone' ? assist : null,
     suggestion: readSuggestion(value.suggestion),
+    chat: isText(value.chat) && value.chat !== '' ? value.chat : null,
   };
 }
 

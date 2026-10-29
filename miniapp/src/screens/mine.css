@@ -185,6 +185,18 @@
   border-top-color: transparent;
 }
 
+.mine-watch-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mine-chat-tag {
+  align-self: flex-start;
+}
+
 .mine-watch-link {
   flex: 1;
   min-width: 0;

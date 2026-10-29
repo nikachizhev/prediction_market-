@@ -26,6 +26,12 @@ export function marketFromStartParam(startParam: string | null | undefined): num
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
+/** Chat code from a start_param `chat_<code>` (the chat's pinned link); null for anything else. */
+export function chatFromStartParam(startParam: string | null | undefined): string | null {
+  const m = /^chat_([A-Za-z0-9_-]{1,64})$/.exec(startParam ?? '');
+  return m ? m[1] : null;
+}
+
 /**
  * «Поделиться»: a prepared message via Telegram.WebApp.shareMessage when the
  * client supports it; otherwise, or on any error, the regular t.me/share dialog.

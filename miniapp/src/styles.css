@@ -641,6 +641,13 @@ h1 {
   min-height: 32px;
 }
 
+.market-meta-start {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .market-meta-text {
   font-size: 13px;
 }
@@ -1230,4 +1237,70 @@ h1 {
 .radio-label {
   font-size: 15px;
   font-weight: 600;
+}
+
+/* ---- Closed chat tag on market cards (docs/mockups/Main.dc.html) ---- */
+
+.chat-tag {
+  position: relative;
+  z-index: 1;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--sub);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.chat-tag svg {
+  flex: 0 0 auto;
+}
+
+.chat-tag-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* On the page background (the feed row «Мои чаты») the tag sits on the card colour. */
+.chat-tag.is-on-bg {
+  flex: 0 0 auto;
+  max-width: 220px;
+  height: 32px;
+  padding: 0 12px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.chat-tag.is-on-bg svg {
+  color: var(--sub);
+}
+
+/* «Мои чаты» above the feed: compact, scrolls sideways. */
+.feed-chats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 var(--gutter) 8px;
+  scrollbar-width: none;
+}
+
+.feed-chats::-webkit-scrollbar {
+  display: none;
+}
+
+.feed-chats-label {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 500;
 }
