@@ -162,6 +162,8 @@ def card(question: Question, *, starred: set[int] | None = None, now: datetime |
         "status": market_status(question),
         "outcome": question.outcome, "starred": question.pk in (starred or set()), "my_side": my_side,
         "chat": chat_ref(question), "created_at": iso(question.created_at),
+        # Market depth: a chat market has its own (spec E5), the sell estimate needs it.
+        "b": question.b,
     }
 
 

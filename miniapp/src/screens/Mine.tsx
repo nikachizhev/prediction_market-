@@ -148,7 +148,7 @@ export function MineScreen() {
 
         {state === 'ready' && data && tab === 'positions' && (
           <Positions items={data.positions} sellingId={sell.sellingId} onSell={(item, side) =>
-            sell.request({ id: item.id, title: item.title, prob: item.prob, position: item.position }, side)
+            sell.request({ id: item.id, title: item.title, prob: item.prob, position: item.position, b: item.b }, side)
           } onEmpty={() => navigate('/')} />
         )}
 
