@@ -17,7 +17,7 @@ from django.utils import timezone
 
 from . import charts, telegram
 from .access import visible_questions
-from .models import Question, Trader
+from .models import Group, Question, Trader
 
 log = logging.getLogger(__name__)
 
@@ -87,11 +87,16 @@ def prepare(trader: Trader, question: Question) -> str:
 
 
 def search(trader: Trader, query: str) -> list[Question]:
+    """Closed chats' markets stay inside their chat (spec E8.3): inline mode never offers them."""
     from .bot_markets import tracked_markets
     query = query.strip()
     if not query:
-        return tracked_markets(trader)[:INLINE_LIMIT]
-    markets = visible_questions(trader).filter(kind=Question.Kind.LMSR, hidden_at__isnull=True)
+        tracked = tracked_markets(trader)
+        chat_ids = set(Group.objects.filter(pk__in={q.group_id for q in tracked if q.group_id}, kind="chat")
+                       .values_list("pk", flat=True))
+        return [q for q in tracked if q.group_id not in chat_ids][:INLINE_LIMIT]
+    markets = (visible_questions(trader).filter(kind=Question.Kind.LMSR, hidden_at__isnull=True)
+               .exclude(group__kind="chat"))
     if query[:1] in "mм" and query[1:].isdigit():
         return list(markets.filter(pk=int(query[1:])))
     return list(markets.filter(status=Question.Status.OPEN, title__icontains=query)
