@@ -108,4 +108,13 @@ def tick(now=None) -> dict:
         done.update(notices.flush(now))
     except Exception:  # noqa: BLE001
         log.exception("bot outbox flush failed")
+
+    # Closed chats (spec E8): disputes for chat admins, then the chats' own outbox.
+    from . import bot_chats, chat_disputes
+    for name, step in (("chat_disputes", chat_disputes.tick), ("chats", bot_chats.tick)):
+        try:
+            for key, value in step(now).items():
+                done[f"{name}_{key}"] = value
+        except Exception:  # noqa: BLE001
+            log.exception("%s step failed", name)
     return done

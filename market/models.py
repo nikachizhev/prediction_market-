@@ -121,12 +121,39 @@ class TelegramSiteLink(models.Model):
     expires_at = models.DateTimeField()
 
 
+# Kinds of messages the bot posts into a closed chat (spec E8.4); the chat admin switches each off.
+CHAT_POST_KINDS = [
+    ("new_market", "Новые рынки"),
+    ("results", "Итоги с фото"),
+    ("weekly_top", "Топ-3 недели"),
+]
+
+
 class Group(models.Model):
+    """A private space. Old site groups have an owner; a Telegram chat (kind="chat", spec E8) has none."""
     name = models.CharField("Название", max_length=120)
     description = models.TextField("Описание", max_length=2000, blank=True)
-    kind = models.CharField("Тип группы", max_length=12, choices=[("social", "Сообщество"), ("work", "Рабочая группа")], default="social")
-    owner = models.ForeignKey(Trader, on_delete=models.PROTECT, related_name="owned_groups")
+    kind = models.CharField("Тип группы", max_length=12, choices=[("social", "Сообщество"), ("work", "Рабочая группа"), ("chat", "Чат Telegram")], default="social")
+    owner = models.ForeignKey(Trader, null=True, blank=True, on_delete=models.PROTECT, related_name="owned_groups")
     created_at = models.DateTimeField(auto_now_add=True)
+    # Telegram chat space (spec E8). Membership comes from getChatMember, not from requests and invitations.
+    telegram_chat_id = models.BigIntegerField("ID чата в Telegram", null=True, blank=True, unique=True)
+    # Random code for the link `startapp=chat_<code>`: never the chat ID.
+    code = models.CharField("код ссылки", max_length=16, null=True, blank=True, unique=True)
+    # False = frozen: the bot was removed or is not an admin. No new markets; open ones live to their outcome.
+    bot_active = models.BooleanField("бот администратор", default=False)
+    is_forum = models.BooleanField("чат с темами", default=False)
+    member_count = models.PositiveIntegerField("участников (getChatMemberCount)", default=0)
+    pinned_message_id = models.BigIntegerField(null=True, blank=True)
+    # Admin's own creation price (CHAT_CREATION_COST_MIN..MAX); empty = by chat size.
+    creation_cost = models.PositiveSmallIntegerField("своя цена создания", null=True, blank=True)
+    # {kind: bool} for CHAT_POST_KINDS; a missing key means on.
+    post_settings = models.JSONField("сообщения бота в чате", default=dict, blank=True)
+    assist_enabled = models.BooleanField("ИИ-помощник", default=True)
+
+    @property
+    def is_chat(self) -> bool:
+        return self.kind == "chat"
 
     class Meta:
         ordering = ["-created_at", "-pk"]
@@ -138,8 +165,11 @@ class Group(models.Model):
 class GroupMembership(models.Model):
     group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="memberships")
     trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="memberships")
-    status = models.CharField(max_length=12, choices=[("active", "Участник"), ("invited", "Приглашён"), ("requested", "Заявка")])
+    # "left" — only for chats: left or was removed from the Telegram chat, access is closed.
+    status = models.CharField(max_length=12, choices=[("active", "Участник"), ("invited", "Приглашён"), ("requested", "Заявка"), ("left", "Вышел из чата")])
     created_at = models.DateTimeField(auto_now_add=True)
+    # Chats: when getChatMember last confirmed the status; trusted for CHAT_MEMBER_CHECK_MINUTES.
+    checked_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["group", "trader"], name="unique_group_member")]
@@ -633,3 +663,60 @@ class ChartAnimation(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["question", "hour"], name="one_chart_per_market_hour")]
+
+
+class ChatPost(models.Model):
+    """Outbox of bot messages to a closed chat (spec E8.4): at most CHAT_DAILY_POSTS a Moscow day per chat.
+
+    Like BotMessage: the worker sends queued rows, `key` is unique so nothing goes out twice,
+    and a Telegram failure never rolls back money.
+    """
+    class Status(models.TextChoices):
+        QUEUED = "queued", "в очереди"
+        SENT = "sent", "отправлено"
+        SKIPPED = "skipped", "пропущено"
+        FAILED = "failed", "ошибка"
+
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="posts")
+    # One of CHAT_POST_KINDS.
+    kind = models.CharField(max_length=20)
+    key = models.CharField(max_length=160, unique=True)
+    # Bot API method: sendMessage, or sendPhoto for a result with its evidence.
+    method = models.CharField(max_length=20, default="sendMessage")
+    text = models.TextField()
+    # Extra parameters of the method: reply_markup, photo, ...
+    payload = models.JSONField(default=dict, blank=True)
+    question = models.ForeignKey(Question, null=True, blank=True, on_delete=models.CASCADE, related_name="chat_posts")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.QUEUED, db_index=True)
+    send_after = models.DateTimeField(db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "сообщение в чат"
+        verbose_name_plural = "сообщения в чаты"
+        ordering = ["send_after", "id"]
+
+
+class ChatDisputeReview(models.Model):
+    """A dispute on a chat market decided by the chat's admins (spec E8.6).
+
+    The first admin decision is final. No eligible admin, no reachable admin or no decision within
+    CHAT_DISPUTE_HOURS -> `escalated_at` is set and the project team decides in the admin site.
+    """
+    question = models.OneToOneField(Question, on_delete=models.CASCADE, related_name="chat_review")
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="dispute_reviews")
+    created_at = models.DateTimeField(auto_now_add=True)
+    deadline = models.DateTimeField()
+    # Messages sent to admins: [{"trader": id, "chat_id": int, "message_id": int}], to edit them after the decision.
+    messages = models.JSONField(default=list, blank=True)
+    decided_by = models.ForeignKey(Trader, null=True, blank=True, on_delete=models.SET_NULL, related_name="chat_decisions")
+    decision = models.CharField(max_length=6, blank=True, default="", choices=[("yes", "ДА"), ("no", "НЕТ"), ("cancel", "Отменить рынок")])
+    decided_at = models.DateTimeField(null=True, blank=True)
+    escalated_at = models.DateTimeField("передан команде", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "спор в чате"
+        verbose_name_plural = "споры в чатах"
+
