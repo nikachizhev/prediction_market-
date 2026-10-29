@@ -90,7 +90,9 @@ def render(chat_id: int, text: str, buttons=None, *, message_id=None, notice=Fal
 
 
 def navigation():
-    return [[{'text': '📥 Жалобы', 'callback_data': 'mb:queue:0'},
+    return [[{'text': '⚖️ Споры об исходе', 'callback_data': 'ds:queue:0'},
+             {'text': '📜 История споров', 'callback_data': 'ds:history:0'}],
+            [{'text': '📥 Жалобы', 'callback_data': 'mb:queue:0'},
              {'text': '🕘 История', 'callback_data': 'mb:history:0'}],
             [{'text': '⌂ Главное меню', 'callback_data': 'mb:home'}]]
 
@@ -116,7 +118,8 @@ def renew_panel(chat_id: int):
 
 def show_home(chat_id, *, message_id=None):
     count = Question.objects.filter(complaints__status='pending').distinct().count()
-    render(chat_id, f'🛡 МОДЕРАЦИЯ\n\nОжидают проверки: {count} рынков.\n\n📥 Жалобы — новые обращения\n🕘 История — решения и восстановление рынков\n\nВыберите раздел кнопкой ниже. Все экраны открываются в этой панели.', navigation(), message_id=message_id)
+    disputes = Question.objects.filter(resolution_state=Question.Resolution.DISPUTED).count()
+    render(chat_id, f'🛡 МОДЕРАЦИЯ\n\nЖалобы: {count} рынков.\nСпоры об исходе: {disputes} рынков.\n\n⚖️ Споры — проверка результата и выплаты\n📥 Жалобы — нарушения правил\n\nВыберите раздел кнопкой ниже.', navigation(), message_id=message_id)
 
 
 def card(question: Question, complaint=None):
@@ -188,11 +191,14 @@ def show_queue(chat_id: int, page=0, *, history=False, message_id=None):
 def show_notice(chat_id, report=None):
     count = Question.objects.filter(complaints__status='pending').distinct().count()
     text = f'🔔 ЖАЛОБЫ · УВЕДОМЛЕНИЕ\n\nВ очереди: {count} рынков.'
+    disputes = Question.objects.filter(resolution_state=Question.Resolution.DISPUTED).count()
+    text += f'\nСпоры об исходе: {disputes} рынков.'
     if report:
         text += f'\nПоследнее обращение: жалоба #{report.pk} на рынок #{report.question_id}.'
     elif not count:
         text += '\n✅ Все жалобы рассмотрены.'
-    render(chat_id, text, [[{'text': '📥 Открыть очередь', 'callback_data': 'mb:queue:0'}]], notice=True)
+    render(chat_id, text, [[{'text': '📥 Открыть очередь', 'callback_data': 'mb:queue:0'}],
+                          [{'text': '⚖️ Споры об исходе', 'callback_data': 'ds:queue:0'}]], notice=True)
 
 
 def _answer(callback, text=''):
@@ -227,6 +233,9 @@ def handle_update(update: dict):
             show_queue(sender_id)
         elif command == '/history':
             show_queue(sender_id, history=True)
+        elif command in ('/disputes', '/dispute_history'):
+            from .disputes_bot import show_queue as show_disputes
+            show_disputes(sender_id, history=command == '/dispute_history')
         elif command == '/id':
             render(sender_id, f'Ваш Telegram ID: {sender_id}.', navigation())
         else:
@@ -235,6 +244,10 @@ def handle_update(update: dict):
     _answer(callback)
     data = callback.get('data', '')
     panel_id = message.get('message_id')
+    if data.startswith('ds:'):
+        from .disputes_bot import handle_callback
+        handle_callback(sender_id, data, message_id=panel_id)
+        return
     if data == 'mb:home':
         show_home(sender_id, message_id=panel_id)
         return
@@ -333,4 +346,5 @@ def flush_notifications(limit=10) -> int:
         else:
             ModerationDelivery.objects.filter(pk=delivery.pk, attempts=delivery.attempts).update(sent_at=timezone.now())
             sent += 1
-    return sent
+    from .disputes_bot import flush_notifications as flush_disputes
+    return sent + flush_disputes(limit=limit)
