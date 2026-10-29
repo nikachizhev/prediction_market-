@@ -544,6 +544,18 @@ class ModerationBotState(models.Model):
     offset = models.BigIntegerField(default=0)
 
 
+class ModerationContact(models.Model):
+    telegram_id = models.PositiveBigIntegerField(primary_key=True)
+    username = models.CharField(max_length=100, blank=True)
+    name = models.CharField(max_length=300, blank=True)
+    first_seen = models.DateTimeField(auto_now_add=True)
+    last_seen = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ['-last_seen', '-telegram_id']
+        verbose_name_plural = 'обращения к боту модерации'
+
+
 class ModerationPanel(models.Model):
     token_fingerprint = models.CharField(max_length=64)
     admin_id = models.PositiveBigIntegerField()
