@@ -321,7 +321,7 @@ def handle_callback(callback: dict) -> None:
         return
     decision = review.question.proposed_outcome if action == "ok" else action
     with transaction.atomic():
-        review = ChatDisputeReview.objects.select_for_update().select_related("decided_by").get(pk=review.pk)
+        review = ChatDisputeReview.objects.select_for_update(of=("self",)).select_related("decided_by").get(pk=review.pk)
         note = _status_note(review, trader.pk)
         if note is None:
             try:

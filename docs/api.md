@@ -184,6 +184,7 @@ interface ChatRef { code: string; title: string }    // code — случайн�
 interface MarketCard {                                 // + к MVP
   chat: ChatRef | null;      // рынок закрытого чата; в общей ленте, поиске, рекомендациях и похожих таких нет
   created_at: string;        // для пометки «новый» (меньше суток) в рынках чата
+  b: number;                 // глубина рынка LMSR: у рынка чата своя (цена / ln 2)
 }
 
 interface ChatSpace {

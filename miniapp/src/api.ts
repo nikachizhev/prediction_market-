@@ -65,6 +65,8 @@ export interface MarketCard {
   chat?: ChatRef | null;
   /** Phase 3b: for the «новый» mark in chat markets; missing on an older server. */
   created_at?: string;
+  /** LMSR depth of this market (chat markets have their own). */
+  b?: number;
 }
 
 // ---- Closed chats (docs/api.md, «Фаза 3b») ----

@@ -15,6 +15,8 @@ export interface SellTarget {
   title: string;
   prob: number;
   position: Position;
+  /** LMSR depth of this market; chat markets have their own (docs/api.md «Фаза 3b»). */
+  b?: number;
 }
 
 export interface SellHandlers {
@@ -51,7 +53,7 @@ export function useSell(handlers: SellHandlers = {}): {
       const shares = sharesOf(target.position, side);
       if (!(Number(shares) > 0)) return;
       tg.HapticFeedback.impact('light');
-      const b = me?.limits.b ?? 144;
+      const b = target.b ?? me?.limits.b ?? 144;
       const fee = me?.limits.fee_rate ?? 0.02;
       setPending({ target, side, shares, estimate: estimateSellProceeds(Number(shares), side, target.prob, b, fee), feeRate: fee });
       setVisible(true);

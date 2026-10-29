@@ -384,6 +384,7 @@ def test_chat_market_card_for_member_and_stranger(anya, boris, vera):
         code, card = anya.get(f"markets/{market.pk}")
         assert code == 200 and card["chat"] == {"code": group.code, "title": "Группа ПИ-24"}
         assert card["created_at"] == market.created_at.isoformat()
+        assert card["b"] == market.b != 144  # chat markets have their own depth (sell estimate)
         assert api.call_count == 0
         stranger = vera.get(f"markets/{market.pk}")
         assert stranger == (404, {"error": "Рынок не найден."}) == vera.get("markets/999999")

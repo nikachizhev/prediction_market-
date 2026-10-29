@@ -380,7 +380,7 @@ export function MarketScreen() {
                     type="button"
                     className="mk-outline-button"
                     disabled={sell.sellingId === m.id}
-                    onClick={() => sell.request({ id: m.id, title: m.title, prob: m.prob, position: m.my_position! }, side)}
+                    onClick={() => sell.request({ id: m.id, title: m.title, prob: m.prob, position: m.my_position!, b: m.b }, side)}
                   >
                     {sides.length === 1 ? 'Продать позицию' : `Продать ${sideLabel(side)}`}
                   </button>
