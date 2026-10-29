@@ -72,7 +72,7 @@ def trader(user_id):
 
 def market_by(creator_id, **kw):
     now = timezone.now()
-    args = dict(title="Будет снег?", criteria="Росгидромет", category="weather",
+    args = dict(title="Будет снег?", criteria="Росгидромет", category="fun",
                 closes_at=now + timedelta(days=2), resolves_at=now + timedelta(days=3))
     args.update(kw)
     return services.create_market(trader(creator_id), **args)
@@ -268,6 +268,16 @@ def test_fun_category(anya):
     assert code == 200 and {"slug": "fun", "label": "Фан"} in data
     code, data = anya.post("markets", create_payload(category="fun"))
     assert code == 200 and data["market"]["category"] == "fun"
+
+
+def test_weather_category_is_gone(anya):
+    code, data = anya.get("categories")
+    assert code == 200 and "weather" not in {c["slug"] for c in data}
+    before = trader(1001).balance
+    code, _ = anya.post("markets", create_payload(category="weather"))
+    assert code == 400 and not Question.objects.exists() and trader(1001).balance == before
+    code, _ = anya.patch("me", {"interests": ["weather", "sport"]})
+    assert code == 400 and trader(1001).interests == []
 
 
 def test_create_market_bad_key(anya):

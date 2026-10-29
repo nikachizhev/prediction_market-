@@ -1,5 +1,5 @@
 // Market card from the feed (docs/mockups/Main.dc.html).
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import type { MarketCard, Position, Side, SubmarketCard } from '../api';
 import { formatCompact, formatEnds, formatMoney, pluralize } from '../format';
@@ -18,6 +18,8 @@ interface MarketCardViewProps {
   drawDelay?: number;
   onTrade: (market: MarketCard, side: Side) => void;
   onStar: (market: MarketCard) => void;
+  onImpression?: (market: MarketCard) => void;
+  onOpen?: (market: MarketCard) => void;
 }
 
 export const MarketCardView = memo(function MarketCardView({
@@ -28,14 +30,30 @@ export const MarketCardView = memo(function MarketCardView({
   drawDelay = 0,
   onTrade,
   onStar,
+  onImpression,
+  onOpen,
 }: MarketCardViewProps) {
+  const article = useRef<HTMLElement>(null);
+  const seen = useRef(false);
+  useEffect(() => {
+    if (!article.current || !onImpression || seen.current || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => {
+      if (!seen.current && entries.some((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.5)) {
+        seen.current = true;
+        onImpression(market);
+        observer.disconnect();
+      }
+    }, { threshold: 0.5 });
+    observer.observe(article.current);
+    return () => observer.disconnect();
+  }, [market, onImpression]);
   const pct = splitPercents(market.prob);
   const delta = Math.round(market.change_24h);
   const up = delta >= 0;
   const mine = positionSummary(position);
 
   return (
-    <article className="card market-card" aria-busy={pending || undefined}>
+    <article ref={article} className="card market-card" aria-busy={pending || undefined}>
       <div className="market-meta">
         <span className="sub market-meta-text">
           {[categoryLabel, formatEnds(market.closes_at)].filter(Boolean).join(' · ')}
@@ -63,7 +81,7 @@ export const MarketCardView = memo(function MarketCardView({
       </div>
 
       <h2 className="market-title">
-        <Link to={`/market/${market.id}`} className="stretched-link">
+        <Link to={`/market/${market.id}`} className="stretched-link" onClick={() => onOpen?.(market)}>
           {market.title}
         </Link>
       </h2>

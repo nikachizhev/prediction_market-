@@ -1,9 +1,28 @@
-/* Market creation wizard (docs/mockups/Create.dc.html). */
+/* Market creation wizard (docs/mockups/Create.dc.html, quick-create/Main.dc.html). */
 
 .create {
+  /* Tokens of theme() in quick-create/Main.dc.html that the shared palette has no match for:
+     the helper card's border and button text, the «Шаблон» mark. */
+  --yes-line: #C9DAF2;
+  --on-yes: #FFFFFF;
+  --mark-bg: #E9EBEE;
   min-height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .create {
+    --yes-line: #2B3E5C;
+    --on-yes: #0E1014;
+    --mark-bg: #262A31;
+  }
+}
+
+:root[data-theme='dark'] .create {
+  --yes-line: #2B3E5C;
+  --on-yes: #0E1014;
+  --mark-bg: #262A31;
 }
 
 .create-header {
@@ -234,7 +253,6 @@
   font-size: 12px;
   line-height: 1.2;
 }
-
 .create-note {
   padding: 12px 14px;
   border-radius: 14px;
@@ -313,6 +331,416 @@
   color: var(--ink);
   font: 600 16px/1 var(--font);
   cursor: pointer;
+}
+
+/* ---- Field labels with the «ИИ» / «Шаблон» mark ---- */
+
+.create-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 20px;
+}
+
+.create-mark {
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--mark-bg);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+}
+
+.create-mark.is-ai {
+  background: var(--yes-tint);
+  color: var(--yes);
+}
+
+.create-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ---- Templates on step 1 (spec E9.2) ---- */
+
+.create-templates {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.create-tpl-categories {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 calc(-1 * var(--gutter));
+  padding: 0 var(--gutter);
+}
+
+.create-tpl-categories::-webkit-scrollbar {
+  display: none;
+}
+
+.chip.create-tpl-chip {
+  height: 36px;
+  padding: 0 14px;
+}
+
+.create-tpl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.create-tpl-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 12px 10px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--ink);
+  font: 500 15px/1.35 var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.create-tpl-item span {
+  flex: 1;
+  min-width: 0;
+}
+
+.create-tpl-item svg {
+  flex: 0 0 auto;
+  color: var(--sub);
+}
+
+.create-tpl-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.create-tpl-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.create-tpl-category {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.icon-button.create-tpl-close {
+  margin: -12px -12px -12px 0;
+  color: var(--sub);
+}
+
+.create-tpl-preview {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.35;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.create-tpl-field {
+  gap: 6px;
+}
+
+.input.create-tpl-input {
+  background: var(--bg);
+}
+
+.button-primary.create-tpl-apply {
+  height: 48px;
+  font-size: 15px;
+}
+
+/* ---- AI rules helper on step 2 (spec E9.1) ---- */
+
+.create-assist {
+  border-radius: var(--radius-card);
+  background: var(--card);
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.create-assist.is-outlined {
+  border: 1px solid var(--yes-line);
+}
+
+.create-assist.is-row {
+  flex-direction: row;
+  align-items: center;
+  padding: 14px 16px;
+}
+
+.create-assist.is-plain {
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.create-assist.is-done {
+  background: var(--yes-tint);
+  padding: 12px 14px 4px;
+  gap: 6px;
+}
+
+.create-assist.is-warn {
+  background: var(--no-tint);
+}
+
+.create-assist.is-compact {
+  padding: 14px 16px;
+  gap: 2px;
+}
+
+.create-assist-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.create-assist-row.is-tight {
+  gap: 10px;
+}
+
+.create-assist-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--yes-tint);
+  color: var(--yes);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.create-assist-icon {
+  flex: 0 0 auto;
+  display: flex;
+  margin-top: 1px;
+  color: var(--yes);
+}
+
+.create-assist-icon.sub {
+  color: var(--sub);
+}
+
+.create-assist-icon.create-warn-icon {
+  color: var(--no);
+}
+
+.create-assist-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.create-assist-text.is-loose {
+  gap: 4px;
+}
+
+.create-assist-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.create-assist-title {
+  font-size: 14px;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+.create-assist-note {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.create-assist-small {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.create-assist-ask {
+  height: 48px;
+  border: none;
+  border-radius: 14px;
+  background: var(--yes);
+  color: var(--on-yes);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font: 600 15px/1 var(--font);
+  cursor: pointer;
+}
+
+.create-assist-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-left: 30px;
+}
+
+.create-assist-foot .create-assist-small {
+  min-width: 0;
+  text-align: right;
+}
+
+.create-link {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--yes);
+  font: 600 14px/1 var(--font);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.create-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.create-button {
+  min-height: 44px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font: 600 15px/1.2 var(--font);
+  cursor: pointer;
+}
+
+.create-button.is-ink {
+  border: none;
+  background: var(--ink);
+  color: var(--card);
+}
+
+.create-button.is-outline {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+}
+
+.create-button.is-outline-ink {
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+}
+
+.create-better {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.create-better-question {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg);
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.create-accepted {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+  font-size: 13px;
+}
+
+.create-accepted .create-link {
+  font-size: 13px;
+}
+
+.create-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.create-skeleton-box {
+  height: 168px;
+  padding: 16px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---- Similar markets on step 3 (spec E9.3) ---- */
+
+.create-similar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.create-similar-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.create-similar-card {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 12px 12px 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.create-similar-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.create-similar-question {
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.create-similar-line {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.create-button.create-similar-open {
+  flex: 0 0 auto;
+  padding: 0 14px;
+  font-size: 14px;
 }
 
 /* ---- «Разреши боту писать тебе» before publishing (Как указать итог, Main.dc.html) ---- */

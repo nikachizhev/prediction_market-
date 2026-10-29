@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Новый рынок с ИИ-помощником</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; display: flex; flex-direction: column; background: {{t.bg}}; color: {{t.ink}}; font-family: Inter, system-ui, -apple-system, sans-serif; color-scheme: {{scheme}}">
+
+  <header style="padding: 6px 8px 0; display: flex; flex-direction: column; gap: 8px">
+    <div style="display: flex; align-items: center; justify-content: space-between">
+      <button onClick="{{reset}}" aria-label="Закрыть" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: {{t.ink}}; cursor: pointer">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+      </button>
+      <span style="font-size: 16px; font-weight: 600">Новый рынок</span>
+      <span style="width: 44px; text-align: center; font-size: 13px; color: {{t.sub}}">{{stepLabel}}</span>
+    </div>
+    <div aria-hidden="true" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 0 8px">
+      <span style="height: 4px; border-radius: 999px; background: {{seg1}}"></span>
+      <span style="height: 4px; border-radius: 999px; background: {{seg2}}"></span>
+      <span style="height: 4px; border-radius: 999px; background: {{seg3}}"></span>
+    </div>
+  </header>
+
+  <main style="flex: 1; overflow-y: auto; scrollbar-width: none; padding: 20px 16px 24px; display: flex; flex-direction: column; gap: 18px">
+
+    <sc-if value="{{isStep1}}" hint-placeholder-val="{{ true }}">
+      <h1 style="margin: 0; font-size: 24px; line-height: 1.2; font-weight: 700">О чём спрашиваем?</h1>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; justify-content: space-between">
+          <label for="create-q" style="font-size: 13px; font-weight: 600">Вопрос</label>
+          <span style="font-size: 13px; color: {{t.sub}}; font-variant-numeric: tabular-nums">{{qLen}} / 120</span>
+        </div>
+        <textarea id="create-q" rows="3" maxlength="120" value="{{q}}" onChange="{{onQ}}" placeholder="Например: Сдам ли я сессию без троек?" style="box-sizing: border-box; width: 100%; padding: 12px 14px; border: 1px solid {{t.line}}; border-radius: 14px; background: {{t.card}}; color: {{t.ink}}; font: 400 16px/1.4 Inter, system-ui, sans-serif; resize: none; outline: none"></textarea>
+        <sc-if value="{{tplNote}}" hint-placeholder-val="{{ false }}">
+          <span style="font-size: 13px; line-height: 1.4; color: {{t.sub}}">Сроки и правила подставятся из шаблона — проверишь их на следующем шаге.</span>
+        </sc-if>
+        <sc-if value="{{noTplNote}}" hint-placeholder-val="{{ true }}">
+          <span style="font-size: 13px; line-height: 1.4; color: {{t.sub}}">Вопрос должен иметь однозначный ответ ДА или НЕТ, дату и понятный способ проверить итог.</span>
+        </sc-if>
+      </div>
+
+      <section aria-label="Шаблоны" style="display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 13px; font-weight: 600">Шаблоны</span>
+          <span style="font-size: 13px; line-height: 1.4; color: {{t.sub}}">Правила и сроки уже готовы — останется вписать детали</span>
+        </div>
+        <div role="group" aria-label="Категория шаблонов" style="display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 16px">
+          <sc-for list="{{tplCats}}" as="c" hint-placeholder-count="6">
+            <button onClick="{{c.pick}}" aria-pressed="{{c.pressed}}" style="flex: 0 0 auto; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid {{c.border}}; background: {{c.bg}}; color: {{c.ink}}; font: 500 14px/1 Inter, system-ui, sans-serif; cursor: pointer">{{c.label}}</button>
+          </sc-for>
+        </div>
+        <sc-if value="{{noTplOpen}}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <sc-for list="{{tplList}}" as="tp" hint-placeholder-count="2">
+              <button onClick="{{tp.pick}}" style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 10px 12px 10px 14px; border: 1px dashed {{t.line}}; border-radius: 14px; background: transparent; color: {{t.ink}}; font: 500 15px/1.35 Inter, system-ui, sans-serif; text-align: left; cursor: pointer">
+                <span style="flex: 1">{{tp.label}}</span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 auto; color: {{t.sub}}"><path d="M9 6l6 6-6 6"></path></svg>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{tplPanel}}" hint-placeholder-val="{{ false }}">
+          <div style="background: {{t.card}}; border-radius: 16px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px">
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <span style="font-size: 13px; font-weight: 600; color: {{t.sub}}">Шаблон · {{tplCatLabel}}</span>
+              <button onClick="{{closeTpl}}" aria-label="Закрыть шаблон" style="width: 44px; height: 44px; margin: -12px -12px -12px 0; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: {{t.sub}}; cursor: pointer">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+              </button>
+            </div>
+            <p style="margin: 0; font-size: 17px; line-height: 1.35; font-weight: 600">{{tplPreview}}</p>
+            <sc-for list="{{tplBlanks}}" as="b" hint-placeholder-count="2">
+              <div style="display: flex; flex-direction: column; gap: 6px">
+                <label for="{{b.id}}" style="font-size: 13px; font-weight: 600">{{b.label}}</label>
+                <input id="{{b.id}}" type="{{b.type}}" value="{{b.value}}" onChange="{{b.onInput}}" placeholder="{{b.ph}}" style="box-sizing: border-box; width: 100%; height: 48px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.bg}}; color: {{t.ink}}; font: 400 15px/1 Inter, system-ui, sans-serif; outline: none">
+              </div>
+            </sc-for>
+            <button onClick="{{applyTpl}}" disabled="{{tplDisabled}}" style="height: 48px; border: none; border-radius: 14px; background: {{t.ink}}; color: {{t.card}}; opacity: {{tplOpacity}}; font: 600 15px/1 Inter, system-ui, sans-serif; cursor: pointer">Подставить в вопрос</button>
+          </div>
+        </sc-if>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{isStep2}}" hint-placeholder-val="{{ false }}">
+      <h1 style="margin: 0; font-size: 24px; line-height: 1.2; font-weight: 700">Сроки и правила итога</h1>
+
+      <sc-if value="{{showIdle}}" hint-placeholder-val="{{ false }}">
+        <section aria-label="ИИ-помощник" style="background: {{t.card}}; border: 1px solid {{t.yesLine}}; border-radius: 16px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; gap: 12px; align-items: flex-start">
+            <span style="width: 36px; height: 36px; border-radius: 12px; background: {{t.yesTint}}; color: {{t.yes}}; display: flex; align-items: center; justify-content: center; flex: 0 0 auto">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M11 3.5l1.9 5.1 5.1 1.9-5.1 1.9L11 17.5l-1.9-5.1L4 10.5l5.1-1.9z"></path><path d="M18.5 15l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"></path></svg>
+            </span>
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 15px; font-weight: 600">ИИ-помощник</span>
+              <span style="font-size: 13px; line-height: 1.4; color: {{t.sub}}">Предложит, как определить итог, сроки и категорию по твоему вопросу. Ты всё проверишь и поправишь.</span>
+            </div>
+          </div>
+          <button onClick="{{ask}}" style="height: 48px; border: none; border-radius: 14px; background: {{t.yes}}; color: {{t.onYes}}; display: flex; align-items: center; justify-content: center; gap: 8px; font: 600 15px/1 Inter, system-ui, sans-serif; cursor: pointer">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M11 3.5l1.9 5.1 5.1 1.9-5.1 1.9L11 17.5l-1.9-5.1L4 10.5l5.1-1.9z"></path></svg>
+            Помочь с правилами
+          </button>
+          <span style="font-size: 12px; line-height: 1.4; color: {{t.sub}}">Помощнику уходит только текст вопроса — без имени и Telegram ID.</span>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{showLoading}}" hint-placeholder-val="{{ false }}">
+        <section role="status" style="background: {{t.card}}; border: 1px solid {{t.yesLine}}; border-radius: 16px; padding: 14px 16px; display: flex; gap: 12px; align-items: center">
+          <span style="width: 36px; height: 36px; border-radius: 12px; background: {{t.yesTint}}; color: {{t.yes}}; display: flex; align-items: center; justify-content: center; flex: 0 0 auto">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M11 3.5l1.9 5.1 5.1 1.9-5.1 1.9L11 17.5l-1.9-5.1L4 10.5l5.1-1.9z"></path><path d="M18.5 15l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"></path></svg>
+          </span>
+          <div style="display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 15px; font-weight: 600">Помощник пишет правила…</span>
+            <span style="font-size: 13px; line-height: 1.4; color: {{t.sub}}">Обычно 2–3 секунды. Поля ниже заполнятся сами.</span>
+          </div>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{showDone}}" hint-placeholder-val="{{ false }}">
+        <section role="status" style="background: {{t.yesTint}}; border-radius: 16px; padding: 12px 14px 4px; display: flex; flex-direction: column; gap: 6px">
+          <div style="display: flex; gap: 10px; align-items: flex-start">
+            <span style="color: {{t.yes}}; display: flex; flex: 0 0 auto; margin-top: 1px">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M11 3.5l1.9 5.1 5.1 1.9-5.1 1.9L11 17.5l-1.9-5.1L4 10.5l5.1-1.9z"></path><path d="M18.5 15l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"></path></svg>
+            </span>
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 14px; line-height: 1.35; font-weight: 600">Помощник заполнил сроки, правила и категорию</span>
+              <span style="font-size: 13px; line-height: 1.4; color: {{t.sub}}">Проверь каждое поле: за итог отвечаешь ты, а не ИИ.</span>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; padding-left: 30px">
+            <button onClick="{{undo}}" style="min-height: 44px; padding: 0; border: none; background: transparent; color: {{t.yes}}; font: 600 14px/1 Inter, system-ui, sans-serif; cursor: pointer">Вернуть как было</button>
+            <span style="font-size: 12px; color: {{t.sub}}">{{leftLabel}}</span>
+          </div>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{showBetter}}" hint-placeholder-val="{{ false }}">
+        <section aria-label="Уточнить вопрос" style="background: {{t.card}}; border-radius: 16px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px">
+          <span style="font-size: 13px; font-weight: 600">Точнее так</span>
+          <p style="margin: 0; padding: 10px 12px; border-radius: 12px; background: {{t.bg}}; font-size: 15px; line-height: 1.4; font-weight: 600">{{better}}</p>
+          <span style="font-size: 13px; line-height: 1.4; color: {{t.sub}}">{{betterWhy}}</span>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+            <button onClick="{{acceptBetter}}" style="height: 44px; border: none; border-radius: 12px; background: {{t.ink}}; color: {{t.card}}; font: 600 15px/1 Inter, system-ui, sans-serif; cursor: pointer">Заменить</button>
+            <button onClick="{{dismissBetter}}" style="height: 44px; border: 1px solid {{t.line}}; border-radius: 12px; background: transparent; color: {{t.ink}}; font: 600 15px/1 Inter, system-ui, sans-serif; cursor: pointer">Оставить мой</button>
+          </div>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{showAccepted}}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; font-size: 13px; color: {{t.sub}}">
+          <span>Вопрос уточнён</span>
+          <button onClick="{{revertBetter}}" style="min-height: 44px; padding: 0; border: none; background: transparent; color: {{t.yes}}; font: 600 13px/1 Inter, system-ui, sans-serif; cursor: pointer">Вернуть мой</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{showTpl}}" hint-placeholder-val="{{ false }}">
+        <section role="status" style="background: {{t.card}}; border-radius: 16px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 auto; margin-top: 1px; color: {{t.sub}}"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M4 10h16M10 10v10"></path></svg>
+          <div style="display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 14px; line-height: 1.35; font-weight: 600">Сроки и правила — из шаблона</span>
+            <span style="font-size: 13px; line-height: 1.4; color: {{t.sub}}">Проверь их: все поля можно менять.</span>
+          </div>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{showWarn}}" hint-placeholder-val="{{ false }}">
+        <section role="alert" style="background: {{t.noTint}}; border-radius: 16px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; gap: 10px; align-items: flex-start">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 auto; margin-top: 1px; color: {{t.no}}"><path d="M12 4l9 16H3z"></path><path d="M12 10v4M12 17v.01"></path></svg>
+            <div style="display: flex; flex-direction: column; gap: 4px">
+              <span style="font-size: 14px; line-height: 1.35; font-weight: 600">Похоже, это рынок о здоровье конкретного человека</span>
+              <span style="font-size: 13px; line-height: 1.4; color: {{t.ink}}">Такие рынки запрещены и скрываются по жалобам. Спроси о событии, а не о человеке, — например, «Пройдёт ли экзамен по расписанию?»</span>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+            <button onClick="{{editQ}}" style="height: 44px; border: none; border-radius: 12px; background: {{t.ink}}; color: {{t.card}}; font: 600 15px/1 Inter, system-ui, sans-serif; cursor: pointer">Изменить вопрос</button>
+            <button onClick="{{manual}}" style="height: 44px; border: 1px solid {{t.ink}}; border-radius: 12px; background: transparent; color: {{t.ink}}; font: 600 15px/1 Inter, system-ui, sans-serif; cursor: pointer">Заполню сам</button>
+          </div>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{showOff}}" hint-placeholder-val="{{ false }}">
+        <section role="status" style="background: {{t.card}}; border-radius: 16px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 14px; line-height: 1.35; font-weight: 600">Помощник сейчас не отвечает</span>
+            <span style="font-size: 13px; line-height: 1.4; color: {{t.sub}}">Заполни правила сам — мастер работает и без ИИ.</span>
+          </div>
+          <button onClick="{{retry}}" style="height: 44px; border: 1px solid {{t.line}}; border-radius: 12px; background: transparent; color: {{t.ink}}; font: 600 15px/1 Inter, system-ui, sans-serif; cursor: pointer">Попробовать ещё раз</button>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{showLimit}}" hint-placeholder-val="{{ false }}">
+        <section role="status" style="background: {{t.card}}; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 14px; line-height: 1.35; font-weight: 600">Подсказки на сегодня закончились</span>
+          <span style="font-size: 13px; line-height: 1.4; color: {{t.sub}}">Их 20 в день. Шаблоны на первом шаге работают без ИИ.</span>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{isLoading}}" hint-placeholder-val="{{ false }}">
+        <div aria-hidden="true" style="display: flex; flex-direction: column; gap: 18px">
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <span style="font-size: 13px; font-weight: 600">Приём прогнозов до</span>
+              <span style="height: 48px; border-radius: 12px; background: {{t.skel}}"></span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <span style="font-size: 13px; font-weight: 600">Время</span>
+              <span style="height: 48px; border-radius: 12px; background: {{t.skel}}"></span>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-size: 13px; font-weight: 600">Итог станет известен</span>
+            <span style="height: 48px; border-radius: 12px; background: {{t.skel}}"></span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-size: 13px; font-weight: 600">Как определяем результат</span>
+            <div style="height: 168px; box-sizing: border-box; padding: 16px 14px; border: 1px solid {{t.line}}; border-radius: 14px; background: {{t.card}}; display: flex; flex-direction: column; gap: 12px">
+              <span style="width: 92%; height: 12px; border-radius: 6px; background: {{t.skel}}"></span>
+              <span style="width: 78%; height: 12px; border-radius: 6px; background: {{t.skel}}"></span>
+              <span style="width: 86%; height: 12px; border-radius: 6px; background: {{t.skel}}"></span>
+              <span style="width: 54%; height: 12px; border-radius: 6px; background: {{t.skel}}"></span>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <span style="font-size: 13px; font-weight: 600">Категория</span>
+            <div style="display: flex; gap: 8px">
+              <span style="width: 72px; height: 40px; border-radius: 999px; background: {{t.skel}}"></span>
+              <span style="width: 84px; height: 40px; border-radius: 999px; background: {{t.skel}}"></span>
+              <span style="width: 96px; height: 40px; border-radius: 999px; background: {{t.skel}}"></span>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{notLoading}}" hint-placeholder-val="{{ true }}">
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <div style="display: flex; align-items: center; gap: 6px; min-height: 20px">
+              <label for="create-close" style="font-size: 13px; font-weight: 600">Приём прогнозов до</label>
+            </div>
+            <input id="create-close" type="date" value="{{closeDate}}" onChange="{{onClose}}" style="box-sizing: border-box; width: 100%; height: 48px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.card}}; color: {{t.ink}}; font: 400 15px/1 Inter, system-ui, sans-serif">
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 20px">
+              <label for="create-time" style="font-size: 13px; font-weight: 600">Время</label>
+              <sc-if value="{{chipDates}}" hint-placeholder-val="{{ false }}">
+                <span style="height: 20px; padding: 0 8px; border-radius: 999px; background: {{chipBg}}; color: {{chipInk}}; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center">{{chipText}}</span>
+              </sc-if>
+            </div>
+            <input id="create-time" type="time" value="{{closeTime}}" onChange="{{onTime}}" style="box-sizing: border-box; width: 100%; height: 48px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.card}}; color: {{t.ink}}; font: 400 15px/1 Inter, system-ui, sans-serif">
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 20px">
+            <label for="create-result" style="font-size: 13px; font-weight: 600">Итог станет известен</label>
+            <sc-if value="{{chipDates}}" hint-placeholder-val="{{ false }}">
+              <span style="height: 20px; padding: 0 8px; border-radius: 999px; background: {{chipBg}}; color: {{chipInk}}; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center">{{chipText}}</span>
+            </sc-if>
+          </div>
+          <input id="create-result" type="date" value="{{resultDate}}" onChange="{{onResult}}" style="box-sizing: border-box; width: 100%; height: 48px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.card}}; color: {{t.ink}}; font: 400 15px/1 Inter, system-ui, sans-serif">
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 20px">
+            <label for="create-criteria" style="font-size: 13px; font-weight: 600">Как определяем результат</label>
+            <sc-if value="{{chipCriteria}}" hint-placeholder-val="{{ false }}">
+              <span style="height: 20px; padding: 0 8px; border-radius: 999px; background: {{chipBg}}; color: {{chipInk}}; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center">{{chipText}}</span>
+            </sc-if>
+          </div>
+          <textarea id="create-criteria" rows="7" value="{{criteria}}" onChange="{{onCriteria}}" placeholder="ДА, если … НЕТ, если … Чем подтвержу итог: скриншот, фото, ссылка." style="box-sizing: border-box; width: 100%; padding: 12px 14px; border: 1px solid {{t.line}}; border-radius: 14px; background: {{t.card}}; color: {{t.ink}}; font: 400 15px/1.45 Inter, system-ui, sans-serif; resize: none; outline: none"></textarea>
+        </div>
+        <div role="group" aria-label="Категория" style="display: flex; flex-direction: column; gap: 8px">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 20px">
+            <span style="font-size: 13px; font-weight: 600">Категория</span>
+            <sc-if value="{{chipCat}}" hint-placeholder-val="{{ false }}">
+              <span style="height: 20px; padding: 0 8px; border-radius: 999px; background: {{chipBg}}; color: {{chipInk}}; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center">{{chipText}}</span>
+            </sc-if>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px">
+            <sc-for list="{{cats}}" as="c" hint-placeholder-count="6">
+              <button onClick="{{c.pick}}" aria-pressed="{{c.pressed}}" style="height: 40px; padding: 0 18px; border-radius: 999px; border: 1px solid {{c.border}}; background: {{c.bg}}; color: {{c.ink}}; font: 500 14px/1 Inter, system-ui, sans-serif; cursor: pointer">{{c.label}}</button>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <div style="display: flex; gap: 10px; padding: 12px 14px; border-radius: 14px; background: {{t.card}}; font-size: 13px; line-height: 1.4; color: {{t.sub}}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex: 0 0 auto; margin-top: 1px"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16.5v.01"></path></svg>
+        <span>Если не укажешь итог в течение 72 часов после этой даты, рынок отменится и всем вернутся монеты.</span>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isStep3}}" hint-placeholder-val="{{ false }}">
+      <h1 style="margin: 0; font-size: 24px; line-height: 1.2; font-weight: 700">Проверь и публикуй</h1>
+
+      <sc-if value="{{hasSimilar}}" hint-placeholder-val="{{ false }}">
+        <section aria-label="Похожие рынки" style="display: flex; flex-direction: column; gap: 10px">
+          <div style="display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 15px; font-weight: 600">Похожие рынки уже есть</span>
+            <span style="font-size: 13px; line-height: 1.4; color: {{t.sub}}">Можно сделать прогноз там — или всё равно создать свой.</span>
+          </div>
+          <sc-for list="{{similar}}" as="m" hint-placeholder-count="2">
+            <article style="background: {{t.card}}; border-radius: 14px; padding: 12px 12px 12px 14px; display: flex; align-items: center; gap: 12px">
+              <div style="flex: 1; display: flex; flex-direction: column; gap: 4px">
+                <span style="font-size: 15px; line-height: 1.35; font-weight: 600">{{m.q}}</span>
+                <span style="font-size: 13px; color: {{t.sub}}; font-variant-numeric: tabular-nums">{{m.line}}</span>
+              </div>
+              <button onClick="{{m.open}}" style="flex: 0 0 auto; height: 44px; padding: 0 14px; border: 1px solid {{t.line}}; border-radius: 12px; background: transparent; color: {{t.ink}}; font: 600 14px/1 Inter, system-ui, sans-serif; cursor: pointer">Открыть</button>
+            </article>
+          </sc-for>
+        </section>
+      </sc-if>
+
+      <span style="font-size: 13px; font-weight: 600; color: {{t.sub}}">Так рынок увидят в ленте</span>
+      <article style="background: {{t.card}}; border-radius: 16px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px">
+        <span style="font-size: 13px; color: {{t.sub}}">{{previewMeta}}</span>
+        <h2 style="margin: 0; font-size: 17px; line-height: 1.3; font-weight: 600">{{previewQ}}</h2>
+        <div style="display: flex; align-items: baseline; gap: 10px"><span style="font-size: 32px; line-height: 1; font-weight: 700">50%</span><span style="font-size: 13px; color: {{t.sub}}">новый рынок</span></div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+          <span style="height: 44px; border-radius: 12px; background: {{t.yesTint}}; color: {{t.yes}}; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 600">ДА · 50%</span>
+          <span style="height: 44px; border-radius: 12px; background: {{t.noTint}}; color: {{t.no}}; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 600">НЕТ · 50%</span>
+        </div>
+      </article>
+      <section aria-label="Стоимость" style="background: {{t.card}}; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; font-variant-numeric: tabular-nums">
+        <div style="display: flex; justify-content: space-between"><span style="color: {{t.sub}}">Создание рынка</span><span style="font-weight: 700">100</span></div>
+        <div style="display: flex; justify-content: space-between"><span style="color: {{t.sub}}">Баланс после</span><span style="font-weight: 600">1 140</span></div>
+        <span style="font-size: 12px; line-height: 1.4; color: {{t.sub}}">Эти 100 монет покрывают работу маркет-мейкера. Что не потратится, вернётся после итога.</span>
+      </section>
+      <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px">
+        <sc-for list="{{rules}}" as="r" hint-placeholder-count="4">
+          <li style="display: flex; gap: 10px; font-size: 14px; line-height: 1.4">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{t.yes}}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 auto; margin-top: 1px"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+            <span>{{r}}</span>
+          </li>
+        </sc-for>
+      </ul>
+    </sc-if>
+
+    <sc-if value="{{isDone}}" hint-placeholder-val="{{ false }}">
+      <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 40px 12px">
+        <span style="width: 72px; height: 72px; border-radius: 999px; background: {{t.yesTint}}; color: {{t.yes}}; display: flex; align-items: center; justify-content: center">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+        </span>
+        <h1 style="margin: 0; font-size: 24px; font-weight: 700">Рынок опубликован</h1>
+        <p style="margin: 0; font-size: 15px; line-height: 1.45; color: {{t.sub}}">Дальше — экран «Рынок опубликован» из утверждённого макета. Здесь прототип заканчивается.</p>
+        <button onClick="{{reset}}" style="width: 100%; height: 52px; margin-top: 12px; border: none; border-radius: 14px; background: {{t.ink}}; color: {{t.card}}; font: 600 16px/1 Inter, system-ui, sans-serif; cursor: pointer">Пройти ещё раз</button>
+      </div>
+    </sc-if>
+  </main>
+
+  <sc-if value="{{hasToast}}" hint-placeholder-val="{{ false }}">
+    <div role="status" style="position: absolute; left: 16px; right: 16px; bottom: 100px; padding: 12px 14px; border-radius: 14px; background: {{t.ink}}; color: {{t.card}}; font-size: 14px; line-height: 1.35; text-align: center">{{toast}}</div>
+  </sc-if>
+
+  <sc-if value="{{showBar}}" hint-placeholder-val="{{ true }}">
+    <div style="flex: 0 0 auto; display: flex; gap: 8px; padding: 12px 16px 20px; background: {{t.card}}; border-top: 1px solid {{t.line}}">
+      <sc-if value="{{showBack}}" hint-placeholder-val="{{ false }}">
+        <button onClick="{{back}}" style="height: 52px; padding: 0 20px; border: 1px solid {{t.line}}; border-radius: 14px; background: transparent; color: {{t.ink}}; font: 600 16px/1 Inter, system-ui, sans-serif; cursor: pointer">Назад</button>
+      </sc-if>
+      <button onClick="{{next}}" disabled="{{nextDisabled}}" style="flex: 1; height: 52px; border: none; border-radius: 14px; background: {{t.ink}}; color: {{t.card}}; opacity: {{nextOpacity}}; font: 600 16px/1 Inter, system-ui, sans-serif; cursor: pointer">{{nextLabel}}</button>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Тема"},"start":{"editor":null,"default":"live"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = this.preset(props.start || 'live');
+  }
+
+  componentWillUnmount() {
+    clearTimeout(this.timer);
+    clearTimeout(this.toastTimer);
+  }
+
+  theme() {
+    if (this.props.dark ?? false) {
+      return { bg: '#0E1014', card: '#181B21', ink: '#F1F3F5', sub: '#9AA3AE', line: '#2A2E36', yes: '#7DB0FF', yesTint: '#1E2A3C', yesLine: '#2B3E5C', onYes: '#0E1014', no: '#FF9E6B', noTint: '#33241D', chip: '#262A31', skel: '#242830' };
+    }
+    return { bg: '#F2F3F5', card: '#FFFFFF', ink: '#111418', sub: '#5F6672', line: '#E3E5E8', yes: '#1A5FB8', yesTint: '#E7EFFA', yesLine: '#C9DAF2', onYes: '#FFFFFF', no: '#B23A0B', noTint: '#FBEDE6', chip: '#E9EBEE', skel: '#E4E6EA' };
+  }
+
+  blank() {
+    return {
+      step: 1, q: '', cat: '', closeDate: '2026-11-04', closeTime: '23:59', resultDate: '2026-11-05', criteria: '',
+      tplCat: 'Учёба', tplOpen: null, tplVals: {}, tplUsed: false,
+      assist: 'idle', mark: { dates: false, criteria: false, cat: false }, markBy: '',
+      better: null, betterWhy: '', sugg: 'none', qBefore: '', before: null,
+      left: 20, toast: ''
+    };
+  }
+
+  preset(name) {
+    const s = this.blank();
+    if (name === 's1-template') return Object.assign(s, { tplOpen: 'exam', tplVals: { subject: 'матанализ', date: '2026-12-20' } });
+    if (name === 's2-button') return Object.assign(s, { step: 2, q: 'Сдам ли я сессию без троек?' });
+    if (name === 's2-loading') return Object.assign(s, { step: 2, q: 'Сдам ли я сессию без троек?', assist: 'loading' });
+    if (name === 's2-done') {
+      Object.assign(s, { step: 2, q: 'Сдам ли я сессию без троек?' });
+      return Object.assign(s, this.assistResult(s));
+    }
+    if (name === 's2-warn') return Object.assign(s, { step: 2, q: 'Заболеет ли наш преподаватель до конца семестра?', assist: 'warn' });
+    if (name === 's2-off') return Object.assign(s, { step: 2, q: 'Отменят ли пары в пятницу?', assist: 'off' });
+    if (name === 's3-similar') {
+      Object.assign(s, this.templateResult(s, 'exam', { subject: 'матанализ', date: '2026-12-20' }));
+      s.step = 3;
+      return s;
+    }
+    return s;
+  }
+
+  blankDefs() {
+    return {
+      date: { label: 'Когда', type: 'date', ph: '', hint: '[дата]' },
+      subject: { label: 'Предмет', type: 'text', ph: 'матанализ', hint: '[предмет]' },
+      team: { label: 'Команда', type: 'text', ph: 'сборная вуза', hint: '[команда]' },
+      player: { label: 'Кто', type: 'text', ph: 'наш капитан', hint: '[игрок]' },
+      game: { label: 'Игра', type: 'text', ph: 'название игры', hint: '[игра]' },
+      rank: { label: 'Что возьмёшь', type: 'text', ph: 'Легенду', hint: '[ранг]' },
+      product: { label: 'Что покажут', type: 'text', ph: 'новый телефон', hint: '[что]' },
+      app: { label: 'Чего', type: 'text', ph: 'нашего бота', hint: '[чего]' },
+      video: { label: 'Видео', type: 'text', ph: 'наш клип', hint: '[видео]' },
+      num: { label: 'Сколько просмотров', type: 'number', ph: '10000', hint: '[N]' },
+      what: { label: 'Что', type: 'text', ph: 'курсовую', hint: '[что]' }
+    };
+  }
+
+  templates() {
+    return {
+      'Учёба': [
+        { id: 'exam', cat: 'Учёба', blanks: ['subject', 'date'], text: 'Сдам ли {subject} на 4 или 5 до {date}?',
+          criteria: 'ДА — если до {date} в зачётке по предмету «{subject}» стоит 4 или 5.\nНЕТ — если стоит 3 или ниже, незачёт или экзамен не сдан к этой дате.\nЧем подтвердить: скриншот зачётки или ведомости.\nЕсли экзамен перенесут — ждём новой даты, но не дольше месяца.' },
+        { id: 'classes', cat: 'Учёба', blanks: ['date'], text: 'Отменят ли пары {date}?',
+          criteria: 'ДА — если {date} отменят все пары группы: объявление в чате группы или на сайте вуза.\nНЕТ — если хотя бы одна пара пройдёт по расписанию.\nЧем подтвердить: скриншот объявления или расписания.' }
+      ],
+      'Спорт': [
+        { id: 'win', cat: 'Спорт', blanks: ['team', 'date'], text: 'Победит ли {team} в матче {date}?',
+          criteria: 'ДА — если {team} победит в матче {date} по официальному протоколу, с учётом овертайма и серии пенальти.\nНЕТ — если ничья или поражение.\nЧем подтвердить: скриншот результата матча.\nЕсли матч перенесут или отменят — рынок отменяется.' },
+        { id: 'goal', cat: 'Спорт', blanks: ['player', 'date'], text: 'Забьёт ли {player} в матче {date}?',
+          criteria: 'ДА — если {player} забьёт хотя бы один гол в матче {date}; серия пенальти не считается.\nНЕТ — если не забьёт или не выйдет на поле.\nЧем подтвердить: скриншот протокола матча.\nЕсли матч перенесут или отменят — рынок отменяется.' }
+      ],
+      'Игры': [
+        { id: 'release', cat: 'Игры', blanks: ['game', 'date'], text: 'Выйдет ли {game} до {date}?',
+          criteria: 'ДА — если {game} официально выйдет до {date}: релиз в магазине или у издателя.\nНЕТ — если к этой дате релиза не будет; ранний доступ и бета не считаются.\nЧем подтвердить: ссылка на страницу игры.\nЕсли игру отменят — итог НЕТ.' },
+        { id: 'rank', cat: 'Игры', blanks: ['rank', 'game', 'date'], text: 'Возьму ли я {rank} в {game} до {date}?',
+          criteria: 'ДА — если до {date} я возьму {rank} в {game}.\nНЕТ — если к этой дате не возьму.\nЧем подтвердить: скриншот профиля с рангом и датой.' }
+      ],
+      'Технологии': [
+        { id: 'show', cat: 'Технологии', blanks: ['product', 'date'], text: 'Покажут ли {product} на презентации {date}?',
+          criteria: 'ДА — если {product} официально покажут на презентации {date}.\nНЕТ — если не покажут или покажут только тизер.\nЧем подтвердить: ссылка на запись презентации или новость компании.\nЕсли презентацию перенесут — рынок отменяется.' },
+        { id: 'update', cat: 'Технологии', blanks: ['app', 'date'], text: 'Выйдет ли обновление {app} до {date}?',
+          criteria: 'ДА — если до {date} выйдет обновление {app}: новая версия в магазине или на сайте.\nНЕТ — если к этой дате обновления не будет.\nЧем подтвердить: скриншот страницы с номером версии и датой.' }
+      ],
+      'Фан': [
+        { id: 'views', cat: 'Фан', blanks: ['video', 'num', 'date'], text: 'Наберёт ли {video} {num} просмотров до {date}?',
+          criteria: 'ДА — если до {date} у видео «{video}» будет {num} просмотров или больше.\nНЕТ — если меньше.\nЧем подтвердить: скриншот счётчика просмотров с датой.' },
+        { id: 'finish', cat: 'Фан', blanks: ['what', 'date'], text: 'Доделаем ли мы {what} до {date}?',
+          criteria: 'ДА — если до {date} работа «{what}» готова и показана всем.\nНЕТ — если к этой дате не готова.\nЧем подтвердить: ссылка или фото результата.' }
+      ]
+    };
+  }
+
+  findTpl(id) {
+    const all = this.templates();
+    for (const k of Object.keys(all)) {
+      const hit = all[k].find((x) => x.id === id);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  humanDate(iso) {
+    const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+    const parts = String(iso || '').split('-');
+    if (parts.length !== 3) return '…';
+    return Number(parts[2]) + ' ' + months[Number(parts[1]) - 1];
+  }
+
+  shift(iso, days) {
+    const p = String(iso).split('-').map(Number);
+    return new Date(Date.UTC(p[0], p[1] - 1, p[2] + days)).toISOString().slice(0, 10);
+  }
+
+  plural(n, one, few, many) {
+    const a = n % 10, b = n % 100;
+    if (a === 1 && b !== 11) return one;
+    if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return few;
+    return many;
+  }
+
+  fill(text, vals) {
+    const defs = this.blankDefs();
+    return text.replace(/\{(\w+)\}/g, (m, k) => {
+      const v = String(vals[k] || '').trim();
+      if (!v) return defs[k] ? defs[k].hint : m;
+      return defs[k] && defs[k].type === 'date' ? this.humanDate(v) : v;
+    });
+  }
+
+  templateResult(s, id, vals) {
+    const tp = this.findTpl(id);
+    const d = vals.date;
+    return {
+      q: this.fill(tp.text, vals).slice(0, 120), criteria: this.fill(tp.criteria, vals), cat: tp.cat,
+      closeDate: this.shift(d, -1), closeTime: '23:59', resultDate: this.shift(d, 1),
+      tplUsed: true, tplOpen: null, tplVals: {}, assist: 'template',
+      mark: { dates: true, criteria: true, cat: true }, markBy: 'template',
+      better: null, sugg: 'none', before: null
+    };
+  }
+
+  // Canned answers standing in for the model: the real helper is a server call (spec E9.1).
+  ai(q, cat) {
+    const x = q.toLowerCase();
+    if (/заболе|болезн|умр|смерт|выбор|президент|депутат|беремен/.test(x)) return { warn: true };
+    if (/сесси|сдам|экзам|зачёт|зачет|троек/.test(x)) {
+      return {
+        cat: 'Учёба', close: '2026-12-28', result: '2027-01-31',
+        criteria: 'ДА — если по итогам зимней сессии в зачётке нет троек, незачётов и долгов.\nНЕТ — если есть хотя бы одна тройка, незачёт или долг.\nЧем подтвердить: скриншот зачётки или ведомости из личного кабинета.\nЕсли сессию перенесут — ждём новых дат, но не дольше месяца.',
+        better: /сесси/.test(x) && !/\d/.test(x) ? 'Закрою ли я зимнюю сессию без троек до 31 января?' : null,
+        why: 'Добавили, какая сессия и к какому сроку: иначе спорно, что считать итогом.'
+      };
+    }
+    // Today in the prototype is Wednesday, 28 October 2026.
+    const days = [['в понедельник', '2 ноября', '2026-11-02'], ['во вторник', '3 ноября', '2026-11-03'], ['в среду', '4 ноября', '2026-11-04'],
+      ['в четверг', '29 октября', '2026-10-29'], ['в пятницу', '30 октября', '2026-10-30'], ['в субботу', '31 октября', '2026-10-31'], ['в воскресенье', '1 ноября', '2026-11-01']];
+    const day = days.find((d) => x.includes(d[0]));
+    const dated = day ? q.replace(day[0], day[0] + ', ' + day[1]) : null;
+    const dayWhy = day ? '«' + day[0] + '» поймут по-разному — добавили дату.' : '';
+    if (/пары|пару|занятия/.test(x)) {
+      return {
+        cat: 'Учёба', close: day ? this.shift(day[2], -1) : '2026-11-03', result: day ? this.shift(day[2], 1) : '2026-11-05',
+        criteria: 'ДА — если в этот день отменят все пары группы: объявление в чате группы или на сайте вуза.\nНЕТ — если хотя бы одна пара пройдёт по расписанию.\nЧем подтвердить: скриншот объявления или расписания.',
+        better: dated, why: dayWhy
+      };
+    }
+    if (/матч|победит|выиграет|забь[её]т|чемпион/.test(x)) {
+      return {
+        cat: 'Спорт', close: '2026-11-07', result: '2026-11-08',
+        criteria: 'ДА — если команда из вопроса победит по официальному протоколу матча, с учётом овертайма и серии пенальти.\nНЕТ — если ничья или поражение.\nЧем подтвердить: скриншот результата матча.\nЕсли матч перенесут или отменят — рынок отменяется.',
+        better: null, why: ''
+      };
+    }
+    if (/игр|выйдет|релиз|патч/.test(x)) {
+      return {
+        cat: 'Игры', close: '2026-11-30', result: '2026-12-01',
+        criteria: 'ДА — если релиз состоится до даты из вопроса: в магазине или у издателя.\nНЕТ — если к этой дате релиза не будет; ранний доступ и бета не считаются.\nЧем подтвердить: ссылка на страницу игры или новость издателя.\nЕсли выход отменят — итог НЕТ.',
+        better: null, why: ''
+      };
+    }
+    const hasDate = /\d|до |завтра|сегодня|недел|месяц|году|понедельник|вторник|сред[уа]|четверг|пятниц|суббот|воскресен/.test(x);
+    return {
+      cat: cat || 'Фан', close: '2026-11-29', result: '2026-11-30',
+      criteria: hasDate
+        ? 'ДА — если это произойдёт в срок из вопроса.\nНЕТ — если к этому сроку этого не произойдёт.\nЧем подтвердить: скриншот, фото или ссылка на источник.\nЕсли событие перенесут или отменят — рынок отменяется.'
+        : 'ДА — если это произойдёт до 30 ноября включительно.\nНЕТ — если к 30 ноября этого не произойдёт.\nЧем подтвердить: скриншот, фото или ссылка на источник.\nЕсли событие перенесут или отменят — рынок отменяется.',
+      better: dated || (hasDate ? null : q.trim().replace(/\?*$/, '') + ' до 30 ноября?'),
+      why: day ? dayWhy : 'Без срока итог не определить — добавили дату.'
+    };
+  }
+
+  assistResult(s) {
+    const r = this.ai(s.q, s.cat);
+    if (r.warn) return { assist: 'warn' };
+    return {
+      assist: 'done', criteria: r.criteria, cat: r.cat, closeDate: r.close, closeTime: '23:59', resultDate: r.result,
+      mark: { dates: true, criteria: true, cat: true }, markBy: 'ai',
+      better: r.better, betterWhy: r.why, sugg: r.better ? 'open' : 'none', left: s.left - 1,
+      before: { criteria: s.criteria, cat: s.cat, closeDate: s.closeDate, closeTime: s.closeTime, resultDate: s.resultDate }
+    };
+  }
+
+  ask() {
+    if (this.state.left <= 0) {
+      this.setState({ assist: 'limit' });
+      return;
+    }
+    this.setState({ assist: 'loading' });
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.setState((st) => this.assistResult(st)), 1600);
+  }
+
+  showToast(text) {
+    this.setState({ toast: text });
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => this.setState({ toast: '' }), 2200);
+  }
+
+  similar(q) {
+    const x = q.toLowerCase();
+    if (/сесси|сдам|экзам|троек/.test(x)) return [['Закроет ли больше половины потока сессию без троек?', 41, 23], ['Перенесут ли экзамен по матанализу?', 17, 40]];
+    if (/матч|победит|забь[её]т/.test(x)) return [['Победит ли сборная вуза в осеннем турнире?', 63, 48]];
+    return [];
+  }
+
+  renderVals() {
+    const t = this.theme();
+    const s = this.state;
+    const loading = s.assist === 'loading';
+    const ok1 = s.q.trim().length >= 10;
+    const ok2 = s.criteria.trim().length >= 15 && s.cat !== '' && !loading;
+    const canNext = s.step === 1 ? ok1 : s.step === 2 ? ok2 : true;
+    const seg = (n) => (s.step >= n ? t.ink : t.line);
+    const tp = s.tplOpen ? this.findTpl(s.tplOpen) : null;
+    const defs = this.blankDefs();
+    const filledAll = tp ? tp.blanks.every((k) => String(s.tplVals[k] || '').trim() !== '') : false;
+    const byAi = s.markBy === 'ai';
+    const catNames = ['Игры', 'Учёба', 'Технологии', 'Спорт', 'Фан'];
+    const pill = (label, on, pick) => ({ label: label, pressed: on ? 'true' : 'false', bg: on ? t.ink : t.card, ink: on ? t.bg : t.ink, border: on ? t.ink : t.line, pick: pick });
+    const keepAssist = ['loading', 'template', 'manual', 'limit'];
+    const unmark = (key) => (st) => ({ mark: Object.assign({}, st.mark, { [key]: false }) });
+
+    return {
+      t: t, scheme: (this.props.dark ?? false) ? 'dark' : 'light',
+      stepLabel: s.step <= 3 ? s.step + ' / 3' : '',
+      seg1: seg(1), seg2: seg(2), seg3: seg(3),
+      isStep1: s.step === 1, isStep2: s.step === 2, isStep3: s.step === 3, isDone: s.step === 4,
+
+      q: s.q, qLen: s.q.length,
+      onQ: (e) => {
+        const v = e.target.value.slice(0, 120);
+        this.setState((st) => ({ q: v, assist: keepAssist.includes(st.assist) ? st.assist : 'idle', sugg: 'none', better: null }));
+      },
+      tplNote: s.tplUsed, noTplNote: !s.tplUsed,
+      tplCats: catNames.map((label) => pill(label, label === s.tplCat, () => this.setState({ tplCat: label, tplOpen: null, tplVals: {} }))),
+      noTplOpen: !tp, tplPanel: !!tp,
+      tplList: (this.templates()[s.tplCat] || []).map((x) => ({ label: this.fill(x.text, {}), pick: () => this.setState({ tplOpen: x.id, tplVals: {} }) })),
+      tplCatLabel: tp ? tp.cat : '',
+      tplPreview: tp ? this.fill(tp.text, s.tplVals) : '',
+      tplBlanks: tp ? tp.blanks.map((k) => ({
+        id: 'tpl-' + k, label: defs[k].label, type: defs[k].type, ph: defs[k].ph, value: s.tplVals[k] || '',
+        onInput: (e) => {
+          const v = e.target.value;
+          this.setState((st) => ({ tplVals: Object.assign({}, st.tplVals, { [k]: v }) }));
+        }
+      })) : [],
+      applyTpl: () => { if (filledAll) this.setState((st) => this.templateResult(st, st.tplOpen, st.tplVals)); },
+      closeTpl: () => this.setState({ tplOpen: null, tplVals: {} }),
+      tplDisabled: !filledAll, tplOpacity: filledAll ? 1 : 0.4,
+
+      showIdle: s.assist === 'idle', showLoading: loading, showDone: s.assist === 'done', showTpl: s.assist === 'template',
+      showWarn: s.assist === 'warn', showOff: s.assist === 'off', showLimit: s.assist === 'limit',
+      showBetter: s.assist === 'done' && s.sugg === 'open', showAccepted: s.assist === 'done' && s.sugg === 'accepted',
+      better: s.better || '', betterWhy: s.betterWhy,
+      leftLabel: 'Осталось ' + s.left + ' ' + this.plural(s.left, 'подсказка', 'подсказки', 'подсказок') + ' на сегодня',
+      ask: () => this.ask(), retry: () => this.ask(),
+      undo: () => this.setState((st) => Object.assign({}, st.before || {}, {
+        assist: 'idle', mark: { dates: false, criteria: false, cat: false }, markBy: '', sugg: 'none', better: null,
+        q: st.sugg === 'accepted' ? st.qBefore : st.q
+      })),
+      acceptBetter: () => this.setState((st) => ({ qBefore: st.q, q: st.better, sugg: 'accepted' })),
+      dismissBetter: () => this.setState({ sugg: 'dismissed' }),
+      revertBetter: () => this.setState((st) => ({ q: st.qBefore, sugg: 'dismissed' })),
+      editQ: () => this.setState({ step: 1, assist: 'idle' }),
+      manual: () => this.setState({ assist: 'manual' }),
+
+      isLoading: loading, notLoading: !loading,
+      chipText: byAi ? 'ИИ' : 'Шаблон', chipBg: byAi ? t.yesTint : t.chip, chipInk: byAi ? t.yes : t.ink,
+      chipDates: s.mark.dates, chipCriteria: s.mark.criteria, chipCat: s.mark.cat,
+      closeDate: s.closeDate, closeTime: s.closeTime, resultDate: s.resultDate, criteria: s.criteria,
+      onClose: (e) => { const v = e.target.value; this.setState((st) => Object.assign({ closeDate: v }, unmark('dates')(st))); },
+      onTime: (e) => { const v = e.target.value; this.setState((st) => Object.assign({ closeTime: v }, unmark('dates')(st))); },
+      onResult: (e) => { const v = e.target.value; this.setState((st) => Object.assign({ resultDate: v }, unmark('dates')(st))); },
+      onCriteria: (e) => { const v = e.target.value; this.setState((st) => Object.assign({ criteria: v }, unmark('criteria')(st))); },
+      cats: catNames.map((label) => pill(label, label === s.cat, () => this.setState((st) => Object.assign({ cat: label }, unmark('cat')(st))))),
+
+      hasSimilar: this.similar(s.q).length > 0,
+      similar: this.similar(s.q).map((m) => ({
+        q: m[0], line: m[1] + '% ДА · ' + m[2] + ' ' + this.plural(m[2], 'участник', 'участника', 'участников'),
+        open: () => this.showToast('Здесь откроется карточка этого рынка')
+      })),
+      previewMeta: (s.cat || 'Без категории') + ' · до ' + this.humanDate(s.closeDate),
+      previewQ: s.q.trim() || 'Твой вопрос появится здесь',
+      rules: [
+        'Ты не сможешь делать прогнозы на свой рынок',
+        'Итог укажешь в боте ' + this.humanDate(s.resultDate) + ' и приложишь фото или скриншот',
+        'У участников будет 24 часа, чтобы оспорить итог',
+        'Половина комиссии со всех сделок — твоя'
+      ],
+      hasToast: s.toast !== '', toast: s.toast,
+
+      showBar: s.step <= 3, showBack: s.step > 1,
+      back: () => this.setState((st) => ({ step: Math.max(1, st.step - 1) })),
+      next: () => { if (canNext) this.setState((st) => ({ step: st.step + 1 })); },
+      nextDisabled: !canNext, nextOpacity: canNext ? 1 : 0.4,
+      nextLabel: s.step === 3 ? 'Опубликовать за 100' : 'Далее',
+      reset: () => { clearTimeout(this.timer); this.setState(this.blank()); }
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.csrf import csrf_exempt
@@ -16,7 +16,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .. import services
 from ..access import visible_questions
 from ..miniapp_auth import api_view
-from ..models import LedgerEntry, MarketComplaint, MarketSubscription, Position, Question, Trade, Trader
+from ..models import FeedDismissal, LedgerEntry, MarketComplaint, MarketSubscription, Position, Question, Trade, Trader
 from ..services import MarketError
 from . import serializers as s
 
@@ -28,11 +28,18 @@ class BadRequest(Exception):
 
 
 class Unavailable(Exception):
-    """An outside service (Telegram) failed: 503, the client has a fallback."""
+    """An outside service (Telegram, the AI model) failed: 503, the client has a fallback."""
+
+
+class LimitReached(Exception):
+    """A per-user daily limit (the AI helper's) is used up: 429."""
 
 
 def endpoint(*methods, create: bool = False):
-    """Authenticated JSON view; MarketError/BadRequest become 400, unknown market 404."""
+    """Authenticated JSON view; MarketError/BadRequest become 400, unknown market 404.
+
+    A view returns a dict or list (sent as JSON) or a ready response.
+    """
     def decorate(view):
         @csrf_exempt
         @api_view(create=create)
@@ -40,13 +47,16 @@ def endpoint(*methods, create: bool = False):
             if request.method not in methods:
                 return JsonResponse({"error": "Метод не поддерживается."}, status=405)
             try:
-                return JsonResponse(view(request, *args, **kwargs), safe=False)
+                result = view(request, *args, **kwargs)
             except (MarketError, BadRequest) as exc:
                 return JsonResponse({"error": str(exc)}, status=400)
+            except LimitReached as exc:
+                return JsonResponse({"error": str(exc)}, status=429)
             except Unavailable as exc:
                 return JsonResponse({"error": str(exc)}, status=503)
             except Question.DoesNotExist:
                 return JsonResponse({"error": "Рынок не найден."}, status=404)
+            return result if isinstance(result, HttpResponse) else JsonResponse(result, safe=False)
         wrapper.__name__ = view.__name__
         return wrapper
     return decorate
@@ -158,6 +168,9 @@ def me(request):
             fields.append("onboarded_at")
         if fields:
             trader.save(update_fields=fields)
+            if "interests" in fields:
+                from ..events import log_event
+                log_event(trader, "interests_update", {"categories": trader.interests})
     return s.me(trader)
 
 
@@ -174,7 +187,8 @@ def markets(request):
         return create_market(request)
     trader = request.trader
     now = timezone.now()
-    qs = feed_markets(trader).filter(status__in=[Question.Status.OPEN, Question.Status.CLOSED])
+    from ..recommendations import exclude_dismissed, recommended, reason
+    qs = exclude_dismissed(feed_markets(trader), trader).filter(status__in=[Question.Status.OPEN, Question.Status.CLOSED])
     category = request.GET.get("category", "")
     if category:
         qs = qs.filter(category=category)
@@ -182,7 +196,9 @@ def markets(request):
     if query:
         qs = qs.filter(title__icontains=query)
     sort = request.GET.get("sort", "hot")
-    if sort == "new":
+    if sort == "recommended":
+        qs = recommended(qs, trader, now)
+    elif sort == "new":
         qs = qs.order_by("-created_at", "-id")
     elif sort == "soon":
         qs = qs.filter(deadline__gt=now).order_by("deadline", "id")
@@ -197,8 +213,39 @@ def markets(request):
     items = list(qs[(page - 1) * PAGE: page * PAGE])
     starred = s.starred_ids(trader)
     sides = s.my_sides(trader, [q.pk for q in items])
-    return {"items": [s.card(q, starred=starred, now=now, my_side=sides.get(q.pk), trader=trader) for q in items],
+    cards = [s.card(q, starred=starred, now=now, my_side=sides.get(q.pk), trader=trader) for q in items]
+    if sort == "recommended":
+        for card, question in zip(cards, items):
+            card["recommendation_reason"] = reason(question)
+    return {"items": cards,
             "next_page": page + 1 if page * PAGE < total else None, "total": total}
+
+
+@endpoint("POST")
+def dismiss_market(request, pk):
+    question = get_market(request.trader, pk)
+    dismissed = body(request).get("dismissed")
+    if not isinstance(dismissed, bool):
+        raise BadRequest("Укажите dismissed: true или false.")
+    from ..events import log_event
+    if dismissed:
+        _, created = FeedDismissal.objects.get_or_create(trader=request.trader, question=question)
+        if created:
+            log_event(request.trader, "market_dismiss", {"market": question.pk})
+    else:
+        deleted, _ = FeedDismissal.objects.filter(trader=request.trader, question=question).delete()
+        if deleted:
+            log_event(request.trader, "market_restore", {"market": question.pk})
+    return {"dismissed": dismissed}
+
+
+@endpoint("POST")
+def reset_dismissals(request):
+    deleted, _ = FeedDismissal.objects.filter(trader=request.trader).delete()
+    if deleted:
+        from ..events import log_event
+        log_event(request.trader, "feed_restore_all", {"count": deleted})
+    return {"restored": deleted}
 
 
 def create_market(request):
@@ -215,9 +262,17 @@ def create_market(request):
     # null on a replayed request: the message went out with the first one.
     bot_notified = None
     if not question.replayed:
+        import re
         from ..bot_resolution import announce_created
         from ..events import log_event
-        log_event(request.trader, "market_create", {"market": question.pk, "category": question.category})
+        props = {"market": question.pk, "category": question.category}
+        # Analytics only (docs/api.md «Фаза 3a»): unknown values are dropped, the market is created anyway.
+        if data.get("assist") in ("accepted", "edited", "undone"):
+            props["assist"] = data["assist"]
+        template = data.get("template")
+        if isinstance(template, str) and re.fullmatch(r"[a-z0-9_-]{1,40}", template):
+            props["template"] = template
+        log_event(request.trader, "market_create", props)
         bot_notified = announce_created(question)
     request.trader.refresh_from_db()
     return {"market": s.detail(question, request.trader), "balance": s.money(request.trader.balance),
@@ -451,5 +506,16 @@ def events(request):
     if name not in CLIENT_EVENTS:
         raise BadRequest("Неизвестное событие.")
     props = data.get("props") if isinstance(data.get("props"), dict) else {}
+    if name in ("feed_impression", "market_open"):
+        market_id = props.get("market")
+        if isinstance(market_id, bool) or not isinstance(market_id, int):
+            raise BadRequest("Укажите рынок.")
+        question = get_market(request.trader, market_id)
+        props = {"market": question.pk, "sort": props.get("sort") if props.get("sort") in ("recommended", "hot", "new", "soon") else None}
+        # Suppress refresh/retry bursts; these events never grant coins or rewards.
+        from ..models import Event
+        if Event.objects.filter(trader=request.trader, name=name, props=props,
+                                created_at__gte=timezone.now()-timedelta(minutes=5)).exists():
+            return {"ok": True}
     log_event(request.trader, name, props)
     return {"ok": True}

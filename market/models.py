@@ -51,6 +51,15 @@ class Trader(models.Model):
         return self.name if self.show_real_name else self.pseudonym
 
 
+class FeedDismissal(models.Model):
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="feed_dismissals")
+    question = models.ForeignKey("Question", on_delete=models.CASCADE, related_name="feed_dismissals")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["trader", "question"], name="unique_feed_dismissal")]
+
+
 class Friendship(models.Model):
     first = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="friendships_first")
     second = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="friendships_second")
@@ -165,7 +174,6 @@ class Notification(models.Model):
 CATEGORIES = [
     ("games", "Игры"),
     ("study", "Учёба"),
-    ("weather", "Погода"),
     ("tech", "Технологии"),
     ("sport", "Спорт"),
     ("fun", "Фан"),
@@ -530,6 +538,7 @@ class Event(models.Model):
 
     class Meta:
         verbose_name = "событие"
+        indexes = [models.Index(fields=["trader", "name", "created_at"], name="event_trader_name_time")]
         verbose_name_plural = "события"
         ordering = ["-created_at", "-id"]
 

@@ -1,24 +1,28 @@
 ---
 name: deploy
-description: Выкатить текущую ветку miniapp на прод-сервер 91.108.241.25 — запушить, запустить deploy/update.sh, при необходимости setup_bot, проверить сервисы, логи и сайт. Использовать, когда пользователь просит задеплоить, обновить сервер или «чтобы бот работал по новой версии».
+description: Выкатить ветку main на прод-сервер 91.108.241.25 — запушить, запустить deploy/update.sh, при необходимости setup_bot, проверить сервисы, логи и сайт. Использовать, когда пользователь просит задеплоить, обновить сервер или «чтобы бот работал по новой версии».
 ---
 
 # Деплой на прод
 
-Сервер, пути и сервисы описаны в CLAUDE.md, раздел «Сервер (прод)». Вызов `/deploy` — это и есть явная просьба пользователя запушить `miniapp` и обновить прод.
+Сервер, пути и сервисы описаны в CLAUDE.md, раздел «Сервер (прод)». Вызов `/deploy` — это и есть явная просьба пользователя запушить `main` и обновить прод. Команда тоже вливает свои ветки в `main` через PR.
 
 ## 1. Проверки перед выкаткой
 
-- Текущая ветка — `miniapp`, `git status` чистый (иначе — спроси, коммитить ли).
+- Текущая ветка — `main`, `git status` чистый (иначе — спроси, коммитить ли).
+- `git fetch origin` и `git merge-base --is-ancestor origin/main main`: если команда влила что-то новое, сначала подтяни (`git pull --no-rebase`), реши конфликты (номера миграций!) и прогони тесты.
 - Тесты зелёные: `.venv/bin/python -m pytest --ds=config.test_settings -q`. Красные — остановись и скажи.
-- Есть что выкатывать: `git log --oneline origin/miniapp..miniapp` (может быть пусто, если уже запушено — тогда смотри, отстаёт ли сервер).
-- Сервер на `miniapp` и без локальных правок:
+- Есть что выкатывать: `git log --oneline origin/main..main` (может быть пусто, если уже запушено — тогда смотри, отстаёт ли сервер).
+- Сервер на `main` и без локальных правок:
   `ssh -o BatchMode=yes root@91.108.241.25 "cd /opt/prediction_market/app && sudo -u pm git branch --show-current && sudo -u pm git log --oneline -1 && sudo -u pm git status --short"`
+
+Если сервер ещё на `miniapp` (прод жил на ней до 28.10.2026), один раз переключи его — дальше `update.sh` сам держит сервер на `main`:
+  `ssh -o BatchMode=yes root@91.108.241.25 "cd /opt/prediction_market/app && sudo -u pm git fetch -q origin && sudo -u pm git switch main"`
 
 ## 2. Выкатка
 
 ```bash
-git push origin miniapp
+git push origin main
 ssh -o BatchMode=yes root@91.108.241.25 bash /opt/prediction_market/app/deploy/update.sh
 ```
 

@@ -1,0 +1,3 @@
+.feed .sort-tabs{gap:12px;flex-wrap:wrap}.feed .sort-row{flex-wrap:wrap;gap:8px}
+.recommendation-note{font-size:12px;line-height:1.6;margin:0 0 16px}.recommendation-note a{color:var(--yes)}
+.interest-settings{padding:20px;margin-bottom:16px}.interest-chips{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.interest-settings .restore-hidden{margin-top:10px}.interest-settings .button-secondary{width:100%}

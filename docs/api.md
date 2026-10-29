@@ -38,6 +38,7 @@ interface MarketCard {
   closes_at: string; resolves_at: string | null; status: MarketStatus; outcome: Side | null;
   starred: boolean;
   my_side: Side | null;              // куда склоняется моя позиция — «Твой прогноз» в ленте
+  recommendation_reason?: string;  // пояснение порядка только для sort=recommended
 }
 
 interface Position { yes_shares: string; no_shares: string; spent: Money; value: Money; payout_if_yes: Money; payout_if_no: Money }
@@ -66,8 +67,8 @@ interface LedgerEntry { kind: string; label: string; amount: Money; at: string; 
 | `POST /api/session` | `{start_param?: string}` — вызывается при каждом открытии. Создаёт аккаунт (стартовый пакет, пригласивший по `ref_<код>`), начисляет бонус дня, пишет событие `app_open` | `{me: Me, new_account: boolean, granted: {kind: "starter" \| "daily" \| "insurance", amount: Money}[]}` — в день регистрации бонуса дня нет |
 | `GET /api/me` | — | `Me` |
 | `PATCH /api/me` | `{pseudonym?, show_real_name?, onboarded?, interests?: string[]}` — `interests` только из ключей категорий | `Me` |
-| `GET /api/categories` | — | `{slug, label}[]`: games «Игры», study «Учёба», weather «Погода», tech «Технологии», sport «Спорт» |
-| `GET /api/markets` | `?category=&q=&sort=hot\|new\|soon&page=` (20 на страницу) | `{items: MarketCard[], next_page: number \| null, total: number}` |
+| `GET /api/categories` | — | `{slug, label}[]`: games «Игры», study «Учёба», tech «Технологии», sport «Спорт», fun «Фан» (weather «Погода» убрана 28.10.2026) |
+| `GET /api/markets` | `?category=&q=&sort=recommended\|hot\|new\|soon&page=` (20 на страницу) | `{items: MarketCard[], next_page: number \| null, total: number}` |
 | `GET /api/markets/{id}` | — | `MarketDetail` |
 | `GET /api/markets/{id}/history` | `?period=d\|w\|m\|all` | `{points: {t: string, p: number}[]}` |
 | `POST /api/markets/{id}/quote` | `{side, amount}` | `Quote` |
@@ -132,3 +133,43 @@ interface MarketDetail {                          // + к MVP
 | `POST /api/markets/{id}/share` | — | `{prepared_message_id: string}` — для `Telegram.WebApp.shareMessage`; `503 {error}`, если Telegram недоступен — тогда клиент открывает обычную ссылку `t.me/share` |
 
 **Ссылка на рынок** — `t.me/<бот>/<приложение>?startapp=ref_<код>-m<id>` (или `m<id>` без приглашения). Сервер берёт код пригласившего до `-m`; Mini App после входа открывает `/market/<id>`.
+
+## Фаза 3a (контракт, 28.10.2026)
+
+Быстрое создание рынка (спека E9.1–E9.3, макет `docs/mockups/quick-create/`). Старые поля не меняются.
+
+```ts
+interface Me {                                     // + к MVP
+  assist: { enabled: boolean; left: number };      // enabled = false: нет ключа или помощник выключен — карточки помощника нет
+}
+
+interface AssistResult {
+  question: string | null;   // уточнённая формулировка; null — вопрос и так однозначный
+  why: string | null;        // зачем уточнили, одной фразой
+  criteria: string;          // «ДА — если… / НЕТ — если… / Чем подтвердить… / Если перенесут или отменят…»
+  category: string;          // ключ из GET /api/categories
+  closes_at: string;         // уже проверено правилами создания: приём от 1 ч до 1 года
+  resolves_at: string;
+  left: number;              // сколько подсказок осталось сегодня
+}
+
+interface AssistWarning { warning: "forbidden"; text: string; left: number }   // запрещённая тема, поля не заполняем
+
+interface MarketTemplate {
+  id: string;
+  category: string;
+  text: string;              // "Сдам ли {subject} на 4 или 5 до {date}?"
+  criteria: string;          // с теми же {key}
+  blanks: { key: string; label: string; type: "text" | "date" | "number"; placeholder: string; hint: string }[];
+  // сроки: приём до 23:59 накануне {date}, итог — на следующий день после {date}
+}
+```
+
+| Метод и путь | Тело / параметры | Ответ |
+| --- | --- | --- |
+| `POST /api/assist` | `{title: string, category?: string}` — `title` от 10 до 120 символов | `AssistResult` или `AssistWarning`; `429 {error}` — лимит 20 в день (МСК); `503 {error}` — помощник выключен, нет ключа или модель не ответила за 10 с, ответ не по схеме тоже 503 |
+| `GET /api/templates` | — | `MarketTemplate[]`, по 2 на категорию, в порядке категорий |
+| `GET /api/markets/similar` | `?q=` — от 10 символов | `{items: MarketCard[]}` — до 3 открытых рынков, которые видит пользователь (`visible_questions`), похожесть по словам вопроса, без ИИ |
+| `POST /api/markets` | + `{assist?: "accepted" \| "edited" \| "undone", template?: string}` | как раньше; оба поля пишутся в событие `market_create` |
+
+Сервер пишет событие `assist_request` с `props.result`: `"ok" | "warning" | "limit" | "error"`. Модели уходят только текст вопроса, категория и сегодняшняя дата. Лимит считают события `assist_request` за московский день, кроме `limit`; при выключенном помощнике события нет. Неизвестные значения `assist` и `template` в `POST /api/markets` отбрасываются, рынок создаётся.

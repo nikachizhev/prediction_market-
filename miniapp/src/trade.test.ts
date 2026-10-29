@@ -21,7 +21,7 @@ import {
 const card = (patch: Partial<MarketCard> = {}): MarketCard => ({
   id: 1,
   title: 'Выпадет снег?',
-  category: 'weather',
+  category: 'fun',
   prob: 0.64,
   change_24h: 9,
   spark: [0.5, 0.55, 0.64],

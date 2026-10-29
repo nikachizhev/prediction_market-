@@ -170,7 +170,7 @@ class Component extends DCLogic {
       watched: { mat: true }, positions: {}, sheet: null, toast: '',
       markets: [
         { id: 'gta', cat: 'Игры', q: 'Выйдет ли GTA VI до конца 2026 года?', p: 0.71, d: 4, people: '1 284 участника', vol: '52,6 тыс.', ends: 'до 31 декабря', soon: 67, fresh: 2, hot: 1284, hist: [52, 55, 58, 61, 60, 64, 67, 71] },
-        { id: 'snow', cat: 'Погода', q: 'Выпадет снег в Москве до 1 декабря?', p: 0.64, d: 9, people: '356 участников', vol: '8,9 тыс.', ends: 'ещё 37 дней', soon: 37, fresh: 4, hot: 356, hist: [48, 50, 49, 53, 55, 58, 55, 64] },
+        { id: 'video', cat: 'Фан', q: 'Наберёт ли видео с посвята 10 тысяч просмотров до 1 декабря?', p: 0.64, d: 9, people: '356 участников', vol: '8,9 тыс.', ends: 'ещё 37 дней', soon: 37, fresh: 4, hot: 356, hist: [48, 50, 49, 53, 55, 58, 55, 64] },
         { id: 'mat', cat: 'Учёба', chat: true, q: 'Сдадим матан всей группой без пересдач?', p: 0.38, d: -6, people: '27 участников', vol: '1,4 тыс.', ends: 'ещё 12 дней', soon: 12, fresh: 3, hot: 27, hist: [50, 47, 49, 45, 44, 46, 44, 38] },
         { id: 'ege', cat: 'Технологии', q: 'Нейросеть наберёт 100 баллов на ЕГЭ по профильной математике в 2027 году?', p: 0.22, d: -2, people: '640 участников', vol: '21,3 тыс.', ends: 'до 30 июня 2027', soon: 248, fresh: 1, hot: 640, hist: [30, 28, 27, 26, 25, 24, 24, 22] }
       ]
@@ -245,7 +245,7 @@ class Component extends DCLogic {
     const t = this.theme();
     const s = this.state;
 
-    const cats = ['Все', 'Игры', 'Учёба', 'Погода', 'Технологии', 'Спорт'].map((label) => {
+    const cats = ['Все', 'Игры', 'Учёба', 'Технологии', 'Спорт', 'Фан'].map((label) => {
       const on = label === s.cat;
       return { label: label, pick: () => this.setState({ cat: label }), bg: on ? t.ink : t.card, ink: on ? t.bg : t.ink, border: on ? t.ink : t.line };
     });

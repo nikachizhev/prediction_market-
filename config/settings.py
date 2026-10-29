@@ -114,6 +114,15 @@ NOTIFY_CLOSING_HOURS = 24       # «до конца приёма прогноз�
 BOT_MARKETS_PAGE = 10           # «Мои рынки» in the bot: buttons per message
 RATING_ACCURACY_MIN_RESOLVED = 20  # accuracy rating counts traders with at least this many resolved predictions
 MAX_BET = MAX_TRADE             # legacy name used by the old server-rendered pages
+
+# AI rules helper (spec E9.1): any OpenAI-compatible chat completions API, OpenRouter by default.
+# Without a key the helper is off and the creation wizard works as before.
+LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+LLM_MODEL = os.environ.get("LLM_MODEL", "deepseek/deepseek-v4.1-flash")
+ASSIST_ENABLED = os.environ.get("ASSIST_ENABLED", "1") == "1"
+ASSIST_DAILY_LIMIT = 20         # helper requests per user per Moscow day
+ASSIST_TIMEOUT = 10             # seconds; no answer by then -> the wizard goes on without the helper
 AB_BASE_RATE = 0.25
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")

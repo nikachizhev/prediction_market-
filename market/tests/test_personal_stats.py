@@ -17,7 +17,7 @@ from market.tests.test_profile_rating_api import fake_buy
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("bot_token")]
 
 
-def market(title="Рынок", category="weather", **kw):
+def market(title="Рынок", category="study", **kw):
     now = timezone.now()
     return services.create_question(title=title, resolution_criteria="Итог", category=category,
                                     deadline=now + timedelta(days=2), resolves_at=now + timedelta(days=3), **kw)
@@ -60,7 +60,7 @@ def test_profile_referral_summary(anya, boris):
 # --- categories ----------------------------------------------------------------------------
 
 def test_profile_categories(anya):
-    won, lost = market("Снег?"), market("Дождь?")
+    won, lost = market("Сессия?"), market("Экзамен?")
     sport = market("Матч?", category="sport")
     open_tech = market("Релиз?", category="tech")
     services.buy(trader(1001), won, "yes", Decimal(20))
@@ -75,10 +75,10 @@ def test_profile_categories(anya):
     LedgerEntry.objects.create(trader=me, kind=LedgerEntry.Kind.INSURANCE, amount=Decimal(50),
                                balance_after=me.balance, question=won)
     _, profile = anya.get("profile")
-    weather_profit = result(1001, won) + result(1001, lost)
+    study_profit = result(1001, won) + result(1001, lost)
     assert profile["categories"] == [
-        {"slug": "weather", "label": "Погода", "predictions": 2, "correct": 1, "accuracy": 0.5,
-         "profit": f"{weather_profit:.2f}"},
+        {"slug": "study", "label": "Учёба", "predictions": 2, "correct": 1, "accuracy": 0.5,
+         "profit": f"{study_profit:.2f}"},
         {"slug": "sport", "label": "Спорт", "predictions": 1, "correct": 1, "accuracy": 1.0,
          "profit": f"{result(1001, sport):.2f}"},
     ]

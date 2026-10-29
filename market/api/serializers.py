@@ -9,6 +9,7 @@ from django.conf import settings
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
+from .. import assist
 from ..bot_notifications import group_of, notify_settings
 from ..models import CATEGORIES, MarketSubscription, Position, Question, Trade, Trader
 from ..notifications import visible_notifications
@@ -67,6 +68,7 @@ def me(trader: Trader) -> dict:
         "limits": limits(),
         "notify": notify_settings(trader),
         "unread_notifications": visible_notifications(trader).filter(read_at__isnull=True).count(),
+        "assist": assist.state(trader),
     }
 
 

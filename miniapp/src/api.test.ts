@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, ApiError } from './api';
+import { api, ApiError, isAssistWarning } from './api';
 
 function mockFetch(status: number, body: unknown) {
   const fn = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify(body), { status }));
@@ -13,6 +13,27 @@ afterEach(() => {
 });
 
 describe('api client', () => {
+  it('requests the personalized feed and reports dismiss/undo with booleans', async () => {
+    const fetch = mockFetch(200, {});
+    await api.markets({ sort: 'recommended' });
+    expect(fetch.mock.calls[0][0]).toBe('/api/markets?sort=recommended');
+    await api.dismissMarket(7);
+    await api.dismissMarket(7, false);
+    expect(fetch.mock.calls[1][0]).toBe('/api/markets/7/dismiss');
+    expect(JSON.parse(fetch.mock.calls[1][1]!.body as string)).toEqual({ dismissed: true });
+    expect(JSON.parse(fetch.mock.calls[2][1]!.body as string)).toEqual({ dismissed: false });
+    await api.resetHiddenMarkets();
+    expect(fetch.mock.calls[3][0]).toBe('/api/feed/reset-hidden');
+    expect(fetch.mock.calls[3][1]!.method).toBe('POST');
+  });
+
+  it('can clear all interests and send a market impression', async () => {
+    const fetch = mockFetch(200, {});
+    await api.updateMe({ interests: [] });
+    expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toEqual({ interests: [] });
+    await api.event('feed_impression', { market: 8, sort: 'recommended' });
+    expect(JSON.parse(fetch.mock.calls[1][1]!.body as string)).toEqual({ name: 'feed_impression', props: { market: 8, sort: 'recommended' } });
+  });
   it('sends initData in the Authorization header', async () => {
     vi.stubEnv('VITE_DEV_INIT_DATA', 'query_id=1&hash=abc');
     const fetch = mockFetch(200, { id: 1 });
@@ -46,6 +67,54 @@ describe('api client', () => {
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/markets');
     expect(JSON.parse(init.body as string)).toEqual({ ...data, request_key: 'create-key' });
+  });
+
+  it('sends the helper outcome and the template with the new market', async () => {
+    const fetch = mockFetch(200, {});
+    const data = { title: 'Q?', criteria: 'c', category: 'study', closes_at: 'a', resolves_at: 'b' };
+    await api.createMarket({ ...data, assist: 'edited', template: 'exam' }, 'k');
+    expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toEqual({
+      ...data,
+      assist: 'edited',
+      template: 'exam',
+      request_key: 'k',
+    });
+  });
+
+  it('asks the helper with the question and, when chosen, the category', async () => {
+    const fetch = mockFetch(200, { warning: 'forbidden', text: 'Похоже, это рынок о здоровье', left: 18 });
+    const res = await api.assist('Сдам ли я сессию без троек?', 'study');
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/assist');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ title: 'Сдам ли я сессию без троек?', category: 'study' });
+    expect(isAssistWarning(res)).toBe(true);
+    await api.assist('Сдам ли я сессию без троек?');
+    expect(JSON.parse(fetch.mock.calls[1][1]!.body as string)).toEqual({ title: 'Сдам ли я сессию без троек?' });
+  });
+
+  it('reports the helper limit and outage as ApiError statuses', async () => {
+    mockFetch(429, { error: 'Подсказки на сегодня закончились.' });
+    expect(((await api.assist('Сдам ли я сессию?').catch((e: unknown) => e)) as ApiError).status).toBe(429);
+    mockFetch(503, { error: 'Помощник недоступен.' });
+    expect(((await api.assist('Сдам ли я сессию?').catch((e: unknown) => e)) as ApiError).status).toBe(503);
+  });
+
+  it('loads templates and similar markets', async () => {
+    const fetch = mockFetch(200, { items: [] });
+    await api.templates();
+    expect(fetch.mock.calls[0][0]).toBe('/api/templates');
+    expect(fetch.mock.calls[0][1]!.method).toBe('GET');
+    await api.similarMarkets('Сдам ли я сессию без троек?');
+    const q = new URLSearchParams({ q: 'Сдам ли я сессию без троек?' }).toString();
+    expect(fetch.mock.calls[1][0]).toBe(`/api/markets/similar?${q}`);
+  });
+
+  it('tells a helper warning from a suggestion', () => {
+    expect(isAssistWarning({ warning: 'forbidden', text: 't', left: 1 })).toBe(true);
+    expect(
+      isAssistWarning({ question: null, why: null, criteria: 'c', category: 'fun', closes_at: 'a', resolves_at: 'b', left: 1 }),
+    ).toBe(false);
   });
 
   it('sends onboarding interests with PATCH /me', async () => {

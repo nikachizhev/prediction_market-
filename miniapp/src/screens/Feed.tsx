@@ -1,7 +1,9 @@
 // Feed screen from docs/mockups/Main.dc.html.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api, ApiError, type Category, type MarketCard, type MarketSort, type Position, type Side } from '../api';
 import { cascadeDelay } from '../chartMotion';
+import { readFeedFilters, updateFeedFilter } from '../feedFilters';
 import { BalancePill } from '../components/BalancePill';
 import { NotificationBell } from '../components/NotificationBell';
 import { MarketCardView } from '../components/MarketCardView';
@@ -11,8 +13,10 @@ import { useTradeSheet } from '../components/TradeSheet';
 import { pluralize } from '../format';
 import { tg } from '../telegram';
 import { applyProbability, mergeMarket, replaceCard } from '../trade';
+import '../recommendations.css';
 
 const SORTS: { key: MarketSort; label: string }[] = [
+  { key: 'recommended', label: 'Для тебя' },
   { key: 'hot', label: 'Горячие' },
   { key: 'new', label: 'Новые' },
   { key: 'soon', label: 'Скоро итог' },
@@ -25,10 +29,12 @@ type LoadState = 'loading' | 'ready' | 'error';
 export function FeedScreen() {
   const toast = useToast();
   const [categories, setCategories] = useState<Category[]>([]);
-  const [category, setCategory] = useState('');
-  const [sort, setSort] = useState<MarketSort>('hot');
-  const [query, setQuery] = useState('');
-  const [search, setSearch] = useState('');
+  // Keep filters in the history entry: opening a market and Back restores them.
+  const [params, setParams] = useSearchParams();
+  const { category, sort, query } = readFeedFilters(params);
+  const setFilter = (key: 'sort' | 'category' | 'q', value: string) =>
+    setParams((current) => updateFeedFilter(current, key, value), { replace: true });
+  const [search, setSearch] = useState(() => query.trim());
 
   const [items, setItems] = useState<MarketCard[]>([]);
   const [nextPage, setNextPage] = useState<number | null>(null);
@@ -135,6 +141,7 @@ export function FeedScreen() {
         );
       });
       if (market.my_position) setPositions((prev) => ({ ...prev, [market.id]: market.my_position! }));
+      if (sort === 'recommended') setAttempt((value) => value + 1);
     },
     onRollback: (id) => {
       const before = snapshots.current.get(id);
@@ -144,6 +151,12 @@ export function FeedScreen() {
   });
 
   const onTrade = useCallback((market: MarketCard, side: Side) => void open(market, side), [open]);
+  const onImpression = useCallback((market: MarketCard) => {
+    api.event('feed_impression', { market: market.id, sort }).catch(() => {});
+  }, [sort]);
+  const onOpen = useCallback((market: MarketCard) => {
+    api.event('market_open', { market: market.id, sort }).catch(() => {});
+  }, [sort]);
 
   const onStar = useCallback(
     (market: MarketCard) => {
@@ -164,12 +177,12 @@ export function FeedScreen() {
   const pickCategory = (slug: string) => {
     if (slug === category) return;
     tg.HapticFeedback.selection();
-    setCategory(slug);
+    setFilter('category', slug);
   };
   const pickSort = (key: MarketSort) => {
     if (key === sort) return;
     tg.HapticFeedback.selection();
-    setSort(key);
+    setFilter('sort', key);
   };
 
   const chips = [{ slug: '', label: 'Все' }, ...categories];
@@ -194,7 +207,7 @@ export function FeedScreen() {
           type="search"
           placeholder="Поиск рынков"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => setFilter('q', e.target.value)}
           enterKeyHint="search"
           autoComplete="off"
         />
@@ -234,6 +247,7 @@ export function FeedScreen() {
       </div>
 
       <div className="screen-body">
+        {sort === 'recommended' && <p className="sub recommendation-note">Выбери любимые темы в профиле. <Link to="/profile">Настроить интересы</Link></p>}
         {state === 'loading' && [0, 1, 2].map((i) => <CardSkeleton key={i} />)}
 
         {state === 'error' && (
@@ -260,6 +274,8 @@ export function FeedScreen() {
               drawDelay={cascadeDelay(i)}
               onTrade={onTrade}
               onStar={onStar}
+              onImpression={onImpression}
+              onOpen={onOpen}
             />
           ))}
 

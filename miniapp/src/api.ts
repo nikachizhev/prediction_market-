@@ -41,6 +41,8 @@ export interface Me {
   notify?: NotifySettings;
   /** Phase 2; missing on an older server. */
   unread_notifications?: number;
+  /** AI rules helper (phase 3a); missing on an older server, which means it is off. */
+  assist?: AssistState;
 }
 
 export interface SubmarketCard extends MarketCard {
@@ -77,6 +79,7 @@ export interface MarketCard {
   my_side?: Side | null;
   /** Child binary options for a multiple-choice market. */
   submarkets?: SubmarketCard[];
+  recommendation_reason?: string;
 }
 
 export interface Position {
@@ -163,7 +166,7 @@ export interface Category {
   label: string;
 }
 
-export type EventName = 'share' | 'onboarding_done' | 'onboarding_skip' | 'open_bot';
+export type EventName = 'share' | 'onboarding_done' | 'onboarding_skip' | 'open_bot' | 'feed_impression' | 'market_open';
 
 export type NoticeGroup = 'mine' | 'pay' | 'markets';
 export type NoticeFilter = 'all' | NoticeGroup;
@@ -186,7 +189,7 @@ export interface NoticesResponse {
   unread: number;
 }
 
-export type MarketSort = 'hot' | 'new' | 'soon';
+export type MarketSort = 'recommended' | 'hot' | 'new' | 'soon';
 export type HistoryPeriod = 'd' | 'w' | 'm' | 'all';
 
 export interface MineResponse {
@@ -281,6 +284,74 @@ export interface ProfileResponse {
   referral?: ReferralSummary;
   categories?: CategoryStat[];
   best_predictions?: BestPrediction[];
+}
+
+// ---- Quick market creation (docs/api.md, «Фаза 3a») ----
+
+export interface AssistState {
+  /** False: no key on the server or the helper is switched off; no helper card then. */
+  enabled: boolean;
+  /** Suggestions left today. */
+  left: number;
+}
+
+export interface AssistResult {
+  /** A clearer wording; null when the question is unambiguous already. */
+  question: string | null;
+  /** Why it was clarified, in one sentence. */
+  why: string | null;
+  criteria: string;
+  /** Category slug from GET /api/categories. */
+  category: string;
+  closes_at: string;
+  resolves_at: string;
+  left: number;
+}
+
+/** Forbidden topic: nothing is filled in. */
+export interface AssistWarning {
+  warning: 'forbidden';
+  text: string;
+  left: number;
+}
+
+export function isAssistWarning(value: AssistResult | AssistWarning): value is AssistWarning {
+  return 'warning' in value;
+}
+
+export interface TemplateBlank {
+  key: string;
+  label: string;
+  type: 'text' | 'date' | 'number';
+  placeholder: string;
+  /** Shown in the question while the blank is empty: "[предмет]". */
+  hint: string;
+}
+
+export interface MarketTemplate {
+  id: string;
+  category: string;
+  /** "Сдам ли {subject} на 4 или 5 до {date}?" */
+  text: string;
+  /** Uses the same {key} blanks. */
+  criteria: string;
+  blanks: TemplateBlank[];
+}
+
+/** How the creator treated the helper's suggestion (analytics only). */
+export type AssistOutcome = 'accepted' | 'edited' | 'undone';
+
+export interface CreateMarketData {
+  title: string;
+  criteria: string;
+  category: string;
+  closes_at: string;
+  resolves_at: string;
+  assist?: AssistOutcome;
+  /** Id of the template the market was made from. */
+  template?: string;
+  /** Option names for multiple-choice markets. */
+  options?: string[];
 }
 
 // ---- Transport ----
@@ -387,27 +458,28 @@ export const api = {
   sell: (id: number, side: Side, shares: string) => request<TradeResult>('POST', `/markets/${id}/sell`, { side, shares }),
 
   star: (id: number, starred: boolean) => request<{ starred: boolean }>('POST', `/markets/${id}/star`, { starred }),
+  dismissMarket: (id: number, dismissed = true) => request<{ dismissed: boolean }>('POST', `/markets/${id}/dismiss`, { dismissed }),
+  resetHiddenMarkets: () => request<{ restored: number }>('POST', '/feed/reset-hidden'),
 
   report: (id: number, reason?: string) => request<{ ok: true }>('POST', `/markets/${id}/report`, { reason }),
 
   /** request_key makes creation idempotent; pass the same key when retrying the same submission. */
-  createMarket: (
-    data: {
-      title: string;
-      criteria: string;
-      category: string;
-      closes_at: string;
-      resolves_at: string;
-      options?: string[];
-    },
-    request_key: string = newRequestKey(),
-  ) =>
+  createMarket: (data: CreateMarketData, request_key: string = newRequestKey()) =>
     request<{
       market: MarketDetail;
       balance: Money;
       /** Whether the bot's note about the outcome reached the creator; null on a replayed request, absent on an older server. */
       bot_notified?: boolean | null;
     }>('POST', '/markets', { ...data, request_key }),
+
+  /** AI rules helper; 429 — the daily limit is used up, 503 — off or the model did not answer. */
+  assist: (title: string, category?: string) =>
+    request<AssistResult | AssistWarning>('POST', '/assist', category ? { title, category } : { title }),
+
+  templates: () => request<MarketTemplate[]>('GET', '/templates'),
+
+  /** Up to 3 open markets with a similar question; `q` of at least 10 characters. */
+  similarMarkets: (q: string) => request<{ items: MarketCard[] }>('GET', withQuery('/markets/similar', { q })),
 
   mine: () => request<MineResponse>('GET', '/mine'),
 
