@@ -247,17 +247,28 @@ def detect_closing(now: datetime | None = None) -> int:
 
 # --- events from services (called via transaction.on_commit) ---------------------------------
 
+def _chat_dispute_stage(question: Question) -> str:
+    """Who decides the dispute: "moderator" (ordinary market), "admins" (chat market) or "team" (escalated)."""
+    if not (question.group_id and question.group.is_chat):
+        return "moderator"
+    from .models import ChatDisputeReview
+    review = ChatDisputeReview.objects.filter(question=question).first()
+    return "team" if review and review.escalated_at else "admins"
+
+
 def dispute_opened(question_id: int) -> None:
-    question = Question.objects.select_related("creator").get(pk=question_id)
+    question = Question.objects.select_related("creator", "group").get(pk=question_id)
     if not question.creator:
         return
+    who = {"moderator": "модератор разберёт спор", "admins": "спор решат админы чата",
+           "team": "спор разберёт команда проекта"}[_chat_dispute_stage(question)]
     enqueue(question.creator, "creator", f"dispute-opened:{question.pk}", "Итог оспорили:",
-            f"«{question.title}» — модератор разберёт спор.", question=question,
+            f"«{question.title}» — {who}.", question=question,
             payload={"reply_markup": market_button(question)})
 
 
 def moderator_decided(question_id: int, decision: str, upheld: bool) -> None:
-    question = Question.objects.select_related("creator").get(pk=question_id)
+    question = Question.objects.select_related("creator", "group").get(pk=question_id)
     if not question.creator:
         return
     if decision == "cancel":
@@ -268,7 +279,9 @@ def moderator_decided(question_id: int, decision: str, upheld: bool) -> None:
         text = f"«{question.title}» — спор признан: {verdict}. Монеты за создание рынка не возвращаются."
     else:
         text = f"«{question.title}» — спор отклонён: {verdict}, как ты и указал."
-    enqueue(question.creator, "creator", f"moderator:{question.pk}", "Решение модератора:", text,
+    title = {"moderator": "Решение модератора:", "admins": "Решение админов чата:",
+             "team": "Решение команды проекта:"}[_chat_dispute_stage(question)]
+    enqueue(question.creator, "creator", f"moderator:{question.pk}", title, text,
             question=question, payload={"reply_markup": market_button(question)})
 
 

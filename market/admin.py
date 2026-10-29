@@ -10,7 +10,7 @@ from .question_forms import ResultForm
 from .participation import finish
 from .models import Group, GroupMembership, Notification
 from .models import ModerationAction, ModerationDelivery
-from . import moderation
+from . import chat_disputes, moderation
 
 
 @admin.register(Group)
@@ -134,15 +134,15 @@ class QuestionAdmin(admin.ModelAdmin):
 
     @admin.action(description="Решение по спору: ДА")
     def decide_yes(self, request, queryset):
-        self._apply(request, queryset, lambda q: services.moderator_decide(q, "yes"), "спор решён: ДА")
+        self._apply(request, queryset, lambda q: chat_disputes.team_decide(q, "yes"), "спор решён: ДА")
 
     @admin.action(description="Решение по спору: НЕТ")
     def decide_no(self, request, queryset):
-        self._apply(request, queryset, lambda q: services.moderator_decide(q, "no"), "спор решён: НЕТ")
+        self._apply(request, queryset, lambda q: chat_disputes.team_decide(q, "no"), "спор решён: НЕТ")
 
     @admin.action(description="Решение по спору: отменить рынок")
     def decide_cancel(self, request, queryset):
-        self._apply(request, queryset, lambda q: services.moderator_decide(q, "cancel"), "спор решён: отмена")
+        self._apply(request, queryset, lambda q: chat_disputes.team_decide(q, "cancel"), "спор решён: отмена")
 
     @admin.action(description="Вернуть скрытый жалобами рынок в ленту")
     def unhide(self, request, queryset):
@@ -264,3 +264,18 @@ class ReferralRewardAdmin(ReadOnlyLedgerAdmin):
     list_filter = ("granted",)
     search_fields = ("friend__name", "referrer__name")
     list_select_related = ("friend", "referrer")
+
+
+from .models import ChatDisputeReview  # noqa: E402 - kept with its block
+
+
+@admin.register(ChatDisputeReview)
+class ChatDisputeReviewAdmin(ReadOnlyLedgerAdmin):
+    """Chat disputes (spec E8.6). The team decides escalated ones via «Решение по спору» in the markets list."""
+    list_display = ("question", "group", "created_at", "deadline", "decided_by", "decision", "escalated_at")
+    list_filter = ("decision", ("escalated_at", admin.EmptyFieldListFilter))
+    list_select_related = ("question", "group", "decided_by")
+    exclude = ("messages",)
+
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in self.model._meta.fields if f.name != "messages"]
