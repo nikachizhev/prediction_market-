@@ -564,11 +564,14 @@ def check_market_fields(*, title: str, criteria: str, category: str, closes_at, 
 
 @transaction.atomic
 def create_market(trader: Trader, *, title: str, criteria: str, category: str, closes_at, resolves_at,
-                  request_key=None) -> Question:
+                  request_key=None, group=None) -> Question:
     """User-created YES/NO market: the creator pays the market maker's subsidy.
 
     With `request_key` the call is idempotent: a repeat by the same creator returns the market
     created first (marked `replayed`) without charging again or counting against the daily limit.
+    With `group` (a closed chat, spec E8.3) the market is the chat's: the creator must be a member
+    by the last check (the caller refreshes it with `chats.check_member`), the chat must not be frozen,
+    and the price and depth follow the chat's rules and stay fixed in the market.
     """
     from datetime import timedelta
     from uuid import UUID
@@ -585,7 +588,8 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
         previous = Question.objects.filter(request_key=request_key).first()
         if previous:
             if (previous.creator_id != trader.pk or previous.title != title
-                    or previous.resolution_criteria != criteria or previous.category != category):
+                    or previous.resolution_criteria != criteria or previous.category != category
+                    or previous.group_id != (group.pk if group is not None else None)):
                 raise MarketError("Этот идентификатор уже использован для другого рынка. Обновите страницу.")
             previous.replayed = True
             return previous
@@ -595,14 +599,26 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
     recent = Question.objects.filter(creator=trader, created_at__gte=now - timedelta(days=1)).count()
     if recent >= settings.MARKETS_PER_DAY:
         raise MarketError(f"Не больше {settings.MARKETS_PER_DAY} новых рынков в день.")
-    cost = Decimal(settings.MARKET_CREATION_COST)
+    cost_coins, b = settings.MARKET_CREATION_COST, settings.LMSR_DEFAULT_B
+    if group is not None:
+        from . import chats
+        from .models import GroupMembership
+        if not group.is_chat:
+            raise MarketError("Рынок можно создать только для чата.")
+        if not GroupMembership.objects.filter(group=group, trader=trader, status="active").exists():
+            raise MarketError("Рынок для чата создаёт только участник чата.")
+        if not group.bot_active:
+            raise MarketError("Бот больше не админ в этом чате — новые рынки создать нельзя.")
+        cost_coins = chats.creation_cost(group)
+        b = chats.depth(cost_coins)
+    cost = Decimal(cost_coins)
     if trader.balance < cost:
-        raise MarketError(f"Создание рынка стоит {settings.MARKET_CREATION_COST} монет — на балансе не хватает.")
+        raise MarketError(f"Создание рынка стоит {cost_coins} монет — на балансе не хватает.")
     try:
         question = create_question(
             title=title, resolution_criteria=criteria, deadline=closes_at, initial_prob=0.5,
-            b=settings.LMSR_DEFAULT_B, creator=trader, category=category, resolves_at=resolves_at, subsidy=cost,
-            request_key=request_key,
+            b=b, creator=trader, category=category, resolves_at=resolves_at, subsidy=cost,
+            request_key=request_key, group_id=group.pk if group is not None else None,
         )
     except IntegrityError:
         # Another trader raced us with the same key; never reveal their market.

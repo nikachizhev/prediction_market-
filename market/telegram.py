@@ -117,11 +117,19 @@ def handle_update(update):
         return
     if "callback_query" in update:
         callback = update["callback_query"]
-        from . import bot_markets
-        if bot_markets.owns(callback.get("data") or ""):
+        data = callback.get("data") or ""
+        from . import bot_chats, bot_markets, chat_disputes
+        if bot_markets.owns(data):
             bot_markets.handle_callback(callback)
+        elif bot_chats.owns(data):
+            bot_chats.handle_callback(callback)
+        elif chat_disputes.owns(data):
+            chat_disputes.handle_callback(callback)
         else:
             resolution_dialog.handle_callback(callback)
+        return
+    from . import bot_chats
+    if bot_chats.handle_update(update):
         return
     message = update.get("message", {})
     chat = message.get("chat", {})

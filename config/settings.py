@@ -114,6 +114,13 @@ NOTIFY_CLOSING_HOURS = 24       # «до конца приёма прогноз�
 BOT_MARKETS_PAGE = 10           # «Мои рынки» in the bot: buttons per message
 RATING_ACCURACY_MIN_RESOLVED = 20  # accuracy rating counts traders with at least this many resolved predictions
 MAX_BET = MAX_TRADE             # legacy name used by the old server-rendered pages
+# Closed chats (spec E8). A chat market costs by chat size; b = cost / ln 2 rounded down, so it never prints coins.
+CHAT_CREATION_TIERS = ((15, 40), (50, 70))  # (members up to, cost); bigger chats pay MARKET_CREATION_COST
+CHAT_CREATION_COST_MIN = 30     # the chat admin may set an own price within these bounds
+CHAT_CREATION_COST_MAX = 200
+CHAT_MEMBER_CHECK_MINUTES = 10  # getChatMember answer is trusted this long
+CHAT_DAILY_POSTS = 5            # bot messages per chat per Moscow day
+CHAT_DISPUTE_HOURS = 48         # chat admins silent this long -> the dispute goes to the project team
 
 # AI rules helper (spec E9.1): any OpenAI-compatible chat completions API, OpenRouter by default.
 # Without a key the helper is off and the creation wizard works as before.

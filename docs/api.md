@@ -173,3 +173,48 @@ interface MarketTemplate {
 | `POST /api/markets` | + `{assist?: "accepted" \| "edited" \| "undone", template?: string}` | как раньше; оба поля пишутся в событие `market_create` |
 
 Сервер пишет событие `assist_request` с `props.result`: `"ok" | "warning" | "limit" | "error"`. Модели уходят только текст вопроса, категория и сегодняшняя дата. Лимит считают события `assist_request` за московский день, кроме `limit`; при выключенном помощнике события нет. Неизвестные значения `assist` и `template` в `POST /api/markets` отбрасываются, рынок создаётся.
+
+## Фаза 3b (контракт, 29.10.2026)
+
+Закрытые чаты (спека E8, макет `docs/mockups/Chat.dc.html`). Старые поля не меняются. Чат — это `Group` с `kind="chat"`; членство даёт только Telegram (`getChatMember`, ответ кэшируется на 10 минут; событие `chat_member` о выходе закрывает доступ сразу).
+
+```ts
+interface ChatRef { code: string; title: string }    // code — случайный код ссылки, не ID чата
+
+interface MarketCard {                                 // + к MVP
+  chat: ChatRef | null;      // рынок закрытого чата; в общей ленте, поиске, рекомендациях и похожих таких нет
+  created_at: string;        // для пометки «новый» (меньше суток) в рынках чата
+}
+
+interface ChatSpace {
+  code: string; title: string;
+  members: number;           // последний getChatMemberCount
+  frozen: boolean;           // бот удалён или снят с админа: новых рынков нет, открытые доживают до итога
+  markets: number;           // открытые рынки чата (приём идёт или ждём итог)
+  volume: Money;             // объём всех рынков чата
+  my_rank: number | null;    // моё место в рейтинге чата по прибыли за всё время; null — нет завершённых прогнозов в чате
+  creation_cost: Money;      // цена создания рынка в этом чате ("40.00" / "70.00" / "100.00" или своя цена админа 30–200)
+  b: number;                 // глубина рынка при этой цене: floor(цена / ln 2)
+  assist: boolean;           // ИИ-помощник при создании рынка для этого чата (выключен админом или глобально → false)
+  link: string;              // t.me/<бот>/<приложение>?startapp=chat_<code>
+}
+```
+
+| Метод и путь | Тело / параметры | Ответ |
+| --- | --- | --- |
+| `GET /api/chats` | — | `{items: ChatSpace[]}` — чаты, где я участник по последней проверке, без запросов к Telegram; сначала с открытыми рынками |
+| `GET /api/chats/{code}` | — | `ChatSpace`. Проверяет членство через `getChatMember` (кэш 10 мин): первый вход по ссылке создаёт членство. Неизвестный код, не участник или вышел → `404` |
+| `GET /api/chats/{code}/markets` | `?page=` (20 на страницу) | `{items: MarketCard[], next_page: number \| null, total: number}` — рынки чата: сначала открытые и ждущие итога (новые сверху), потом завершённые; скрытые жалобами не показываются; `404` как выше |
+| `GET /api/chats/{code}/rating` | `?by=profit\|accuracy&period=week\|month\|all` | как `GET /api/rating`; только участники чата и только рынки этого чата; `min_resolved` = 1 |
+| `POST /api/markets` | + `{chat?: string}` — код чата | рынок для чата: не участник → `404`, чат заморожен → `400`. Цена и b — по правилам чата на момент создания (`getChatMemberCount`), фиксируются в рынке. Повтор с тем же `request_key` и другим чатом → `400` |
+| `POST /api/assist` | + `{chat?: string}` | в чате с выключенным помощником → `503` как при выключенном помощнике |
+| `GET /api/markets/{id}` и действия с рынком | — | рынок чата: членство проверяется (кэш 10 мин); вышел из чата → `404`. Выплаты по позициям приходят как обычно |
+
+**Ссылка на чат** — `t.me/<бот>/<приложение>?startapp=chat_<code>`: Mini App после входа открывает `/chat/<code>`. Сервер параметр `chat_` при входе не использует (пригласившего в нём нет).
+
+### Бот в чатах (для бэкенда)
+
+- Callback-данные: `chat:…` — `market/bot_chats.py` (настройки чата), `cdis:…` — `market/chat_disputes.py` (решение спора админом). Маршрутизация — `market/telegram.py`.
+- Апдейты групп (`my_chat_member`, `chat_member`, сообщения из `group`/`supergroup`) получает `bot_chats.handle_update`. Бот запрашивает `allowed_updates` с `my_chat_member` и `chat_member`.
+- Воркер (`resolution.tick`) раз в минуту вызывает `chat_disputes.tick(now)` и `bot_chats.tick(now)`; оба идемпотентны: наполнение очереди — по уникальным ключам, без хуков в `services.py`.
+- Общие функции — `market/chats.py`: `creation_cost`, `depth`, `link`, `check_member`, `set_membership`, `refresh_member_count`, `admins`, `is_admin`, `post_enabled`, `chats_of`, `by_code`. Рейтинг чата — `rating.leaderboard(me_or_None, group=chat)`.

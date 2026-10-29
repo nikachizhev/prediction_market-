@@ -17,7 +17,9 @@ class Command(BaseCommand):
         try:
             while True:
                 try:
-                    updates = api("getUpdates", offset=offset, timeout=25, allowed_updates=["message", "callback_query", "inline_query"])
+                    # chat_member comes only to chat admins and only when asked for explicitly (spec E8.2).
+                    updates = api("getUpdates", offset=offset, timeout=25, allowed_updates=[
+                        "message", "callback_query", "inline_query", "my_chat_member", "chat_member"])
                     for update in updates:
                         handle_update(update)
                         offset = update["update_id"] + 1
