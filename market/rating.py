@@ -111,6 +111,26 @@ def leaderboard(me: Trader | None, *, scope: str = "all", by: str = "profit", pe
             "min_resolved": min_resolved if group is not None else settings.RATING_ACCURACY_MIN_RESOLVED}
 
 
+def chat_rank(me: Trader, group) -> int | None:
+    """My place on `leaderboard(me, group=group)` by all-time profit, without building the whole board.
+
+    Same order: profit on the chat's settled markets, ties by registration. None for someone who is not an
+    active member or has no settled prediction and no result in the chat yet.
+    """
+    members = list(chat_members(group).values_list("pk", flat=True))
+    if me.pk not in members:
+        return None
+    profits = dict(LedgerEntry.objects.filter(trader__memberships__group=group, trader__memberships__status="active",
+                                              question__group=group, question__resolved_at__isnull=False)
+                   .exclude(kind__in=LedgerEntry.BONUS_KINDS)
+                   .values("trader").annotate(total=Sum("amount")).values_list("trader", "total"))
+    mine = profits.get(me.pk) or Decimal(0)
+    if mine == 0 and not accuracy(me, None, group)[1]:
+        return None
+    ahead = sum(1 for pk in members if (profits.get(pk) or Decimal(0), -pk) > (mine, -me.pk))
+    return ahead + 1
+
+
 def trader_stats(trader: Trader) -> dict:
     correct, evaluated = accuracy(trader)
     place = leaderboard(trader)["me"]

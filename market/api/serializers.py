@@ -177,17 +177,14 @@ def chat_ref(question: Question) -> dict | None:
 def chat_space(group, trader: Trader) -> dict:
     """`ChatSpace` in docs/api.md «Фаза 3b»: the chat's header for one of its members."""
     from .. import chats
-    from ..rating import leaderboard
+    from ..rating import chat_rank
     markets = Question.objects.filter(group=group, kind=Question.Kind.LMSR, hidden_at__isnull=True,
                                       status__in=[Question.Status.OPEN, Question.Status.CLOSED]).count()
     volume = Trade.objects.filter(question__group=group, cost__gt=0).aggregate(v=Sum("cost"))["v"]
-    mine = leaderboard(trader, group=group)["me"]
-    # Members with no settled prediction and no result in the chat have no place yet.
-    ranked = mine is not None and (mine["predictions"] > 0 or Decimal(mine["profit"]) != 0)
     cost = chats.creation_cost(group)
     return {
         "code": group.code, "title": group.name, "members": group.member_count, "frozen": not group.bot_active,
-        "markets": markets, "volume": money(volume), "my_rank": mine["rank"] if ranked else None,
+        "markets": markets, "volume": money(volume), "my_rank": chat_rank(trader, group),
         "creation_cost": money(cost), "b": int(chats.depth(cost)),
         "assist": bool(group.assist_enabled and assist.enabled()), "link": chats.link(group),
     }
