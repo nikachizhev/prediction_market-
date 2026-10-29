@@ -161,6 +161,33 @@ def card(question: Question, *, starred: set[int] | None = None, now: datetime |
         "closes_at": iso(question.deadline), "resolves_at": iso(question.resolves_at),
         "status": market_status(question),
         "outcome": question.outcome, "starred": question.pk in (starred or set()), "my_side": my_side,
+        "chat": chat_ref(question), "created_at": iso(question.created_at),
+    }
+
+
+def chat_ref(question: Question) -> dict | None:
+    """The closed chat a market belongs to; old site groups are not chats. Lists select_related("group")."""
+    if not question.group_id or question.group.kind != "chat":
+        return None
+    return {"code": question.group.code, "title": question.group.name}
+
+
+def chat_space(group, trader: Trader) -> dict:
+    """`ChatSpace` in docs/api.md «Фаза 3b»: the chat's header for one of its members."""
+    from .. import chats
+    from ..rating import leaderboard
+    markets = Question.objects.filter(group=group, kind=Question.Kind.LMSR, hidden_at__isnull=True,
+                                      status__in=[Question.Status.OPEN, Question.Status.CLOSED]).count()
+    volume = Trade.objects.filter(question__group=group, cost__gt=0).aggregate(v=Sum("cost"))["v"]
+    mine = leaderboard(trader, group=group)["me"]
+    # Members with no settled prediction and no result in the chat have no place yet.
+    ranked = mine is not None and (mine["predictions"] > 0 or Decimal(mine["profit"]) != 0)
+    cost = chats.creation_cost(group)
+    return {
+        "code": group.code, "title": group.name, "members": group.member_count, "frozen": not group.bot_active,
+        "markets": markets, "volume": money(volume), "my_rank": mine["rank"] if ranked else None,
+        "creation_cost": money(cost), "b": int(chats.depth(cost)),
+        "assist": bool(group.assist_enabled and assist.enabled()), "link": chats.link(group),
     }
 
 
@@ -201,7 +228,7 @@ def detail(question: Question, trader: Trader) -> dict:
     trades = Trade.objects.filter(question=question).order_by("-created_at", "-id")[:20]
     data.update({
         "criteria": question.resolution_criteria, "resolves_at": iso(question.resolves_at),
-        "created_at": iso(question.created_at), "author": author(question.creator),
+        "author": author(question.creator),
         "is_creator": is_creator,
         "can_trade": block is None, "trade_block": block,
         "max_amount": money(services.max_buy_amount(trader, question)),
