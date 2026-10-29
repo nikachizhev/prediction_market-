@@ -1,8 +1,9 @@
 // Feed screen from docs/mockups/Main.dc.html.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api, ApiError, type Category, type ChatSpace, type MarketCard, type MarketSort, type Position, type Side } from '../api';
 import { cascadeDelay } from '../chartMotion';
+import { readFeedFilters, updateFeedFilter } from '../feedFilters';
 import { BalancePill } from '../components/BalancePill';
 import { ChatTag } from '../components/ChatTag';
 import { NotificationBell } from '../components/NotificationBell';
@@ -33,10 +34,12 @@ export function FeedScreen() {
   const toast = useToast();
   const [categories, setCategories] = useState<Category[]>([]);
   const [chats, setChats] = useState<ChatSpace[]>(cachedChats);
-  const [category, setCategory] = useState('');
-  const [sort, setSort] = useState<MarketSort>('recommended');
-  const [query, setQuery] = useState('');
-  const [search, setSearch] = useState('');
+  // Keep filters in the history entry: opening a market and Back restores them.
+  const [params, setParams] = useSearchParams();
+  const { category, sort, query } = readFeedFilters(params);
+  const setFilter = (key: 'sort' | 'category' | 'q', value: string) =>
+    setParams((current) => updateFeedFilter(current, key, value), { replace: true });
+  const [search, setSearch] = useState(() => query.trim());
 
   const [items, setItems] = useState<MarketCard[]>([]);
   const [nextPage, setNextPage] = useState<number | null>(null);
@@ -180,12 +183,12 @@ export function FeedScreen() {
   const pickCategory = (slug: string) => {
     if (slug === category) return;
     tg.HapticFeedback.selection();
-    setCategory(slug);
+    setFilter('category', slug);
   };
   const pickSort = (key: MarketSort) => {
     if (key === sort) return;
     tg.HapticFeedback.selection();
-    setSort(key);
+    setFilter('sort', key);
   };
 
   const chips = [{ slug: '', label: 'Все' }, ...categories];
@@ -219,7 +222,7 @@ export function FeedScreen() {
           type="search"
           placeholder="Поиск рынков"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => setFilter('q', e.target.value)}
           enterKeyHint="search"
           autoComplete="off"
         />

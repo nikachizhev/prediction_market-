@@ -771,6 +771,10 @@ def moderator_decide(question: Question, decision: str) -> Question:
     question = Question.objects.select_for_update().get(pk=question.pk)
     if question.resolution_state != Question.Resolution.DISPUTED:
         raise MarketError("По этому рынку нет открытого спора.")
+    if decision == "cancel":
+        question = cancel_moderated(question)
+        _after_commit("moderator_decided", question.pk, decision, True)
+        return question
     upheld = decision != question.proposed_outcome
     disputes = list(Dispute.objects.select_for_update().filter(question=question, upheld__isnull=True).order_by("trader_id"))
     for dispute in disputes:

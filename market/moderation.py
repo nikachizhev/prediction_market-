@@ -15,6 +15,20 @@ def admin_ids() -> set[int]:
         return set()
 
 
+@transaction.atomic
+def decide_dispute(question_id, decision, *, expected_dispute, telegram_id=None, user=None):
+    actor = _actor(telegram_id=telegram_id, user=user)
+    from .models import DisputeDecision
+    from .services import moderator_decide
+    question = Question.objects.select_for_update().get(pk=question_id)
+    latest = question.disputes.filter(upheld__isnull=True).order_by('-pk').first()
+    if not latest or latest.pk != expected_dispute:
+        raise MarketError('Состав споров изменился или решение уже принято. Откройте рынок заново.')
+    question = moderator_decide(question, decision)
+    DisputeDecision.objects.create(question=question, decision=decision, actor=actor)
+    return question
+
+
 def _actor(*, telegram_id=None, user=None) -> str:
     if user is not None and telegram_id is None and user.is_active and user.is_staff and user.has_perm('market.change_question'):
         return f"django:{user.pk}"

@@ -10,7 +10,7 @@ from .question_forms import ResultForm
 from .participation import finish
 from .models import Group, GroupMembership, Notification
 from .models import ChatPost
-from .models import ModerationAction, ModerationDelivery
+from .models import ModerationAction, ModerationDelivery, DisputeDecision, DisputeDelivery
 from . import chat_disputes, moderation
 
 
@@ -253,6 +253,17 @@ class ModerationActionAdmin(ReadOnlyLedgerAdmin):
 class ModerationDeliveryAdmin(ReadOnlyLedgerAdmin):
     list_display = ('complaint', 'admin_id', 'sent_at', 'attempts', 'next_attempt')
     list_select_related = ('complaint',)
+
+
+@admin.register(DisputeDecision)
+class DisputeDecisionAdmin(ReadOnlyLedgerAdmin):
+    list_display = ('question', 'decision', 'actor', 'created_at')
+    list_select_related = ('question',)
+
+
+@admin.register(DisputeDelivery)
+class DisputeDeliveryAdmin(ReadOnlyLedgerAdmin):
+    list_display = ('dispute', 'admin_id', 'sent_at', 'attempts', 'next_attempt')
 
 
 @admin.register(LedgerEntry)
