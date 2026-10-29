@@ -9,6 +9,7 @@ from .models import BotMessage, Dispute, Event, LedgerEntry, MarketComplaint, Re
 from .question_forms import ResultForm
 from .participation import finish
 from .models import Group, GroupMembership, Notification
+from .models import ChatPost
 from .models import ModerationAction, ModerationDelivery
 from . import chat_disputes, moderation
 
@@ -23,6 +24,23 @@ class GroupAdmin(admin.ModelAdmin):
 @admin.register(GroupMembership)
 class MembershipAdmin(admin.ModelAdmin):
     list_display = ("group", "trader", "status")
+
+
+@admin.register(ChatPost)
+class ChatPostAdmin(admin.ModelAdmin):
+    """The bot's outbox to closed chats (spec E8.4): read only, the worker owns the rows."""
+    list_display = ("group", "kind", "status", "send_after", "sent_at")
+    list_filter = ("status", "kind")
+    search_fields = ("group__name", "key")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Notification)
