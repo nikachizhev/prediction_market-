@@ -552,6 +552,24 @@ class Dispute(models.Model):
         constraints = [models.UniqueConstraint(fields=["question", "trader"], name="one_dispute_per_trader")]
 
 
+class DisputeDecision(models.Model):
+    question = models.OneToOneField(Question, on_delete=models.CASCADE, related_name='dispute_decision')
+    decision = models.CharField(max_length=10)
+    actor = models.CharField(max_length=80)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class DisputeDelivery(models.Model):
+    dispute = models.ForeignKey(Dispute, on_delete=models.CASCADE, related_name='moderation_deliveries')
+    admin_id = models.PositiveBigIntegerField()
+    sent_at = models.DateTimeField(null=True, blank=True)
+    next_attempt = models.DateTimeField(default=timezone.now, db_index=True)
+    attempts = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['dispute', 'admin_id'], name='one_dispute_delivery')]
+
+
 class ResolutionDraft(models.Model):
     """The creator's unfinished outcome dialog in the bot; one per creator, survives bot restarts."""
     class Stage(models.TextChoices):
