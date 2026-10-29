@@ -264,10 +264,10 @@ def test_start_for_new_person_opens_app(bot):
 def test_setup_bot(bot):
     call_command("setup_bot")
     methods = [m for m, _ in bot.calls]
-    assert methods == ["setChatMenuButton", "setMyCommands"]
+    assert methods == ["setChatMenuButton", "setMyCommands", "setMyCommands"]
     assert bot.calls[0][1]["menu_button"] == {
         "type": "web_app", "text": "Открыть приложение", "web_app": {"url": "https://example.test/app/"}}
-    assert bot.calls[1][1]["commands"][0]["command"] == "start"
+    assert bot.calls[2][1]["commands"][0]["command"] == "start"
 
 
 @pytest.mark.django_db
