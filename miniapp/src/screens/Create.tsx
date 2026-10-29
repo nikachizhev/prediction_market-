@@ -1,13 +1,15 @@
 // Market creation wizard from docs/mockups/Create.dc.html (spec E3, three steps) with templates,
-// the AI rules helper and similar markets from docs/mockups/quick-create/Main.dc.html (spec E9.1–E9.3).
+// the AI rules helper and similar markets from docs/mockups/quick-create/Main.dc.html (spec E9.1–E9.3),
+// «Кто увидит» and the price by place for closed chats (spec E8.3, E5).
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   api,
   ApiError,
   isAssistWarning,
   newRequestKey,
   type Category,
+  type ChatSpace,
   type MarketCard,
   type MarketTemplate,
 } from '../api';
@@ -22,6 +24,12 @@ import {
   applyTemplate,
   ASSIST_DAILY_LIMIT,
   assistCard,
+  assistForChat,
+  audienceOptions,
+  creationTerms,
+  pickedChat,
+  previewMetaSuffix,
+  settleChat,
   assistLeftLabel,
   balanceAfterCreation,
   canProceed,
@@ -74,15 +82,31 @@ let cachedCategories: Category[] = [];
 let cachedTemplates: MarketTemplate[] = [];
 // Similar markets of the last question, so coming back from one of them shows the list at once.
 let cachedSimilar: { q: string; items: MarketCard[] } | null = null;
+// Chats for «Кто увидит»; refreshed on every opening, shown at once on return.
+let cachedChats: ChatSpace[] | null = null;
 
 export function CreateScreen() {
   const navigate = useNavigate();
   const toast = useToast();
   const { me, balance, setBalance, patchMe } = useSession();
-  const [draft, setDraftState] = useState<CreateDraft>(() => loadDraft());
+  const [params, setParams] = useSearchParams();
+  // «Создать рынок для чата» opens the wizard as /create?chat=<code> with the chat picked.
+  const [draft, setDraftState] = useState<CreateDraft>(() => {
+    const loaded = loadDraft();
+    const chat = params.get('chat');
+    if (!chat || chat === loaded.chat) return loaded;
+    const picked = { ...loaded, chat };
+    saveDraft(picked);
+    return picked;
+  });
   const draftRef = useRef(draft);
   const [categories, setCategories] = useState<Category[]>(cachedCategories);
   const [templates, setTemplates] = useState<MarketTemplate[]>(cachedTemplates);
+  const [chats, setChats] = useState<ChatSpace[] | null>(cachedChats);
+  const [chatsAttempt, setChatsAttempt] = useState(0);
+  const [chatsFailed, setChatsFailed] = useState(false);
+  // The cached list may predate joining a chat by its link: settle the pick only on a fresh one.
+  const [chatsFresh, setChatsFresh] = useState(false);
   const [tplCategory, setTplCategory] = useState('');
   const [tplOpen, setTplOpen] = useState<string | null>(null);
   const [tplValues, setTplValues] = useState<Record<string, string>>({});
@@ -123,6 +147,30 @@ export function CreateScreen() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (params.has('chat')) setParams({}, { replace: true });
+  }, [params, setParams]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setChatsFailed(false);
+    api
+      .chats()
+      .then((res) => {
+        if (cancelled) return;
+        const list = Array.isArray(res?.items) ? res.items : [];
+        cachedChats = list;
+        setChats(list);
+        setChatsFresh(true);
+      })
+      .catch(() => {
+        if (!cancelled) setChatsFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chatsAttempt]);
+
   useEffect(
     () => () => {
       assistRequest.current += 1;
@@ -157,6 +205,11 @@ export function CreateScreen() {
       setAssistUi((ui) => (ui === 'loading' || ui === 'warn' || ui === 'off' ? 'idle' : ui));
     }
   }, []);
+
+  // A chat that is no longer available (left, frozen) falls back to everyone.
+  useEffect(() => {
+    if (chats && chatsFresh) commit(settleChat(draftRef.current, chats));
+  }, [chats, chatsFresh, commit]);
 
   /** A change made by the creator: removes the «ИИ» / «Шаблон» mark of the field. */
   const update = useCallback((patch: DraftEdit) => commit(editDraft(draftRef.current, patch)), [commit]);
@@ -208,10 +261,15 @@ export function CreateScreen() {
     };
   }, [similarQuery]);
 
-  const assist = me?.assist;
+  const listed = !!draft.chat && !!chats?.some((c) => c.code === draft.chat);
+  const chat = pickedChat(draft, chatsFresh || listed ? chats : null);
+  const audience = audienceOptions(chats);
+  const assist = assistForChat(me?.assist, chat);
   const card = assistCard(draft, assistUi, assist);
   const loading = step === 2 && card === 'loading';
-  const cost = me ? Number(me.limits.creation_cost) : 0;
+  // Price and depth by place (spec E5); unknown until the chat list arrives.
+  const terms = me ? creationTerms(me.limits, chat) : null;
+  const cost = terms ? terms.cost : 0;
   const rest = balanceAfterCreation(balance, cost);
   const ready = canProceed(draft, step, now) && !loading;
   const dates = dateErrors(draft, now);
@@ -234,7 +292,7 @@ export function CreateScreen() {
     setAssistUi('loading');
     const current = draftRef.current;
     try {
-      const res = await api.assist(current.title.trim(), current.category || undefined);
+      const res = await api.assist(current.title.trim(), current.category || undefined, current.chat ?? undefined);
       setLeft(res.left);
       if (request !== assistRequest.current) return;
       if (isAssistWarning(res)) {
@@ -328,8 +386,8 @@ export function CreateScreen() {
   };
 
   const labels = new Map(categories.map((c) => [c.slug, c.label]));
-  const notEnough = step === 3 && !!me && rest === null;
-  const nextLabel = step === 3 ? `Опубликовать за ${formatMoney(cost)}` : 'Далее';
+  const notEnough = step === 3 && !!terms && rest === null;
+  const nextLabel = step === 3 ? (terms ? `Опубликовать за ${formatMoney(cost)}` : 'Опубликовать') : 'Далее';
   const resolves = resolvesAtIso(draft);
   const resolutionDay = resolves ? `${formatDayMonth(resolves, now)} в ${draft.resultTime}` : 'В дату итога';
 
@@ -497,6 +555,36 @@ export function CreateScreen() {
                   </div>
                 )}
               </section>
+            )}
+
+            {audience.length > 0 && (
+              <div role="group" aria-label="Кто увидит рынок" className="create-audience">
+                <span className="field-label">Кто увидит</span>
+                {audience.map((option) => {
+                  const on = option.chat === (chat ? chat.code : null);
+                  return (
+                    <button
+                      key={option.chat ?? 'all'}
+                      type="button"
+                      className={`create-audience-option ${on ? 'is-on' : ''}`}
+                      aria-pressed={on}
+                      onClick={() => {
+                        if (on) return;
+                        tg.HapticFeedback.selection();
+                        update({ chat: option.chat });
+                      }}
+                    >
+                      <span className="create-audience-radio" aria-hidden="true">
+                        <span />
+                      </span>
+                      <span className="create-audience-text">
+                        <span className="create-audience-label">{option.label}</span>
+                        <span className="sub create-audience-sub">{option.sub}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </>
         )}
@@ -808,6 +896,7 @@ export function CreateScreen() {
               <MarketCardView
                 market={previewCard(draft)}
                 categoryLabel={labels.get(draft.category) ?? ''}
+                metaSuffix={previewMetaSuffix(chat)}
                 onTrade={noop}
                 onStar={noop}
               />
@@ -815,18 +904,34 @@ export function CreateScreen() {
             <section aria-label="Стоимость" className="card create-cost">
               <div className="quote-row">
                 <span className="sub">Создание рынка</span>
-                <span className="quote-strong">{formatMoney(cost)}</span>
+                <span className="quote-strong">{terms ? formatMoney(cost) : '—'}</span>
               </div>
               <div className="quote-row">
                 <span className="sub">Баланс после</span>
-                <span className={`quote-value ${rest === null ? 'quote-error' : ''}`}>
-                  {rest === null ? 'не хватает' : formatMoney(rest)}
+                <span className={`quote-value ${terms && rest === null ? 'quote-error' : ''}`}>
+                  {!terms ? '—' : rest === null ? 'не хватает' : formatMoney(rest)}
                 </span>
               </div>
-              <span className="sub create-cost-note">
-                Эти {formatMoney(cost)} монет покрывают работу маркет-мейкера. Что не потратится, вернётся после итога.
-              </span>
+              {terms && (
+                <span className="sub create-cost-note">
+                  Эти {formatMoney(cost)} монет покрывают работу маркет-мейкера. Что не потратится, вернётся после итога.
+                  {chat && ` Ставка в ${formatMoney(cost)} монет сдвинет вероятность с 50% до 75%: чем дешевле рынок, тем легче он двигается.`}
+                </span>
+              )}
             </section>
+            {!terms && me && (
+              <div className="hint-box create-warning" role="alert">
+                <InfoIcon />
+                <span>
+                  {chatsFailed ? 'Не удалось загрузить чат, поэтому цена создания пока неизвестна. ' : 'Загружаем цену создания для чата… '}
+                  {chatsFailed && (
+                    <button type="button" className="create-link" onClick={() => setChatsAttempt((n) => n + 1)}>
+                      Повторить
+                    </button>
+                  )}
+                </span>
+              </div>
+            )}
             {notEnough && (
               <div className="hint-box create-warning" role="alert">
                 <InfoIcon />
@@ -861,7 +966,7 @@ export function CreateScreen() {
             <MainAction
               text={nextLabel}
               onClick={next}
-              disabled={!ready || notEnough || !me}
+              disabled={!ready || notEnough || !me || !terms}
               busy={busy}
               variant="ink"
             />

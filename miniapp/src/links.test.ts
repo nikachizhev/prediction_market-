@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from './api';
-import { marketFromStartParam, marketShareLink, shareMarket } from './links';
+import { chatFromStartParam, marketFromStartParam, marketShareLink, shareMarket } from './links';
 import { topMovesView } from './market';
 
 describe('marketShareLink', () => {
@@ -11,6 +11,28 @@ describe('marketShareLink', () => {
   it('works without a referral code', () => {
     expect(marketShareLink('https://t.me/bot/app?startapp=', 3)).toBe('https://t.me/bot/app?startapp=m3');
     expect(marketShareLink('https://t.me/bot/app', 3)).toBe('https://t.me/bot/app?startapp=m3');
+  });
+});
+
+describe('chatFromStartParam', () => {
+  it('reads the chat code', () => {
+    expect(chatFromStartParam('chat_k7Q2x')).toBe('k7Q2x');
+    expect(chatFromStartParam('chat_a-b_C9')).toBe('a-b_C9');
+  });
+
+  it('does not take market or referral params for a chat', () => {
+    expect(chatFromStartParam('m42')).toBeNull();
+    expect(chatFromStartParam('ref_7Q2K')).toBeNull();
+    expect(chatFromStartParam('ref_7Q2K-m42')).toBeNull();
+    expect(chatFromStartParam('chat_')).toBeNull();
+    expect(chatFromStartParam('xchat_abc')).toBeNull();
+    expect(chatFromStartParam('chat_a b')).toBeNull();
+    expect(chatFromStartParam(undefined)).toBeNull();
+  });
+
+  it('is not read as a market link', () => {
+    expect(marketFromStartParam('chat_k7Q2')).toBeNull();
+    expect(marketFromStartParam('chat_m12')).toBeNull();
   });
 });
 

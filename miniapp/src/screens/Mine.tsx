@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError, type MarketCard, type MineResponse, type Side } from '../api';
+import { ChatTag } from '../components/ChatTag';
 import { useSell } from '../components/SellSheet';
 import { CardSkeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
@@ -203,6 +204,7 @@ function Positions({
         const sellable = canSell(item) && sides.length > 0;
         return (
           <article key={item.id} className="mine-card mine-position" aria-busy={sellingId === item.id || undefined}>
+            {item.chat && <ChatTag chat={item.chat} className="mine-chat-tag" />}
             <Link to={`/market/${item.id}`} className="mine-q stretched-link">
               {item.title}
             </Link>
@@ -278,15 +280,18 @@ function Watched({ items, onStar }: { items: MarketCard[]; onStar: (m: MarketCar
           const delta = Math.round(m.change_24h);
           return (
             <div key={m.id} className="mine-watch-row">
-              <Link to={`/market/${m.id}`} className="mine-watch-link">
-                <span className="mine-watch-q">{m.title}</span>
-                <span className="sub small">
-                  <strong className="mine-watch-pct">{formatPercent(m.prob)}</strong> ·{' '}
-                  <span className={`mine-delta ${delta >= 0 ? 'is-up' : 'is-down'}`}>
-                    {delta >= 0 ? '▲' : '▼'} {Math.abs(delta)} за сутки
+              <div className="mine-watch-main">
+                <Link to={`/market/${m.id}`} className="mine-watch-link">
+                  <span className="mine-watch-q">{m.title}</span>
+                  <span className="sub small">
+                    <strong className="mine-watch-pct">{formatPercent(m.prob)}</strong> ·{' '}
+                    <span className={`mine-delta ${delta >= 0 ? 'is-up' : 'is-down'}`}>
+                      {delta >= 0 ? '▲' : '▼'} {Math.abs(delta)} за сутки
+                    </span>
                   </span>
-                </span>
-              </Link>
+                </Link>
+                {m.chat && <ChatTag chat={m.chat} className="mine-chat-tag" />}
+              </div>
               <button
                 type="button"
                 className="star-button mine-star"
@@ -335,6 +340,7 @@ function Created({
       {urgent.map((m) => (
         <section key={m.id} aria-label="Нужно указать итог" className="mine-card mine-urgent">
           <span className="mine-urgent-label">НУЖНО УКАЗАТЬ ИТОГ</span>
+          {m.chat && <ChatTag chat={m.chat} className="mine-chat-tag" />}
           <Link to={`/market/${m.id}`} className="mine-q">
             {m.title}
           </Link>
@@ -349,13 +355,16 @@ function Created({
         </section>
       ))}
       {rest.map((m) => (
-        <Link key={m.id} to={`/market/${m.id}`} className="mine-card mine-created">
-          <span className="mine-q">{m.title}</span>
+        <article key={m.id} className="mine-card mine-created">
+          {m.chat && <ChatTag chat={m.chat} className="mine-chat-tag" />}
+          <Link to={`/market/${m.id}`} className="mine-q stretched-link">
+            {m.title}
+          </Link>
           <span className="mine-row small">
             <span className="sub">{createdStatusLine(m, formatEnds(m.closes_at))}</span>
             <span className="mine-fee">комиссия {formatSigned(Math.floor(Number(m.fee_expected)), 0)}</span>
           </span>
-        </Link>
+        </article>
       ))}
       <p className="mine-note sub">Половина комиссии со всех сделок на твоём рынке достаётся тебе.</p>
     </>

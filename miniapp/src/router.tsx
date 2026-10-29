@@ -4,7 +4,7 @@ import { BalancePill } from './components/BalancePill';
 import { TabBar } from './components/TabBar';
 import { useToast } from './components/Toast';
 import { grantMessage } from './grants';
-import { marketFromStartParam } from './links';
+import { chatFromStartParam, marketFromStartParam } from './links';
 import { Onboarding } from './screens/Onboarding';
 import { Placeholder } from './screens/Placeholder';
 import { useSession } from './session';
@@ -19,6 +19,7 @@ import {
   NotificationsScreen,
   ProfileScreen,
   RatingScreen,
+  ChatScreen,
 } from './screens/screens';
 
 const TAB_PATHS = new Set(['/', '/mine', '/create', '/rating', '/profile']);
@@ -70,14 +71,22 @@ function Layout() {
 // The start_param is the same for the whole launch: open its market only once.
 let deepLinkHandled = false;
 
-/** `startapp=ref_<code>-m<id>` or `m<id>`: opens the market once the session is ready. */
+/**
+ * `startapp=ref_<code>-m<id>` or `m<id>` opens the market, `chat_<code>` the closed chat,
+ * once the session is ready.
+ */
 function useMarketDeepLink(ready: boolean) {
   const navigate = useNavigate();
   useEffect(() => {
     if (!ready || deepLinkHandled) return;
     deepLinkHandled = true;
     const id = marketFromStartParam(tg.startParam);
-    if (id !== null) navigate(`/market/${id}`);
+    if (id !== null) {
+      navigate(`/market/${id}`);
+      return;
+    }
+    const chat = chatFromStartParam(tg.startParam);
+    if (chat !== null) navigate(`/chat/${encodeURIComponent(chat)}`);
   }, [ready, navigate]);
 }
 
@@ -129,6 +138,7 @@ export const router = createBrowserRouter(
         { path: '/market/:id', element: <MarketScreen /> },
         { path: '/market/:id/created', element: <CreatedScreen /> },
         { path: '/notifications', element: <NotificationsScreen /> },
+        { path: '/chat/:code', element: <ChatScreen /> },
         { path: '*', element: <NotFoundScreen /> },
       ],
     },
