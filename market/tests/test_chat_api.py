@@ -142,6 +142,50 @@ def test_chat_space_counts_open_markets_volume_and_rank(anya, boris, vera):
     assert vera.get(f"chats/{group.code}")[1]["my_rank"] == 3
 
 
+def test_chat_rank_matches_the_chat_leaderboard(anya, boris, vera, django_assert_max_num_queries):
+    from market.rating import chat_rank, leaderboard
+    group = chat()
+    extra = [Trader.objects.create(name=f"Участник {i}", pseudonym=f"Участник {i}", balance=D(10000),
+                                   telegram_chat_id=2000 + i) for i in range(5)]
+    for user in (ANYA, BORIS, VERA, *(t.telegram_chat_id for t in extra)):
+        join(group, user)
+    rich(ANYA), rich(VERA)
+    left = extra[4]
+    won, lost, open_ = chat_market(group, BORIS), chat_market(group, BORIS, title="Отменят ли пары?"), \
+        chat_market(group, BORIS, title="Будет ли зачёт автоматом?")
+    # Two equal markets, one buyer each: the same profit, the tie goes to the earlier account.
+    twin_a, twin_b = chat_market(group, BORIS, title="Пойдёт ли дождь?"), \
+        chat_market(group, BORIS, title="Пойдёт ли снег?")
+    public = market_by(BORIS, title="Публичный рынок?")
+    services.buy(trader(ANYA), won, "yes", D(100))
+    services.buy(trader(VERA), won, "no", D(60))
+    services.buy(trader(ANYA), lost, "no", D(40))
+    services.buy(extra[0], twin_a, "yes", D(50))
+    services.buy(extra[1], twin_b, "yes", D(50))
+    services.buy(extra[2], open_, "yes", D(80))
+    services.buy(left, won, "yes", D(100))
+    GroupMembership.objects.filter(group=group, trader=left).update(status="left")
+    services.buy(extra[3], public, "yes", D(100))
+    for market, outcome in ((won, "yes"), (lost, "yes"), (twin_a, "yes"), (twin_b, "yes"), (public, "yes")):
+        services.resolve(market, outcome)
+
+    def expected(t):
+        mine = leaderboard(t, group=group)["me"]
+        ranked = mine is not None and (mine["predictions"] > 0 or D(mine["profit"]) != 0)
+        return mine["rank"] if ranked else None
+
+    people = [trader(ANYA), trader(BORIS), trader(VERA), *extra]
+    ranks = {t.pk: expected(t) for t in people}
+    assert ranks[extra[0].pk] + 1 == ranks[extra[1].pk]
+    assert ranks[extra[2].pk] is None and ranks[extra[3].pk] is None and ranks[left.pk] is None
+    # Members without a result still hold their zero-profit places, so the losers come after them.
+    assert sorted(r for r in ranks.values() if r) == [1, 2, 3, 6, 7]
+    for t in people:
+        with django_assert_max_num_queries(3):
+            assert chat_rank(t, group) == ranks[t.pk], t.display_name
+    assert anya.get("chats")[1]["items"][0]["my_rank"] == ranks[trader(ANYA).pk]
+
+
 def test_unknown_code_is_404(anya):
     with telegram() as api:
         code, data = anya.get("chats/nosuchcode")
