@@ -10,7 +10,7 @@ from .. import assist as helper
 from ..events import log_event
 from ..models import CATEGORIES, Event, Trader
 from . import serializers as s
-from .views import BadRequest, LimitReached, Unavailable, body, endpoint
+from .views import BadRequest, LimitReached, Unavailable, body, chat_for, endpoint
 
 log = logging.getLogger(__name__)
 
@@ -47,10 +47,14 @@ def assist(request):
     category = data.get("category")
     if not isinstance(category, str) or category not in dict(CATEGORIES):
         category = None
+    trader = request.trader
+    if data.get("chat") not in (None, ""):
+        # A chat admin may switch the helper off for markets of their chat (spec E8.5).
+        if not chat_for(trader, data["chat"]).assist_enabled:
+            raise Unavailable(OFFLINE)
     if not helper.enabled():
         raise Unavailable(OFFLINE)
 
-    trader = request.trader
     event = reserve(trader, category)
     try:
         answer = helper.suggest(title, category)

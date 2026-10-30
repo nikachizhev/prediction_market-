@@ -33,7 +33,7 @@ def _trader(user_id) -> Trader | None:
 
 def _question(question_id) -> Question | None:
     try:
-        return Question.objects.select_related("creator").filter(pk=int(question_id)).first()
+        return Question.objects.select_related("creator", "group").filter(pk=int(question_id)).first()
     except (TypeError, ValueError):
         return None
 
@@ -317,10 +317,16 @@ def notify_participants(question: Question, *, is_document: bool = False) -> int
 
 # --- participants ----------------------------------------------------------------------------------
 
+def _chat_market(question: Question) -> bool:
+    """Disputes on chat markets are decided by the chat's admins, not by a moderator (spec E8.6)."""
+    return bool(question.group_id and question.group.is_chat)
+
+
 def _on_dispute(user_id, message, question, _arg) -> str | None:
     if question is None:
         return "Рынок не найден."
-    telegram.send(user_id, f"Спор стоит {settings.DISPUTE_COST} монет; вернём их, если модератор признает спор. Оспорить?",
+    who = "админы чата признают" if _chat_market(question) else "модератор признает"
+    telegram.send(user_id, f"Спор стоит {settings.DISPUTE_COST} монет; вернём их, если {who} спор. Оспорить?",
                   reply_markup={"inline_keyboard": [[{"text": "Оспорить", "callback_data": f"dispok:{question.pk}"},
                                                      {"text": "Не надо", "callback_data": f"dispno:{question.pk}"}]]})
     return None
@@ -337,7 +343,8 @@ def _on_dispute_confirm(user_id, message, question, _arg) -> str | None:
     except services.MarketError as exc:
         telegram.send(user_id, str(exc))
         return None
-    telegram.send(user_id, f"Спор открыт, списано {settings.DISPUTE_COST} монет. Итог проверит модератор.")
+    who = "проверят админы чата" if _chat_market(question) else "проверит модератор"
+    telegram.send(user_id, f"Спор открыт, списано {settings.DISPUTE_COST} монет. Итог {who}.")
     return "Спор открыт"
 
 

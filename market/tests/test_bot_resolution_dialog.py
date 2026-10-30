@@ -9,7 +9,7 @@ from django.test import override_settings
 from django.utils import timezone
 
 from market import services
-from market.models import Dispute, LedgerEntry, Question, ResolutionDraft, Trader
+from market.models import Dispute, Group, GroupMembership, LedgerEntry, Question, ResolutionDraft, Trader
 from market.telegram import handle_update
 
 D = Decimal
@@ -226,6 +226,7 @@ def test_dispute_by_participant(bot, people, market):
     assert bot.texts(ANYA)[-1] == "Спор стоит 20 монет; вернём их, если модератор признает спор. Оспорить?"
     assert not Dispute.objects.exists()
     handle_update(press(ANYA, f"dispok:{market.pk}", 21))
+    assert bot.texts(ANYA)[-1] == "Спор открыт, списано 20 монет. Итог проверит модератор."
     assert Trader.objects.get(pk=anya.pk).balance == balance - 20
     assert LedgerEntry.objects.filter(trader=anya, kind=LedgerEntry.Kind.DISPUTE).exists()
     market.refresh_from_db()
@@ -239,6 +240,22 @@ def test_dispute_by_participant(bot, people, market):
     assert bot.texts(STRANGER)[-1] == "Оспорить итог может только участник рынка."
     assert Trader.objects.get(pk=stranger.pk).balance == 1000
     assert Dispute.objects.count() == 1
+
+
+def test_dispute_on_chat_market_names_chat_admins(bot, people, market):
+    chat = Group.objects.create(name="Группа ПИ-24", kind="chat", telegram_chat_id=-100777, bot_active=True)
+    for trader in people:
+        GroupMembership.objects.create(group=chat, trader=trader, status="active", checked_at=timezone.now())
+    Question.objects.filter(pk=market.pk).update(group=chat)
+    handle_update(press(CREATOR, f"res:{market.pk}:yes"))
+    handle_update(photo(CREATOR))
+    handle_update(press(CREATOR, f"resok:{market.pk}", 10))
+
+    handle_update(press(ANYA, f"disp:{market.pk}", 20))
+    assert bot.texts(ANYA)[-1] == "Спор стоит 20 монет; вернём их, если админы чата признают спор. Оспорить?"
+    handle_update(press(ANYA, f"dispok:{market.pk}", 21))
+    assert bot.texts(ANYA)[-1] == "Спор открыт, списано 20 монет. Итог проверят админы чата."
+    assert Dispute.objects.filter(question=market).count() == 1
 
 
 def test_dispute_declined(bot, people, market):
@@ -264,10 +281,10 @@ def test_start_for_new_person_opens_app(bot):
 def test_setup_bot(bot):
     call_command("setup_bot")
     methods = [m for m, _ in bot.calls]
-    assert methods == ["setChatMenuButton", "setMyCommands"]
+    assert methods == ["setChatMenuButton", "setMyCommands", "setMyCommands"]
     assert bot.calls[0][1]["menu_button"] == {
         "type": "web_app", "text": "Открыть приложение", "web_app": {"url": "https://example.test/app/"}}
-    assert bot.calls[1][1]["commands"][0]["command"] == "start"
+    assert bot.calls[2][1]["commands"][0]["command"] == "start"
 
 
 @pytest.mark.django_db

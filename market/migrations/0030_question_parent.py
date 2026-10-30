@@ -5,7 +5,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("market", "0026_drop_weather_category"),
+        ("market", "0029_moderationcontact"),
     ]
 
     operations = [

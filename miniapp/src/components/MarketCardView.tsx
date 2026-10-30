@@ -5,12 +5,15 @@ import type { MarketCard, Position, Side, SubmarketCard } from '../api';
 import { formatCompact, formatEnds, formatMoney, pluralize } from '../format';
 import { positionSummary, sideLabel, splitPercents } from '../trade';
 import { AnimatedNumber } from './AnimatedNumber';
+import { ChatTag } from './ChatTag';
 import { Sparkline } from './Sparkline';
 import './multi-card.css';
 
 interface MarketCardViewProps {
   market: MarketCard;
   categoryLabel: string;
+  /** Text after the meta line, e.g. « · Группа ПИ-24» in the creation preview. */
+  metaSuffix?: string;
   /** Own position learned from a trade in this session, if any. */
   position?: Position | null;
   pending?: boolean;
@@ -25,6 +28,7 @@ interface MarketCardViewProps {
 export const MarketCardView = memo(function MarketCardView({
   market,
   categoryLabel,
+  metaSuffix = '',
   position,
   pending = false,
   drawDelay = 0,
@@ -55,9 +59,13 @@ export const MarketCardView = memo(function MarketCardView({
   return (
     <article ref={article} className="card market-card" aria-busy={pending || undefined}>
       <div className="market-meta">
-        <span className="sub market-meta-text">
-          {[categoryLabel, formatEnds(market.closes_at)].filter(Boolean).join(' · ')}
-        </span>
+        <div className="market-meta-start">
+          <span className="sub market-meta-text">
+            {[categoryLabel, formatEnds(market.closes_at)].filter(Boolean).join(' · ')}
+            {metaSuffix}
+          </span>
+          {market.chat && <ChatTag chat={market.chat} />}
+        </div>
         <button
           type="button"
           className="star-button"

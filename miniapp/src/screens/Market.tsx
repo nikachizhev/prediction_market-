@@ -5,6 +5,7 @@ import { api, ApiError, type HistoryPeriod, type MarketDetail, type Side, type S
 import { lineYAt } from '../chartMotion';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { BottomSheet } from '../components/BottomSheet';
+import { ChatTag } from '../components/ChatTag';
 import { LiveLine } from '../components/LiveLine';
 import { useSell } from '../components/SellSheet';
 import { Skeleton } from '../components/Skeleton';
@@ -351,6 +352,7 @@ export function MarketScreen() {
       <div className="mk-body">
         <div className="mk-meta">
           <span>{[categoryLabel, formatEnds(m.closes_at)].filter(Boolean).join(' · ')}</span>
+          {m.chat && <ChatTag chat={m.chat} />}
           <span className={`mk-status is-${view.tone}`}>{view.label}</span>
         </div>
 
@@ -496,7 +498,7 @@ export function MarketScreen() {
                     disabled={sell.sellingId === m.id}
                     onClick={() =>
                       sell.request(
-                        { id: m.id, title: m.title, prob: m.prob, position: m.my_position! },
+                        { id: m.id, title: m.title, prob: m.prob, position: m.my_position!, b: m.b },
                         side,
                       )
                     }

@@ -20,10 +20,12 @@ class GroupForm(forms.ModelForm):
 def index(request):
     trader = get_trader(request)
     query = request.GET.get("q", "").strip()[:120]
-    mine = Group.objects.filter(memberships__trader=trader, memberships__status="active")
-    found = Group.objects.filter(name__icontains=query).exclude(pk__in=mine.values("pk"))[:30] if query else []
+    # Telegram chats (spec E8) live in the Mini App: membership there comes only from Telegram.
+    sitegroups = Group.objects.exclude(kind="chat")
+    mine = sitegroups.filter(memberships__trader=trader, memberships__status="active")
+    found = sitegroups.filter(name__icontains=query).exclude(pk__in=mine.values("pk"))[:30] if query else []
     return render(request, "market/groups.html", {"groups": mine, "found": found, "query": query,
-        "pending": GroupMembership.objects.filter(trader=trader).exclude(status="active").select_related("group")})
+        "pending": GroupMembership.objects.filter(trader=trader).exclude(status="active").exclude(group__kind="chat").select_related("group")})
 
 
 @login_required
@@ -42,7 +44,7 @@ def create(request):
 @login_required
 def detail(request, pk):
     trader = get_trader(request)
-    group = get_object_or_404(Group.objects.select_related("owner"), pk=pk)
+    group = get_object_or_404(Group.objects.select_related("owner").exclude(kind="chat"), pk=pk)
     is_admin = group.owner_id == trader.pk
     membership = GroupMembership.objects.filter(group=group, trader=trader).first()
     if request.method == "POST":

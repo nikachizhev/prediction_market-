@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AssistResult, MarketCard, MarketTemplate } from './api';
+import type { AssistResult, ChatSpace, MarketCard, MarketTemplate } from './api';
 import {
   acceptSuggestion,
   applyAssist,
   applyTemplate,
   assistCard,
+  assistForChat,
   assistLeftLabel,
+  audienceOptions,
   balanceAfterCreation,
   canProceed,
   changedFields,
   clearDraft,
   createPayload,
+  creationTerms,
   dateErrors,
   dateInputValue,
   dayMonthOf,
@@ -22,11 +25,14 @@ import {
   loadDraft,
   localIso,
   localParts,
+  pickedChat,
   previewCard,
+  previewMetaSuffix,
   readDraft,
   resolutionRule,
   revertSuggestion,
   saveDraft,
+  settleChat,
   shiftDate,
   similarLine,
   stepOfField,
@@ -556,6 +562,7 @@ describe('stored drafts', () => {
       before: null,
       assist: null,
       suggestion: null,
+      chat: null,
     });
   });
 
@@ -576,5 +583,88 @@ describe('similar markets', () => {
     const card: MarketCard = { ...previewCard(draft()), prob: 0.41, participants: 23 };
     expect(similarLine(card)).toBe('41% ДА · 23 участника');
     expect(similarLine({ ...card, participants: 1 })).toBe('41% ДА · 1 участник');
+  });
+});
+
+describe('«Кто увидит» and the price by place', () => {
+  const space = (patch: Partial<ChatSpace> = {}): ChatSpace => ({
+    code: 'k7Q2',
+    title: 'Группа ПИ-24',
+    members: 28,
+    frozen: false,
+    markets: 4,
+    volume: '3200.00',
+    my_rank: 3,
+    creation_cost: '70.00',
+    b: 100,
+    assist: true,
+    link: 'https://t.me/bot/app?startapp=chat_k7Q2',
+    ...patch,
+  });
+  const limits = { creation_cost: '100.00', b: 144 };
+
+  it('offers everyone and every chat that is not frozen', () => {
+    const options = audienceOptions([space(), space({ code: 'old', title: 'Старый чат', frozen: true })]);
+    expect(options).toEqual([
+      { chat: null, label: 'Все', sub: 'Рынок появится в общей ленте' },
+      { chat: 'k7Q2', label: 'Только чат «Группа ПИ-24»', sub: 'Увидят и смогут ставить только участники чата' },
+    ]);
+  });
+
+  it('has no block without chats or with frozen ones only', () => {
+    expect(audienceOptions([])).toEqual([]);
+    expect(audienceOptions(null)).toEqual([]);
+    expect(audienceOptions([space({ frozen: true })])).toEqual([]);
+  });
+
+  it('finds the picked chat; unknown while the list is loading', () => {
+    expect(pickedChat({ chat: null }, null)).toBeNull();
+    expect(pickedChat({ chat: 'k7Q2' }, null)).toBeUndefined();
+    expect(pickedChat({ chat: 'k7Q2' }, [space()])?.title).toBe('Группа ПИ-24');
+    expect(pickedChat({ chat: 'k7Q2' }, [space({ frozen: true })])).toBeNull();
+    expect(pickedChat({ chat: 'gone' }, [space()])).toBeNull();
+  });
+
+  it('falls back to everyone when the chat is no longer available', () => {
+    const d = { ...draft(), chat: 'gone' };
+    expect(settleChat(d, [space()]).chat).toBeNull();
+    const ok = { ...draft(), chat: 'k7Q2' };
+    expect(settleChat(ok, [space()])).toBe(ok);
+    const all = draft();
+    expect(settleChat(all, [])).toBe(all);
+  });
+
+  it('takes the price and depth from the chat', () => {
+    expect(creationTerms(limits, null)).toEqual({ cost: 100, b: 144 });
+    expect(creationTerms(limits, space())).toEqual({ cost: 70, b: 100 });
+    expect(creationTerms(limits, space({ creation_cost: '40.00', b: 57 }))).toEqual({ cost: 40, b: 57 });
+    expect(creationTerms(limits, undefined)).toBeNull();
+  });
+
+  it('hides the helper in a chat where it is off', () => {
+    const on = { enabled: true, left: 5 };
+    expect(assistForChat(on, null)).toBe(on);
+    expect(assistForChat(on, space())).toBe(on);
+    expect(assistForChat(on, space({ assist: false }))).toEqual({ enabled: false, left: 5 });
+    expect(assistForChat(undefined, space({ assist: false }))).toBeUndefined();
+    const d = { ...draft(), step: 2 as const };
+    expect(assistCard(d, 'idle', assistForChat(on, space({ assist: false })))).toBe('none');
+    expect(assistCard(d, 'idle', assistForChat(on, space()))).toBe('idle');
+  });
+
+  it('adds the chat to the preview meta and to the request', () => {
+    expect(previewMetaSuffix(space())).toBe(' · Группа ПИ-24');
+    expect(previewMetaSuffix(null)).toBe('');
+    const d = { ...draft(), chat: 'k7Q2' };
+    expect(createPayload(d)?.chat).toBe('k7Q2');
+    expect(createPayload(draft())).not.toHaveProperty('chat');
+  });
+
+  it('keeps the picked chat through storage and edits', () => {
+    const d = editDraft(draft(), { chat: 'k7Q2' });
+    expect(d.chat).toBe('k7Q2');
+    expect(d.marks).toEqual(draft().marks);
+    expect(readDraft(JSON.parse(JSON.stringify(d)))?.chat).toBe('k7Q2');
+    expect(readDraft({ ...JSON.parse(JSON.stringify(d)), chat: 5 })?.chat).toBeNull();
   });
 });

@@ -10,7 +10,7 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils import timezone
 from . import moderation
-from .models import MarketComplaint, ModerationAction, ModerationDelivery, ModerationPanel, Question
+from .models import MarketComplaint, ModerationAction, ModerationDelivery, ModerationPanel, ModerationContact, Question
 from .services import MarketError
 
 log = logging.getLogger(__name__)
@@ -90,7 +90,10 @@ def render(chat_id: int, text: str, buttons=None, *, message_id=None, notice=Fal
 
 
 def navigation():
-    return [[{'text': '📥 Жалобы', 'callback_data': 'mb:queue:0'},
+    return [[{'text': '👤 Кто писал боту', 'callback_data': 'mb:contacts:0'}],
+            [{'text': '⚖️ Споры об исходе', 'callback_data': 'ds:queue:0'},
+             {'text': '📜 История споров', 'callback_data': 'ds:history:0'}],
+            [{'text': '📥 Жалобы', 'callback_data': 'mb:queue:0'},
              {'text': '🕘 История', 'callback_data': 'mb:history:0'}],
             [{'text': '⌂ Главное меню', 'callback_data': 'mb:home'}]]
 
@@ -116,7 +119,8 @@ def renew_panel(chat_id: int):
 
 def show_home(chat_id, *, message_id=None):
     count = Question.objects.filter(complaints__status='pending').distinct().count()
-    render(chat_id, f'🛡 МОДЕРАЦИЯ\n\nОжидают проверки: {count} рынков.\n\n📥 Жалобы — новые обращения\n🕘 История — решения и восстановление рынков\n\nВыберите раздел кнопкой ниже. Все экраны открываются в этой панели.', navigation(), message_id=message_id)
+    disputes = Question.objects.filter(resolution_state=Question.Resolution.DISPUTED).count()
+    render(chat_id, f'🛡 МОДЕРАЦИЯ\n\nЖалобы: {count} рынков.\nСпоры об исходе: {disputes} рынков.\n\n⚖️ Споры — проверка результата и выплаты\n📥 Жалобы — нарушения правил\n\nВыберите раздел кнопкой ниже.', navigation(), message_id=message_id)
 
 
 def card(question: Question, complaint=None):
@@ -188,11 +192,14 @@ def show_queue(chat_id: int, page=0, *, history=False, message_id=None):
 def show_notice(chat_id, report=None):
     count = Question.objects.filter(complaints__status='pending').distinct().count()
     text = f'🔔 ЖАЛОБЫ · УВЕДОМЛЕНИЕ\n\nВ очереди: {count} рынков.'
+    disputes = Question.objects.filter(resolution_state=Question.Resolution.DISPUTED).count()
+    text += f'\nСпоры об исходе: {disputes} рынков.'
     if report:
         text += f'\nПоследнее обращение: жалоба #{report.pk} на рынок #{report.question_id}.'
     elif not count:
         text += '\n✅ Все жалобы рассмотрены.'
-    render(chat_id, text, [[{'text': '📥 Открыть очередь', 'callback_data': 'mb:queue:0'}]], notice=True)
+    render(chat_id, text, [[{'text': '📥 Открыть очередь', 'callback_data': 'mb:queue:0'}],
+                          [{'text': '⚖️ Споры об исходе', 'callback_data': 'ds:queue:0'}]], notice=True)
 
 
 def _answer(callback, text=''):
@@ -200,6 +207,26 @@ def _answer(callback, text=''):
         api('answerCallbackQuery', callback_query_id=callback['id'], text=text[:180])
     except ModerationTelegramError:
         pass
+
+
+def show_contacts(chat_id, page=0, *, message_id=None):
+    contacts = ModerationContact.objects.all()
+    total = contacts.count()
+    page = min(max(0, page), max(0, (total-1)//PAGE_SIZE))
+    text = f'👤 КТО ПИСАЛ БОТУ\n\nПользователей: {total}. Страница {page+1}.\nID можно скопировать в MODERATION_ADMIN_IDS. Журнал не даёт доступа.'
+    allowed = moderation.admin_ids()
+    for contact in contacts[page*PAGE_SIZE:(page+1)*PAGE_SIZE]:
+        text += (f'\n\n{contact.name or "Без имени"} · {"@"+contact.username if contact.username else "без username"}'
+                 f'\nTelegram ID: {contact.telegram_id}'
+                 f'\nДоступ: {"администратор" if contact.telegram_id in allowed else "нет"}'
+                 f'\nВпервые: {timezone.localtime(contact.first_seen):%d.%m.%Y %H:%M}'
+                 f'\nПоследнее обращение: {timezone.localtime(contact.last_seen):%d.%m.%Y %H:%M}')
+    rows = []
+    if page:
+        rows.append({'text': '← Назад', 'callback_data': f'mb:contacts:{page-1}'})
+    if (page+1)*PAGE_SIZE < total:
+        rows.append({'text': 'Далее →', 'callback_data': f'mb:contacts:{page+1}'})
+    render(chat_id, text, ([rows] if rows else [])+navigation(), message_id=message_id)
 
 
 def handle_update(update: dict):
@@ -214,6 +241,11 @@ def handle_update(update: dict):
         if callback:
             _answer(callback, 'Доступ только в личном чате администратора.')
         return
+    ModerationContact.objects.update_or_create(telegram_id=sender_id, defaults={
+        'username': str(sender.get('username') or '')[:100],
+        'name': ' '.join(str(sender.get(key) or '') for key in ('first_name', 'last_name')).strip()[:300],
+        'last_seen': timezone.now(),
+    })
     if sender_id not in moderation.admin_ids():
         if callback:
             _answer(callback, 'Нет доступа.')
@@ -227,6 +259,11 @@ def handle_update(update: dict):
             show_queue(sender_id)
         elif command == '/history':
             show_queue(sender_id, history=True)
+        elif command in ('/disputes', '/dispute_history'):
+            from .disputes_bot import show_queue as show_disputes
+            show_disputes(sender_id, history=command == '/dispute_history')
+        elif command == '/contacts':
+            show_contacts(sender_id)
         elif command == '/id':
             render(sender_id, f'Ваш Telegram ID: {sender_id}.', navigation())
         else:
@@ -235,6 +272,14 @@ def handle_update(update: dict):
     _answer(callback)
     data = callback.get('data', '')
     panel_id = message.get('message_id')
+    contacts = re.fullmatch(r'mb:contacts:(\d{1,8})', data)
+    if contacts:
+        show_contacts(sender_id, int(contacts[1]), message_id=panel_id)
+        return
+    if data.startswith('ds:'):
+        from .disputes_bot import handle_callback
+        handle_callback(sender_id, data, message_id=panel_id)
+        return
     if data == 'mb:home':
         show_home(sender_id, message_id=panel_id)
         return
@@ -333,4 +378,5 @@ def flush_notifications(limit=10) -> int:
         else:
             ModerationDelivery.objects.filter(pk=delivery.pk, attempts=delivery.attempts).update(sent_at=timezone.now())
             sent += 1
-    return sent
+    from .disputes_bot import flush_notifications as flush_disputes
+    return sent + flush_disputes(limit=limit)

@@ -1,10 +1,11 @@
 // Feed screen from docs/mockups/Main.dc.html.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { api, ApiError, type Category, type MarketCard, type MarketSort, type Position, type Side } from '../api';
+import { api, ApiError, type Category, type ChatSpace, type MarketCard, type MarketSort, type Position, type Side } from '../api';
 import { cascadeDelay } from '../chartMotion';
 import { readFeedFilters, updateFeedFilter } from '../feedFilters';
 import { BalancePill } from '../components/BalancePill';
+import { ChatTag } from '../components/ChatTag';
 import { NotificationBell } from '../components/NotificationBell';
 import { MarketCardView } from '../components/MarketCardView';
 import { CardSkeleton } from '../components/Skeleton';
@@ -24,11 +25,15 @@ const SORTS: { key: MarketSort; label: string }[] = [
 
 const SEARCH_DEBOUNCE_MS = 300;
 
+// «Мои чаты» survive switching tabs: no jump while the list reloads.
+let cachedChats: ChatSpace[] = [];
+
 type LoadState = 'loading' | 'ready' | 'error';
 
 export function FeedScreen() {
   const toast = useToast();
   const [categories, setCategories] = useState<Category[]>([]);
+  const [chats, setChats] = useState<ChatSpace[]>(cachedChats);
   // Keep filters in the history entry: opening a market and Back restores them.
   const [params, setParams] = useSearchParams();
   const { category, sort, query } = readFeedFilters(params);
@@ -53,6 +58,18 @@ export function FeedScreen() {
     api
       .categories()
       .then(setCategories)
+      .catch(() => {});
+  }, []);
+
+  // Closed chats are not in the feed (spec E8.3); the way into them is this row.
+  useEffect(() => {
+    api
+      .chats()
+      .then((res) => {
+        const list = Array.isArray(res?.items) ? res.items : [];
+        cachedChats = list;
+        setChats(list);
+      })
       .catch(() => {});
   }, []);
 
@@ -193,6 +210,15 @@ export function FeedScreen() {
         <BalancePill />
         <NotificationBell />
       </header>
+
+      {chats.length > 0 && (
+        <nav aria-label="Мои чаты" className="feed-chats">
+          <span className="sub feed-chats-label">Мои чаты</span>
+          {chats.map((c) => (
+            <ChatTag key={c.code} chat={c} className="is-on-bg" />
+          ))}
+        </nav>
+      )}
 
       <div className="feed-search">
         <label htmlFor="feed-search" className="visually-hidden">

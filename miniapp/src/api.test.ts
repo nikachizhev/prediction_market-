@@ -146,4 +146,27 @@ describe('api client', () => {
     expect(err.status).toBe(500);
     expect(err.message).toMatch(/Что-то пошло не так/);
   });
+
+  it('calls the chat endpoints and passes the chat when creating', async () => {
+    const fetch = mockFetch(200, {});
+    await api.chats();
+    expect(fetch.mock.calls[0][0]).toBe('/api/chats');
+    await api.chat('k7Q2');
+    expect(fetch.mock.calls[1][0]).toBe('/api/chats/k7Q2');
+    await api.chatMarkets('k7Q2', 2);
+    expect(fetch.mock.calls[2][0]).toBe('/api/chats/k7Q2/markets?page=2');
+    await api.chatRating('k7Q2', 'profit', 'all');
+    expect(fetch.mock.calls[3][0]).toBe('/api/chats/k7Q2/rating?by=profit&period=all');
+    await api.assist('Перенесут ли коллоквиум по алгоритмам?', 'study', 'k7Q2');
+    expect(JSON.parse(fetch.mock.calls[4][1]!.body as string)).toEqual({
+      title: 'Перенесут ли коллоквиум по алгоритмам?',
+      category: 'study',
+      chat: 'k7Q2',
+    });
+    await api.createMarket(
+      { title: 'Перенесут ли коллоквиум?', criteria: 'ДА, если перенесут.', category: 'study', closes_at: 'a', resolves_at: 'b', chat: 'k7Q2' },
+      'key-2',
+    );
+    expect(JSON.parse(fetch.mock.calls[5][1]!.body as string)).toMatchObject({ chat: 'k7Q2', request_key: 'key-2' });
+  });
 });

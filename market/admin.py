@@ -9,8 +9,9 @@ from .models import BotMessage, Dispute, Event, LedgerEntry, MarketComplaint, Re
 from .question_forms import ResultForm
 from .participation import finish
 from .models import Group, GroupMembership, Notification
-from .models import ModerationAction, ModerationDelivery
-from . import moderation
+from .models import ChatPost
+from .models import ModerationAction, ModerationDelivery, DisputeDecision, DisputeDelivery, ModerationContact
+from . import chat_disputes, moderation
 
 
 @admin.register(Group)
@@ -23,6 +24,23 @@ class GroupAdmin(admin.ModelAdmin):
 @admin.register(GroupMembership)
 class MembershipAdmin(admin.ModelAdmin):
     list_display = ("group", "trader", "status")
+
+
+@admin.register(ChatPost)
+class ChatPostAdmin(admin.ModelAdmin):
+    """The bot's outbox to closed chats (spec E8.4): read only, the worker owns the rows."""
+    list_display = ("group", "kind", "status", "send_after", "sent_at")
+    list_filter = ("status", "kind")
+    search_fields = ("group__name", "key")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Notification)
@@ -134,15 +152,15 @@ class QuestionAdmin(admin.ModelAdmin):
 
     @admin.action(description="Решение по спору: ДА")
     def decide_yes(self, request, queryset):
-        self._apply(request, queryset, lambda q: services.moderator_decide(q, "yes"), "спор решён: ДА")
+        self._apply(request, queryset, lambda q: chat_disputes.team_decide(q, "yes"), "спор решён: ДА")
 
     @admin.action(description="Решение по спору: НЕТ")
     def decide_no(self, request, queryset):
-        self._apply(request, queryset, lambda q: services.moderator_decide(q, "no"), "спор решён: НЕТ")
+        self._apply(request, queryset, lambda q: chat_disputes.team_decide(q, "no"), "спор решён: НЕТ")
 
     @admin.action(description="Решение по спору: отменить рынок")
     def decide_cancel(self, request, queryset):
-        self._apply(request, queryset, lambda q: services.moderator_decide(q, "cancel"), "спор решён: отмена")
+        self._apply(request, queryset, lambda q: chat_disputes.team_decide(q, "cancel"), "спор решён: отмена")
 
     @admin.action(description="Вернуть скрытый жалобами рынок в ленту")
     def unhide(self, request, queryset):
@@ -237,6 +255,23 @@ class ModerationDeliveryAdmin(ReadOnlyLedgerAdmin):
     list_select_related = ('complaint',)
 
 
+@admin.register(DisputeDecision)
+class DisputeDecisionAdmin(ReadOnlyLedgerAdmin):
+    list_display = ('question', 'decision', 'actor', 'created_at')
+    list_select_related = ('question',)
+
+
+@admin.register(ModerationContact)
+class ModerationContactAdmin(ReadOnlyLedgerAdmin):
+    list_display = ('telegram_id', 'name', 'username', 'first_seen', 'last_seen')
+    search_fields = ('=telegram_id', 'name', 'username')
+
+
+@admin.register(DisputeDelivery)
+class DisputeDeliveryAdmin(ReadOnlyLedgerAdmin):
+    list_display = ('dispute', 'admin_id', 'sent_at', 'attempts', 'next_attempt')
+
+
 @admin.register(LedgerEntry)
 class LedgerAdmin(ReadOnlyLedgerAdmin):
     list_display = ("trader", "kind", "amount", "balance_after", "question", "created_at")
@@ -264,3 +299,18 @@ class ReferralRewardAdmin(ReadOnlyLedgerAdmin):
     list_filter = ("granted",)
     search_fields = ("friend__name", "referrer__name")
     list_select_related = ("friend", "referrer")
+
+
+from .models import ChatDisputeReview  # noqa: E402 - kept with its block
+
+
+@admin.register(ChatDisputeReview)
+class ChatDisputeReviewAdmin(ReadOnlyLedgerAdmin):
+    """Chat disputes (spec E8.6). The team decides escalated ones via «Решение по спору» in the markets list."""
+    list_display = ("question", "group", "created_at", "deadline", "decided_by", "decision", "escalated_at")
+    list_filter = ("decision", ("escalated_at", admin.EmptyFieldListFilter))
+    list_select_related = ("question", "group", "decided_by")
+    exclude = ("messages",)
+
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in self.model._meta.fields if f.name != "messages"]

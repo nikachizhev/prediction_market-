@@ -13,7 +13,8 @@ from django.utils import timezone
 
 from market import bot_markets, charts, services, share
 from market.miniapp_auth import _referrer
-from market.models import ChartAnimation, Event, Group, MarketSubscription, Question, Trade, Trader
+from market.models import (ChartAnimation, Event, Group, GroupMembership, MarketSubscription, Question, Trade,
+                           Trader)
 from market.telegram import TelegramError, handle_update
 from market.tests.test_api import Api
 from market.tests.test_bot_resolution_dialog import Bot, press, text
@@ -309,6 +310,22 @@ def test_inline_query_search_and_limits(bot, still, people):
     assert [r["title"] for r in bot.sent("answerInlineQuery")[-1]["results"]] == ["Дождь"]
 
     handle_update({"inline_query": {"id": "iq4", "from": {"id": STRANGER}, "query": ""}})
+    assert bot.sent("answerInlineQuery")[-1]["results"] == []
+
+
+def test_inline_query_skips_chat_markets(bot, still, people):
+    anya, _ = people
+    chat = Group.objects.create(name="Группа ПИ-24", kind="chat", telegram_chat_id=-100777, bot_active=True)
+    GroupMembership.objects.create(group=chat, trader=anya, status="active", checked_at=timezone.now())
+    secret = market("Снег в чате", group=chat)
+    public = market("Снег для всех")
+    track(anya, secret, public)
+
+    handle_update({"inline_query": {"id": "iq5", "from": {"id": ANYA}, "query": ""}})
+    assert [r["title"] for r in bot.sent("answerInlineQuery")[-1]["results"]] == ["Снег для всех"]
+    handle_update({"inline_query": {"id": "iq6", "from": {"id": ANYA}, "query": "Снег"}})
+    assert [r["title"] for r in bot.sent("answerInlineQuery")[-1]["results"]] == ["Снег для всех"]
+    handle_update({"inline_query": {"id": "iq7", "from": {"id": ANYA}, "query": f"m{secret.pk}"}})
     assert bot.sent("answerInlineQuery")[-1]["results"] == []
 
 

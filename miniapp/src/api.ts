@@ -80,6 +80,40 @@ export interface MarketCard {
   /** Child binary options for a multiple-choice market. */
   submarkets?: SubmarketCard[];
   recommendation_reason?: string;
+  /** Market of a closed chat (phase 3b); null or missing — a public market. */
+  chat?: ChatRef | null;
+  /** Phase 3b: for the «новый» mark in chat markets; missing on an older server. */
+  created_at?: string;
+  /** LMSR depth of this market (chat markets have their own). */
+  b?: number;
+}
+
+// ---- Closed chats (docs/api.md, «Фаза 3b») ----
+
+/** `code` is the random link code, not the Telegram chat id. */
+export interface ChatRef {
+  code: string;
+  title: string;
+}
+
+export interface ChatSpace extends ChatRef {
+  /** Latest getChatMemberCount. */
+  members: number;
+  /** The bot was removed or lost admin rights: no new markets, open ones live until the result. */
+  frozen: boolean;
+  /** Open markets of the chat (taking predictions or waiting for the result). */
+  markets: number;
+  volume: Money;
+  /** My place in the chat's all-time profit rating; null without resolved predictions in the chat. */
+  my_rank: number | null;
+  /** Price of a new market in this chat ("40.00" … "200.00"). */
+  creation_cost: Money;
+  /** Market depth at this price: floor(price / ln 2). */
+  b: number;
+  /** AI rules helper for this chat's markets. */
+  assist: boolean;
+  /** t.me/<bot>/<app>?startapp=chat_<code> */
+  link: string;
 }
 
 export interface Position {
@@ -350,6 +384,8 @@ export interface CreateMarketData {
   assist?: AssistOutcome;
   /** Id of the template the market was made from. */
   template?: string;
+  /** Code of the closed chat the market is for (phase 3b). */
+  chat?: string;
   /** Option names for multiple-choice markets. */
   options?: string[];
 }
@@ -473,8 +509,12 @@ export const api = {
     }>('POST', '/markets', { ...data, request_key }),
 
   /** AI rules helper; 429 — the daily limit is used up, 503 — off or the model did not answer. */
-  assist: (title: string, category?: string) =>
-    request<AssistResult | AssistWarning>('POST', '/assist', category ? { title, category } : { title }),
+  assist: (title: string, category?: string, chat?: string) =>
+    request<AssistResult | AssistWarning>('POST', '/assist', {
+      title,
+      ...(category ? { category } : {}),
+      ...(chat ? { chat } : {}),
+    }),
 
   templates: () => request<MarketTemplate[]>('GET', '/templates'),
 
@@ -488,6 +528,21 @@ export const api = {
   ) => request<RatingResponse>('GET', withQuery('/rating', params)),
 
   profile: () => request<ProfileResponse>('GET', '/profile'),
+
+  /** Chats where I am a member by the last check; no requests to Telegram. */
+  chats: () => request<{ items: ChatSpace[] }>('GET', '/chats'),
+
+  /** Checks the membership; 404 — unknown code, not a member or left. */
+  chat: (code: string) => request<ChatSpace>('GET', `/chats/${encodeURIComponent(code)}`),
+
+  chatMarkets: (code: string, page = 1) =>
+    request<{ items: MarketCard[]; next_page: number | null; total: number }>(
+      'GET',
+      withQuery(`/chats/${encodeURIComponent(code)}/markets`, { page }),
+    ),
+
+  chatRating: (code: string, by: 'profit' | 'accuracy' = 'profit', period: 'week' | 'month' | 'all' = 'all') =>
+    request<RatingResponse>('GET', withQuery(`/chats/${encodeURIComponent(code)}/rating`, { by, period })),
 
   event: (name: EventName, props?: Record<string, unknown>) => request<{ ok: true }>('POST', '/events', { name, props }),
 };

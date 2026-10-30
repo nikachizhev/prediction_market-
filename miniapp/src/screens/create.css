@@ -785,3 +785,71 @@
   font-weight: 500;
   cursor: pointer;
 }
+
+/* ---- «Кто увидит» on step 1 (docs/mockups/Create.dc.html, spec E8.3) ---- */
+
+.create-audience {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.create-audience-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 2px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  text-align: left;
+  font-family: var(--font);
+  cursor: pointer;
+}
+
+.create-audience-option.is-on {
+  border-color: var(--ink);
+}
+
+.create-audience-radio {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 2px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.create-audience-radio span {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.create-audience-option.is-on .create-audience-radio {
+  border-color: var(--ink);
+}
+
+.create-audience-option.is-on .create-audience-radio span {
+  background: var(--ink);
+}
+
+.create-audience-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.create-audience-label {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.create-audience-sub {
+  font-size: 13px;
+}

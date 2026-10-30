@@ -13,10 +13,10 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.csrf import csrf_exempt
 
-from .. import services
+from .. import chats, services
 from ..access import visible_questions
 from ..miniapp_auth import api_view
-from ..models import FeedDismissal, LedgerEntry, MarketComplaint, MarketSubscription, Position, Question, Trade, Trader
+from ..models import FeedDismissal, Group, LedgerEntry, MarketComplaint, MarketSubscription, Position, Question, Trade, Trader
 from ..services import MarketError
 from . import serializers as s
 
@@ -56,6 +56,9 @@ def endpoint(*methods, create: bool = False):
                 return JsonResponse({"error": str(exc)}, status=503)
             except Question.DoesNotExist:
                 return JsonResponse({"error": "Рынок не найден."}, status=404)
+            except Group.DoesNotExist:
+                # An unknown chat code and someone else's chat look the same (spec E8.2).
+                return JsonResponse({"error": "Чат не найден."}, status=404)
             return result if isinstance(result, HttpResponse) else JsonResponse(result, safe=False)
         wrapper.__name__ = view.__name__
         return wrapper
@@ -89,13 +92,37 @@ def side_of(value) -> str:
 
 
 def feed_markets(trader: Trader):
-    """Markets the Mini App lists: visible, top-level LMSR, not hidden by complaints."""
-    return visible_questions(trader).filter(kind=Question.Kind.LMSR, hidden_at__isnull=True, parent__isnull=True)
+    """Markets the Mini App lists: visible, top-level LMSR, not hidden by complaints.
+
+    Closed chats' markets stay inside their chat (spec E8.3): never in the feed, search or similar.
+    """
+    return (visible_questions(trader).filter(kind=Question.Kind.LMSR, hidden_at__isnull=True, parent__isnull=True)
+            .exclude(group__kind="chat").select_related("group"))
 
 
 def get_market(trader: Trader, pk: int) -> Question:
-    # Someone else's private market is indistinguishable from a missing one.
-    return visible_questions(trader).filter(kind=Question.Kind.LMSR).get(pk=pk)
+    """A market the trader may open; someone else's private market is indistinguishable from a missing one.
+
+    A chat market asks Telegram whether the trader is still in the chat (cached, `chats.check_member`):
+    who left loses access at once, and a member opening a chat market link for the first time gets in.
+    """
+    question = Question.objects.filter(kind=Question.Kind.LMSR).select_related("group").get(pk=pk)
+    group = question.group
+    if group is not None and group.is_chat:
+        if not chats.check_member(trader, group):
+            raise Question.DoesNotExist
+        return question
+    return visible_questions(trader).filter(kind=Question.Kind.LMSR).select_related("group").get(pk=pk)
+
+
+def chat_for(trader: Trader, code) -> Group:
+    """The chat named by a link code if the trader is in it now; otherwise Group.DoesNotExist (404)."""
+    if not isinstance(code, str):
+        raise BadRequest("Неверный код чата.")
+    group = chats.by_code(code)
+    if group is None or not chats.check_member(trader, group):
+        raise Group.DoesNotExist
+    return group
 
 
 def interests_of(value) -> list[str]:
@@ -250,6 +277,11 @@ def reset_dismissals(request):
 
 def create_market(request):
     data = body(request)
+    group = None
+    if data.get("chat") not in (None, ""):
+        group = chat_for(request.trader, data["chat"])
+        # The price by chat size is taken now and fixed in the market (spec E5).
+        chats.refresh_member_count(group)
     closes_at = parse_datetime(str(data.get("closes_at") or ""))
     resolves_at = parse_datetime(str(data.get("resolves_at") or ""))
     for value in (closes_at, resolves_at):
@@ -258,7 +290,7 @@ def create_market(request):
     question = services.create_market(
         request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
         category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
-        request_key=data.get("request_key") or None, options=data.get("options"))
+        request_key=data.get("request_key") or None, group=group, options=data.get("options"))
     # null on a replayed request: the message went out with the first one.
     bot_notified = None
     if not question.replayed:
@@ -266,6 +298,9 @@ def create_market(request):
         from ..bot_resolution import announce_created
         from ..events import log_event
         props = {"market": question.pk, "category": question.category}
+        if group is not None:
+            # Only the fact: no chat ID or link code in analytics.
+            props["chat"] = True
         # Analytics only (docs/api.md «Фаза 3a»): unknown values are dropped, the market is created anyway.
         if data.get("assist") in ("accepted", "edited", "undone"):
             props["assist"] = data["assist"]
@@ -400,15 +435,16 @@ def mine(request):
     positions = (Position.objects.filter(trader=trader, question__in=visible)
                  .filter(Q(yes_shares__gt=0) | Q(no_shares__gt=0))
                  .exclude(question__status__in=[Question.Status.RESOLVED, Question.Status.ANNULLED])
-                 .select_related("question").order_by("-question__created_at"))
+                 .select_related("question__group").order_by("-question__created_at"))
     held = []
     for pos in positions:
         item = s.card(pos.question, starred=starred, now=now)
         item["position"] = s.position(pos, pos.question)
         held.append(item)
-    watched = visible.filter(subscriptions__trader=trader).order_by("-subscriptions__created_at")
+    watched = (visible.filter(subscriptions__trader=trader).select_related("group")
+               .order_by("-subscriptions__created_at"))
     created = []
-    for q in visible.filter(creator=trader).order_by("-created_at"):
+    for q in visible.filter(creator=trader).select_related("group").order_by("-created_at"):
         item = s.card(q, starred=starred, now=now)
         item["fee_expected"] = s.money(0 if q.status == Question.Status.ANNULLED else q.fee_pool * Decimal(settings.CREATOR_FEE_SHARE))
         item["needs_resolution"] = (q.status in (Question.Status.OPEN, Question.Status.CLOSED)
