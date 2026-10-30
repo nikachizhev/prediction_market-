@@ -92,11 +92,11 @@ def side_of(value) -> str:
 
 
 def feed_markets(trader: Trader):
-    """Markets the Mini App lists: visible, binary LMSR, not hidden by complaints.
+    """Markets the Mini App lists: visible, top-level LMSR, not hidden by complaints.
 
     Closed chats' markets stay inside their chat (spec E8.3): never in the feed, search or similar.
     """
-    return (visible_questions(trader).filter(kind=Question.Kind.LMSR, hidden_at__isnull=True)
+    return (visible_questions(trader).filter(kind=Question.Kind.LMSR, hidden_at__isnull=True, parent__isnull=True)
             .exclude(group__kind="chat").select_related("group"))
 
 
@@ -240,7 +240,7 @@ def markets(request):
     items = list(qs[(page - 1) * PAGE: page * PAGE])
     starred = s.starred_ids(trader)
     sides = s.my_sides(trader, [q.pk for q in items])
-    cards = [s.card(q, starred=starred, now=now, my_side=sides.get(q.pk)) for q in items]
+    cards = [s.card(q, starred=starred, now=now, my_side=sides.get(q.pk), trader=trader) for q in items]
     if sort == "recommended":
         for card, question in zip(cards, items):
             card["recommendation_reason"] = reason(question)
@@ -290,7 +290,7 @@ def create_market(request):
     question = services.create_market(
         request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
         category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
-        request_key=data.get("request_key") or None, group=group)
+        request_key=data.get("request_key") or None, group=group, options=data.get("options"))
     # null on a replayed request: the message went out with the first one.
     bot_notified = None
     if not question.replayed:

@@ -45,6 +45,23 @@ export interface Me {
   assist?: AssistState;
 }
 
+export interface SubmarketCard extends MarketCard {
+  label: string;
+  can_trade?: boolean;
+  trade_block?: string | null;
+  max_amount?: Money;
+  my_position?: Position | null;
+  trades?: { side: Side; amount: Money; prob_after: number; at: string; sell: boolean }[];
+  top_moves?: TopMove[];
+  resolution?: {
+    proposed_outcome: Side | 'cancel' | null;
+    evidence_url: string | null;
+    note: string;
+    dispute_until: string | null;
+    can_dispute: boolean;
+  } | null;
+}
+
 export interface MarketCard {
   id: number;
   title: string;
@@ -60,6 +77,8 @@ export interface MarketCard {
   starred: boolean;
   /** Where my position leans («Твой прогноз»). */
   my_side?: Side | null;
+  /** Child binary options for a multiple-choice market. */
+  submarkets?: SubmarketCard[];
   recommendation_reason?: string;
   /** Market of a closed chat (phase 3b); null or missing — a public market. */
   chat?: ChatRef | null;
@@ -105,6 +124,8 @@ export interface Position {
   payout_if_yes: Money;
   payout_if_no: Money;
 }
+
+export type SubmarketDetail = SubmarketCard;
 
 export interface MarketDetail extends MarketCard {
   criteria: string;
@@ -365,6 +386,8 @@ export interface CreateMarketData {
   template?: string;
   /** Code of the closed chat the market is for (phase 3b). */
   chat?: string;
+  /** Option names for multiple-choice markets. */
+  options?: string[];
 }
 
 // ---- Transport ----

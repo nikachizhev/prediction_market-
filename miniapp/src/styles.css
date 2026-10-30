@@ -742,6 +742,69 @@ h1 {
   gap: 8px;
 }
 
+.market-submarkets {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.market-sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.market-sub-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-sub-right {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.market-sub-pct {
+  min-width: 40px;
+  text-align: right;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.market-sub-btn {
+  height: 34px;
+  padding: 0 10px;
+  border: 1.5px solid transparent;
+  border-radius: 8px;
+  font: 600 13px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.market-sub-btn.is-yes {
+  background: var(--yes-tint);
+  color: var(--yes);
+}
+
+.market-sub-btn.is-no {
+  background: var(--no-tint);
+  color: var(--no);
+}
+
 .side-button {
   height: 44px;
   border: 2px solid transparent;

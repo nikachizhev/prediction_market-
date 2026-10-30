@@ -164,12 +164,95 @@
   gap: 8px;
 }
 
+.create-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--line);
+}
+
+.create-mode-tab {
+  height: 36px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--sub);
+  font: 600 14px/1 var(--font);
+  cursor: pointer;
+}
+
+.create-mode-tab.is-active {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.create-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.create-option-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.create-option-remove {
+  flex: 0 0 40px;
+  height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--sub);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.create-option-add {
+  align-self: flex-start;
+  height: 38px;
+  padding: 0 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font: 600 13px/1 var(--font);
+  cursor: pointer;
+}
+
+.create-examples,
 .create-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
+.example-button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  font: 500 14px/1.3 var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.example-button-multi {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.example-sub {
+  font-size: 12px;
+  line-height: 1.2;
+}
 .create-note {
   padding: 12px 14px;
   border-radius: 14px;

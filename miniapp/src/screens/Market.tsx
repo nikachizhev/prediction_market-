@@ -1,7 +1,7 @@
 // Market card from docs/mockups/Market.dc.html: open / waiting / review / finished states.
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { api, ApiError, type HistoryPeriod, type MarketDetail, type Side } from '../api';
+import { api, ApiError, type HistoryPeriod, type MarketDetail, type Side, type SubmarketCard } from '../api';
 import { lineYAt } from '../chartMotion';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { BottomSheet } from '../components/BottomSheet';
@@ -96,8 +96,10 @@ export function MarketScreen() {
     };
   }, [marketId, attempt]);
 
+  const hasSubmarkets = !!(market?.submarkets && market.submarkets.length > 0);
+
   useEffect(() => {
-    if (state !== 'ready') return;
+    if (state !== 'ready' || hasSubmarkets) return;
     let cancelled = false;
     api
       .history(marketId, period)
@@ -106,7 +108,7 @@ export function MarketScreen() {
     return () => {
       cancelled = true;
     };
-  }, [marketId, period, historyKey, state]);
+  }, [marketId, period, historyKey, state, hasSubmarkets]);
 
   const category = market?.category;
   useEffect(() => {
@@ -130,23 +132,82 @@ export function MarketScreen() {
   };
   const commit = (fresh: MarketDetail) => {
     snapshot.current = null;
-    setMarket(fresh);
+    if (fresh.id === marketId) {
+      setMarket(fresh);
+    } else {
+      setMarket((prev) =>
+        prev && prev.submarkets
+          ? {
+              ...prev,
+              submarkets: prev.submarkets.map((s) =>
+                s.id === fresh.id
+                  ? {
+                      ...s,
+                      prob: fresh.prob,
+                      change_24h: fresh.change_24h,
+                      spark: fresh.spark,
+                      participants: fresh.participants,
+                      volume: fresh.volume,
+                      status: fresh.status,
+                      outcome: fresh.outcome,
+                      can_trade: fresh.can_trade,
+                      trade_block: fresh.trade_block,
+                      max_amount: fresh.max_amount,
+                      my_position: fresh.my_position,
+                      trades: fresh.trades,
+                      top_moves: fresh.top_moves,
+                      resolution: fresh.resolution,
+                    }
+                  : s,
+              ),
+            }
+          : prev,
+      );
+      api
+        .market(marketId)
+        .then((parentFresh) => setMarket(parentFresh))
+        .catch(() => {});
+    }
     setHistoryKey((k) => k + 1);
   };
 
   const trade = useTradeSheet({
-    onOptimistic: (_id, prob) => {
+    onOptimistic: (id, prob) => {
       remember();
-      setMarket((m) => (m ? applyProbability(m, prob) : m));
+      setMarket((m) => {
+        if (!m) return m;
+        if (m.id === id) return applyProbability(m, prob);
+        if (m.submarkets?.some((s) => s.id === id)) {
+          return {
+            ...m,
+            submarkets: m.submarkets.map((s) => (s.id === id ? applyProbability(s, prob) : s)),
+          };
+        }
+        return m;
+      });
     },
     onCommit: (result) => commit(result.market),
     onRollback: restore,
   });
 
   const sell = useSell({
-    onOptimistic: (_id, side, proceeds) => {
+    onOptimistic: (id, side, proceeds) => {
       remember();
-      setMarket((m) => (m && m.my_position ? { ...m, my_position: positionAfterSell(m.my_position, side, proceeds) } : m));
+      setMarket((m) => {
+        if (!m) return m;
+        if (m.id === id && m.my_position) {
+          return { ...m, my_position: positionAfterSell(m.my_position, side, proceeds) };
+        }
+        if (m.submarkets?.some((s) => s.id === id)) {
+          return {
+            ...m,
+            submarkets: m.submarkets.map((s) =>
+              s.id === id && s.my_position ? { ...s, my_position: positionAfterSell(s.my_position, side, proceeds) } : s,
+            ),
+          };
+        }
+        return m;
+      });
     },
     onCommit: (result) => commit(result.market),
     onRollback: restore,
@@ -262,15 +323,27 @@ export function MarketScreen() {
   }
 
   const m = market!;
+  const isMulti = !!(m.submarkets && m.submarkets.length > 0);
   const view = statusView(m.status);
   const pct = splitPercents(m.prob);
-  const stats = m.my_position ? positionStats(m.my_position) : null;
-  const sides = heldSides(m.my_position);
-  const showPosition = !!stats && sides.length > 0 && (view.phase === 'open' || view.phase === 'closed' || view.phase === 'review');
-  const sellable = canSell(m);
+  const stats = !isMulti && m.my_position ? positionStats(m.my_position) : null;
+  const sides = !isMulti ? heldSides(m.my_position) : [];
+  const showPosition = !isMulti && !!stats && sides.length > 0 && (view.phase === 'open' || view.phase === 'closed' || view.phase === 'review');
+  const sellable = !isMulti && canSell(m);
   const until = untilResult(m.resolves_at);
   const blocked = !m.can_trade || view.phase !== 'open';
   const blockText = m.trade_block ?? (m.is_creator ? 'Создатель рынка не может делать прогнозы на свой рынок.' : 'Приём прогнозов закрыт.');
+
+  const multiTrades = isMulti
+    ? [...(m.submarkets ?? []).flatMap((s) => s.trades ?? [])]
+        .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+        .slice(0, 20)
+    : m.trades;
+  const multiTopMoves = isMulti
+    ? [...(m.submarkets ?? []).flatMap((s) => s.top_moves ?? [])]
+        .sort((a, b) => Math.abs(b.to - b.from) - Math.abs(a.to - a.from))
+        .slice(0, 3)
+    : m.top_moves;
 
   return (
     <div className="screen mk">
@@ -330,17 +403,60 @@ export function MarketScreen() {
           </section>
         )}
 
-        <ChartSection
-          prob={m.prob}
-          change24h={m.change_24h}
-          period={period}
-          history={history && history.period === period ? history.points : null}
-          onPeriod={(p) => {
-            if (p === period) return;
-            tg.HapticFeedback.selection();
-            setPeriod(p);
-          }}
-        />
+        {isMulti ? (
+          <>
+            <MultiChartSection
+              submarkets={m.submarkets!}
+              period={period}
+              historyKey={historyKey}
+              onPeriod={(p) => {
+                if (p === period) return;
+                tg.HapticFeedback.selection();
+                setPeriod(p);
+              }}
+            />
+
+            <MultiOptionsSection
+              market={m}
+              submarkets={m.submarkets!}
+              phase={view.phase}
+              sellingId={sell.sellingId}
+              onTrade={(sub, side) =>
+                void trade.open(
+                  {
+                    ...m,
+                    ...sub,
+                    title: sub.label ? `${m.title} — ${sub.label}` : sub.title,
+                  } as MarketDetail,
+                  side,
+                )
+              }
+              onSell={(sub, side) =>
+                sell.request(
+                  {
+                    id: sub.id,
+                    title: sub.label ? `${m.title} — ${sub.label}` : sub.title,
+                    prob: sub.prob,
+                    position: sub.my_position!,
+                  },
+                  side,
+                )
+              }
+            />
+          </>
+        ) : (
+          <ChartSection
+            prob={m.prob}
+            change24h={m.change_24h}
+            period={period}
+            history={history && history.period === period ? history.points : null}
+            onPeriod={(p) => {
+              if (p === period) return;
+              tg.HapticFeedback.selection();
+              setPeriod(p);
+            }}
+          />
+        )}
 
         <div className="mk-tiles">
           <Tile label="Участники" value={formatMoney(m.participants, 0)} />
@@ -380,7 +496,12 @@ export function MarketScreen() {
                     type="button"
                     className="mk-outline-button"
                     disabled={sell.sellingId === m.id}
-                    onClick={() => sell.request({ id: m.id, title: m.title, prob: m.prob, position: m.my_position!, b: m.b }, side)}
+                    onClick={() =>
+                      sell.request(
+                        { id: m.id, title: m.title, prob: m.prob, position: m.my_position!, b: m.b },
+                        side,
+                      )
+                    }
                   >
                     {sides.length === 1 ? 'Продать позицию' : `Продать ${sideLabel(side)}`}
                   </button>
@@ -396,9 +517,9 @@ export function MarketScreen() {
           <p className="mk-text small sub">{datesLine(m.closes_at, m.resolves_at)}</p>
         </section>
 
-        <TopMovesSection moves={m.top_moves} />
+        <TopMovesSection moves={multiTopMoves} />
 
-        <TradesSection trades={m.trades} />
+        <TradesSection trades={multiTrades} />
 
         {!m.is_creator && (
           <button type="button" className="mk-link-button" onClick={() => setReportOpen(true)}>
@@ -407,7 +528,7 @@ export function MarketScreen() {
         )}
       </div>
 
-      {view.phase === 'open' || view.phase === 'closed' ? (
+      {!isMulti && (view.phase === 'open' || view.phase === 'closed') ? (
         <div className="mk-footer">
           {blocked ? (
             <p className="mk-block" role="note">
@@ -423,6 +544,12 @@ export function MarketScreen() {
               </button>
             </div>
           )}
+        </div>
+      ) : isMulti && blocked && (view.phase === 'open' || view.phase === 'closed') ? (
+        <div className="mk-footer">
+          <p className="mk-block" role="note">
+            {blockText}
+          </p>
         </div>
       ) : null}
 
@@ -707,6 +834,291 @@ function ChartSection({
           </button>
         ))}
       </div>
+    </section>
+  );
+}
+
+const MULTI_CHART_COLORS = ['#2563EB', '#F59E0B', '#EA580C'];
+
+function MultiChartSection({
+  submarkets,
+  period,
+  historyKey,
+  onPeriod,
+}: {
+  submarkets: SubmarketCard[];
+  period: HistoryPeriod;
+  historyKey: number;
+  onPeriod: (p: HistoryPeriod) => void;
+}) {
+  const topSubs = useMemo(() => {
+    return [...submarkets]
+      .sort((a, b) => Number(b.volume || 0) - Number(a.volume || 0) || b.prob - a.prob)
+      .slice(0, 3);
+  }, [submarkets]);
+
+  const topIdsKey = topSubs.map((s) => s.id).join(',');
+
+  const [histories, setHistories] = useState<{
+    key: string;
+    byId: Record<number, HistoryPoint[]>;
+  } | null>(null);
+  const [hoverX, setHoverX] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const reqKey = `${topIdsKey}-${period}-${historyKey}`;
+    Promise.all(
+      topSubs.map((sub) =>
+        api
+          .history(sub.id, period)
+          .then((res) => [sub.id, res.points] as const)
+          .catch(() => [sub.id, [] as HistoryPoint[]] as const),
+      ),
+    ).then((entries) => {
+      if (cancelled) return;
+      const byId: Record<number, HistoryPoint[]> = {};
+      for (const [id, pts] of entries) {
+        byId[id] = pts;
+      }
+      setHistories({ key: reqKey, byId });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [topIdsKey, period, historyKey, topSubs]);
+
+  useEffect(() => setHoverX(null), [period, topIdsKey]);
+
+  const series = useMemo(() => {
+    if (!histories) return [];
+    return topSubs.map((sub, idx) => {
+      const pts = histories.byId[sub.id] ?? [];
+      const fallback: HistoryPoint[] = pts.length > 0 ? pts : [{ t: new Date().toISOString(), p: sub.prob }];
+      const chart = buildChart(fallback);
+
+      // Slightly stagger overlapping flat lines so all 3 colored lines remain clearly visible
+      const sameIdx = topSubs.filter((other, j) => j < idx && Math.abs(other.prob - sub.prob) < 0.005).length;
+      const totalSame = topSubs.filter((other) => Math.abs(other.prob - sub.prob) < 0.005).length;
+      const offsetY = totalSame > 1 ? (sameIdx - (totalSame - 1) / 2) * 3.5 : 0;
+
+      return {
+        sub,
+        color: MULTI_CHART_COLORS[idx % MULTI_CHART_COLORS.length],
+        points: fallback,
+        chart,
+        offsetY,
+      };
+    });
+  }, [histories, topSubs]);
+
+  const first = series[0]?.points[0];
+
+  const onMove = (e: PointerEvent<SVGSVGElement>) => {
+    if (series.length === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.min(Math.max(((e.clientX - rect.left) / rect.width) * CHART.width, 0), CHART.plotWidth);
+    setHoverX(x);
+  };
+
+  return (
+    <section className="card mk-section mk-chart" aria-label="Вероятность вариантов во времени">
+      <div className="mk-multi-legend">
+        {topSubs.map((sub, idx) => {
+          const color = MULTI_CHART_COLORS[idx % MULTI_CHART_COLORS.length];
+          const s = series[idx];
+          const ptIdx = hoverX !== null && s ? pointIndexAt(s.chart.points, hoverX) : -1;
+          const hp = ptIdx >= 0 && s ? s.chart.points[ptIdx] : null;
+          const shownPct = Math.round((hp ? hp.p : sub.prob) * 100);
+          return (
+            <div key={sub.id} className="mk-multi-legend-item">
+              <span className="mk-multi-legend-dot" style={{ background: color }} aria-hidden="true" />
+              <span className="mk-multi-legend-label">{sub.label}</span>
+              <span className="mk-multi-legend-pct">{shownPct}%</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {histories === null ? (
+        <Skeleton height={180} radius={12} />
+      ) : (
+        <svg
+          className="mk-chart-svg live-chart"
+          viewBox={`0 0 ${CHART.width} ${CHART.height}`}
+          role="img"
+          aria-label="График вероятностей топ-вариантов"
+          onPointerMove={onMove}
+          onPointerDown={onMove}
+          onPointerLeave={() => setHoverX(null)}
+        >
+          {[0.75, 0.5, 0.25, 0].map((p) => (
+            <line key={p} x1="0" y1={chartY(p)} x2={CHART.plotWidth} y2={chartY(p)} className="mk-grid" />
+          ))}
+          {[0.75, 0.5, 0.25].map((p) => (
+            <text key={p} x={CHART.width} y={chartY(p) + 4} textAnchor="end" className="mk-axis">
+              {Math.round(p * 100)}%
+            </text>
+          ))}
+          {series.map((s) => (
+            <g key={s.sub.id} transform={s.offsetY !== 0 ? `translate(0 ${s.offsetY})` : undefined}>
+              <LiveLine
+                points={s.chart.points}
+                line={s.chart.line}
+                curve="step"
+                color={s.color}
+                showEnd={hoverX === null}
+                replayKey={`${period}-${s.sub.id}`}
+              />
+            </g>
+          ))}
+          {hoverX !== null && (
+            <g>
+              <line x1={hoverX} y1="10" x2={hoverX} y2={CHART.bottom} className="mk-cursor" />
+              {series.map((s) => {
+                const idx = pointIndexAt(s.chart.points, hoverX);
+                const pt = idx >= 0 ? s.chart.points[idx] : null;
+                if (!pt) return null;
+                return (
+                  <circle
+                    key={s.sub.id}
+                    cx={pt.x}
+                    cy={pt.y + s.offsetY}
+                    r="4"
+                    className="mk-dot"
+                    style={{ fill: s.color }}
+                  />
+                );
+              })}
+            </g>
+          )}
+          {first && (
+            <text x="0" y="172" className="mk-axis">
+              {timeAgo(first.t)}
+            </text>
+          )}
+          <text x={CHART.plotWidth} y="172" textAnchor="end" className="mk-axis">
+            сейчас
+          </text>
+        </svg>
+      )}
+
+      <div role="group" aria-label="Период" className="mk-periods">
+        {PERIODS.map((p) => (
+          <button
+            key={p.key}
+            type="button"
+            className={`chip-button ${p.key === period ? 'is-active' : ''}`}
+            aria-pressed={p.key === period}
+            onClick={() => onPeriod(p.key)}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MultiOptionsSection({
+  market,
+  submarkets,
+  phase,
+  sellingId,
+  onTrade,
+  onSell,
+}: {
+  market: MarketDetail;
+  submarkets: SubmarketCard[];
+  phase: ReturnType<typeof statusView>['phase'];
+  sellingId: number | null;
+  onTrade: (sub: SubmarketCard, side: Side) => void;
+  onSell: (sub: SubmarketCard, side: Side) => void;
+}) {
+  const sorted = useMemo(() => {
+    return [...submarkets].sort((a, b) => Number(b.volume || 0) - Number(a.volume || 0));
+  }, [submarkets]);
+
+  return (
+    <section className="card mk-section mk-multi-options" aria-label="Все варианты ответа">
+      {sorted.map((sub) => {
+        const subPct = splitPercents(sub.prob);
+        const subDelta = Math.round(sub.change_24h);
+        const subUp = subDelta >= 0;
+        const subBlocked = !(sub.can_trade ?? market.can_trade) || phase !== 'open';
+        const subSides = heldSides(sub.my_position);
+        const subStats = sub.my_position && subSides.length > 0 ? positionStats(sub.my_position) : null;
+        const subSellable = canSell(sub);
+
+        return (
+          <div key={sub.id} className="mk-multi-opt">
+            <div className="mk-multi-opt-top">
+              <div className="mk-multi-opt-info">
+                <span className="mk-multi-opt-title">{sub.label}</span>
+                <div className="mk-multi-opt-meta">
+                  <span className="sub small">объём {formatCompact(sub.volume)}</span>
+                  <span className="sub small">·</span>
+                  <span className={`market-delta mk-multi-opt-delta ${subUp ? 'is-up' : 'is-down'}`}>
+                    {subUp ? '▲' : '▼'} {Math.abs(subDelta)} за сутки
+                  </span>
+                </div>
+              </div>
+              <span className="mk-multi-opt-pct">{subPct.yes}%</span>
+            </div>
+
+            {subStats && sub.my_position && (
+              <div className="mk-multi-opt-pos">
+                <div className="mk-multi-opt-pos-line">
+                  <span className="mk-chips">
+                    {subSides.map((side) => (
+                      <span key={side} className={`mk-side-chip is-${side}`}>
+                        {sideLabel(side)} · {sharesLabel(sharesOf(sub.my_position!, side))}
+                      </span>
+                    ))}
+                  </span>
+                  <span className="sub small">
+                    Стоит {formatMoney(subStats.value, 0)} (вложено {formatMoney(subStats.spent, 0)})
+                  </span>
+                </div>
+                {subSellable && (
+                  <div className={subSides.length > 1 ? 'mk-sell-row' : undefined}>
+                    {subSides.map((side) => (
+                      <button
+                        key={side}
+                        type="button"
+                        className="mk-outline-button"
+                        disabled={sellingId === sub.id}
+                        onClick={() => onSell(sub, side)}
+                      >
+                        {subSides.length === 1 ? 'Продать позицию' : `Продать ${sideLabel(side)}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="mk-multi-opt-buttons">
+              <button
+                type="button"
+                className="side-button is-yes"
+                disabled={subBlocked}
+                onClick={() => onTrade(sub, 'yes')}
+              >
+                ДА · {subPct.yes}%
+              </button>
+              <button
+                type="button"
+                className="side-button is-no"
+                disabled={subBlocked}
+                onClick={() => onTrade(sub, 'no')}
+              >
+                НЕТ · {subPct.no}%
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }

@@ -15,6 +15,7 @@ import type {
 import { formatDayMonth, formatPercent, plural, pluralize } from './format';
 
 export type CreateStep = 1 | 2 | 3;
+export type CreateMode = 'binary' | 'multiple';
 
 /** Field groups the helper or a template fills; each shows an «ИИ» / «Шаблон» mark until edited. */
 export type FilledGroup = 'dates' | 'criteria' | 'category';
@@ -56,6 +57,8 @@ export interface CreateDraft {
   /** Local date and time when the result becomes known. */
   resultDate: string;
   resultTime: string;
+  mode?: CreateMode;
+  options?: string[];
   /** Groups filled by the helper or a template and not edited since. */
   marks: FilledGroup[];
   /** Who filled the marked groups. */
@@ -71,9 +74,12 @@ export interface CreateDraft {
   chat: string | null;
 }
 
-export type CreateField = 'title' | 'criteria' | 'category' | 'closes' | 'resolves';
+export type CreateField = 'title' | 'options' | 'criteria' | 'category' | 'closes' | 'resolves';
 
 export const TITLE_MAX = 120;
+export const OPTION_MAX = 80;
+export const OPTIONS_MIN = 2;
+export const OPTIONS_MAX = 10;
 /** Below these lengths «Далее» stays disabled, as in the mockup. */
 export const TITLE_MIN = 10;
 export const CRITERIA_MIN = 15;
@@ -177,10 +183,23 @@ export function dateErrors(draft: CreateDraft, now: Date = new Date()): Partial<
   return errors;
 }
 
+export function cleanedOptions(draft: CreateDraft): string[] {
+  return (draft.options ?? []).map((o) => o.trim()).filter((o) => o.length > 0);
+}
+
+export function optionsOk(draft: CreateDraft): boolean {
+  if (draft.mode !== 'multiple') return true;
+  const opts = cleanedOptions(draft);
+  if (opts.length < OPTIONS_MIN || opts.length > OPTIONS_MAX) return false;
+  if (opts.some((o) => o.length > OPTION_MAX)) return false;
+  const unique = new Set(opts.map((o) => o.toLowerCase()));
+  return unique.size === opts.length;
+}
+
 /** Whether the step is filled in enough to go on (and, on step 2, the dates are valid). */
 export function canProceed(draft: CreateDraft, step: CreateStep, now: Date = new Date()): boolean {
   const title = draft.title.trim();
-  const titleOk = title.length >= TITLE_MIN && title.length <= TITLE_MAX;
+  const titleOk = title.length >= TITLE_MIN && title.length <= TITLE_MAX && optionsOk(draft);
   if (step === 1) return titleOk;
   const rulesOk =
     draft.criteria.trim().length >= CRITERIA_MIN &&
@@ -194,7 +213,7 @@ export function createPayload(draft: CreateDraft): CreateMarketData | null {
   const closes_at = closesAtIso(draft);
   const resolves_at = resolvesAtIso(draft);
   if (!closes_at || !resolves_at) return null;
-  return {
+  const base = {
     title: draft.title.trim(),
     criteria: draft.criteria.trim(),
     category: draft.category,
@@ -204,11 +223,16 @@ export function createPayload(draft: CreateDraft): CreateMarketData | null {
     ...(draft.templateId ? { template: draft.templateId } : {}),
     ...(draft.chat ? { chat: draft.chat } : {}),
   };
+  if (draft.mode === 'multiple') {
+    return { ...base, options: cleanedOptions(draft) };
+  }
+  return base;
 }
 
 /** Which field a server validation error belongs to; null means "show as a toast". */
 export function errorField(message: string): CreateField | null {
   if (/вопрос/i.test(message)) return 'title';
+  if (/вариант/i.test(message)) return 'options';
   if (/определяем результат/i.test(message)) return 'criteria';
   if (/категори/i.test(message)) return 'category';
   if (/^Итог/.test(message)) return 'resolves';
@@ -217,13 +241,14 @@ export function errorField(message: string): CreateField | null {
 }
 
 export function stepOfField(field: CreateField): CreateStep {
-  return field === 'title' ? 1 : 2;
+  return field === 'title' || field === 'options' ? 1 : 2;
 }
 
 /** Fields whose server errors go stale after the change from `prev` to `next`. */
 export function changedFields(prev: CreateDraft, next: CreateDraft): CreateField[] {
   const fields = new Set<CreateField>();
   if (prev.title !== next.title) fields.add('title');
+  if (prev.mode !== next.mode || prev.options !== next.options) fields.add('options');
   if (prev.criteria !== next.criteria) fields.add('criteria');
   if (prev.category !== next.category) fields.add('category');
   if (prev.closeDate !== next.closeDate || prev.closeTime !== next.closeTime) {
@@ -239,7 +264,17 @@ export function changedFields(prev: CreateDraft, next: CreateDraft): CreateField
 export type DraftEdit = Partial<
   Pick<
     CreateDraft,
-    'step' | 'title' | 'criteria' | 'category' | 'closeDate' | 'closeTime' | 'resultDate' | 'resultTime' | 'chat'
+    | 'step'
+    | 'title'
+    | 'mode'
+    | 'options'
+    | 'criteria'
+    | 'category'
+    | 'closeDate'
+    | 'closeTime'
+    | 'resultDate'
+    | 'resultTime'
+    | 'chat'
   >
 >;
 
@@ -467,20 +502,41 @@ export function similarLine(card: MarketCard): string {
 
 /** The card exactly as the feed will show a brand-new market: 50%, no history yet. */
 export function previewCard(draft: CreateDraft): MarketCard {
-  return {
+  const closes_at = closesAtIso(draft) ?? new Date().toISOString();
+  const title = draft.title.trim() || 'Твой вопрос появится здесь';
+  const card: MarketCard = {
     id: 0,
-    title: draft.title.trim() || 'Твой вопрос появится здесь',
+    title,
     category: draft.category,
     prob: 0.5,
     change_24h: 0,
     spark: [0.5, 0.5],
     participants: 0,
     volume: '0.00',
-    closes_at: closesAtIso(draft) ?? new Date().toISOString(),
+    closes_at,
     status: 'open',
     outcome: null,
     starred: false,
   };
+  if (draft.mode === 'multiple') {
+    const opts = cleanedOptions(draft);
+    card.submarkets = (opts.length > 0 ? opts : ['Вариант 1', 'Вариант 2']).map((label, idx) => ({
+      id: -(idx + 1),
+      label,
+      title: `${title} — ${label}`,
+      category: draft.category,
+      prob: 0.5,
+      change_24h: 0,
+      spark: [0.5, 0.5],
+      participants: 0,
+      volume: '0.00',
+      closes_at,
+      status: 'open',
+      outcome: null,
+      starred: false,
+    }));
+  }
+  return card;
 }
 
 /** Balance after paying for the market, or null if it is not enough. */
