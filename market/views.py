@@ -143,7 +143,6 @@ def question_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "volume": agg["volume"] or Decimal(0),
         "participants": question.trades.values("trader").distinct().count(),
         "max_bet": settings.MAX_BET,
-        "stake_presets": [value for value in (10, 50, 100) if value <= settings.MAX_BET],
         "position": None,
         "conflicted": False,
         "can_bet": False,
@@ -151,6 +150,18 @@ def question_detail(request: HttpRequest, pk: int) -> HttpResponse:
     if trader:
         ctx["conflicted"] = question.conflicted_traders.filter(pk=trader.pk).exists()
         ctx["can_bet"] = question.accepting_entries and not ctx["conflicted"]
+        ctx["max_bet"] = services.max_buy_amount(trader, question)
+        ctx["stake_capacity"] = services.stake_capacity(trader, question)
+        ctx["stake_pct"] = int(Decimal(settings.MARKET_STAKE_SHARE) * 100)
+        # Дефолт в инпуте: не больше 100 и не больше реального потолка
+        ctx["default_amount"] = max(1, min(100, int(ctx["max_bet"])))
+        # Если места в рынке нет — прячем форму и объясняем почему
+        if ctx["can_bet"] and ctx["max_bet"] < Decimal("1"):
+            ctx["can_bet"] = False
+            ctx["cannot_bet_reason"] = (
+                f"Лимит в этот рынок исчерпан: уже вложено {ctx['stake_pct']}% ваших средств. "
+                "Продайте часть акций или пополните баланс — тогда сможете докупить."
+            )
         if ctx["can_bet"]:
             from .purchase_tokens import issue
             ctx["purchase_token"] = issue(trader, question)
@@ -163,8 +174,8 @@ def question_detail(request: HttpRequest, pk: int) -> HttpResponse:
                 "win_yes": pos.yes_shares.quantize(Decimal("0.01")),
                 "win_no": pos.no_shares.quantize(Decimal("0.01")),
             }
+    ctx["stake_presets"] = [value for value in (10, 50, 100) if value <= ctx["max_bet"]]
     return render(request, "market/question_detail.html", ctx)
-
 
 def quote_view(request: HttpRequest, pk: int) -> JsonResponse:
     question = get_object_or_404(visible_questions(_trader(request)), pk=pk)

@@ -62,11 +62,30 @@ def invested(trader: Trader, question: Question) -> Decimal:
     pos = Position.objects.filter(trader=trader, question=question).first()
     return pos.spent if pos else Decimal(0)
 
+def total_invested(trader: Trader) -> Decimal:
+    from django.db.models import Sum
+    unsettled = [Question.Status.OPEN, Question.Status.CLOSED]
+    return trader.positions.filter(question__status__in=unsettled).aggregate(
+        total=Sum("spent"))["total"] or Decimal(0)
+
+
+def stake_capacity(trader: Trader, question: Question) -> Decimal:
+    share = Decimal(settings.MARKET_STAKE_SHARE)
+    staked = invested(trader, question)
+    basis = trader.balance + total_invested(trader)
+    return max(Decimal(0), (basis * share).quantize(CENT, ROUND_FLOOR) - staked)
 
 def max_buy_amount(trader: Trader, question: Question) -> Decimal:
     room = Decimal(settings.MARKET_CAP) - invested(trader, question)
-    return max(Decimal(0), min(trade_limit(trader), room, trader.balance))
-
+    return max(
+        Decimal(0),
+        min(
+            trade_limit(trader),
+            room,
+            stake_capacity(trader, question),
+            trader.balance,
+        ),
+    )
 
 def check_can_trade(trader: Trader, question: Question) -> None:
     if question.creator_id is not None and question.creator_id == trader.pk:
@@ -180,6 +199,10 @@ def buy(trader: Trader, question: Question, side: str, amount: Decimal | float |
     room = Decimal(settings.MARKET_CAP) - invested(trader, question)
     if amount > room:
         raise MarketError(f"В один рынок можно вложить не больше {settings.MARKET_CAP}. Осталось {_fmt(max(room, Decimal(0)))}.")
+    share_room = stake_capacity(trader, question)
+    if amount > share_room:
+        pct = int(Decimal(settings.MARKET_STAKE_SHARE) * 100)
+        raise MarketError(f"В этот рынок можно вложить не больше {pct}% ваших средств. Свободно {_fmt(share_room)}.")
     if amount != amount.quantize(CENT):
         raise MarketError("Укажите сумму не более чем с двумя знаками после запятой.")
     q = quote(question, side, amount)
@@ -662,18 +685,19 @@ def prepare_purchase(trader, question, side, amount):
     check_access(trader, question)
     check_can_trade(trader, question)
     amount = _d(amount)
-    if amount > max_buy_amount(trader, question):
-        raise MarketError("Недостаточно средств или превышена максимальная ставка.")
     if amount <= 0 or amount != amount.quantize(CENT):
         raise MarketError("Укажите положительную сумму, не более двух знаков после запятой.")
+    limit = max_buy_amount(trader, question)
+    if amount > limit:
+        if amount > trader.balance:
+            raise MarketError("Недостаточно средств на балансе.")
+        share_pct = int(Decimal(settings.MARKET_STAKE_SHARE) * 100)
+        if amount > stake_capacity(trader, question):
+            raise MarketError(
+                f"В этот рынок можно вложить не больше {share_pct}% ваших средств."
+            )
+        raise MarketError(f"Максимум за одну сделку — {_fmt(limit)}.")
     preview = quote(question, side, amount)
-    token = secrets.token_urlsafe(32)
-    PurchaseConfirmation.objects.create(trader=trader, question=question,
-        token_hash=hashlib.sha256(token.encode()).hexdigest(), side=side,
-        amount=amount, snapshot=purchase_snapshot(question),
-        expires_at=timezone.now()+timedelta(minutes=2))
-    return preview, token
-
 
 @transaction.atomic
 def confirm_purchase(trader, question, token):
