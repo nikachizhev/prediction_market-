@@ -12,7 +12,7 @@ from decimal import ROUND_FLOOR, Decimal
 from django.conf import settings
 from django.utils import timezone
 
-from . import charts, telegram
+from . import charts, telegram, services
 from .access import visible_questions
 from .bot_resolution import app_button, app_url
 from .models import MarketSubscription, Position, Question, Trader
@@ -124,9 +124,14 @@ def position_line(trader: Trader, question: Question) -> str:
 
 def caption(trader: Trader, question: Question, now=None) -> str:
     delta = change_24h(question, now)
-    return (f"{question.title}\n{round(question.prob * 100)}% · {charts.delta_text(delta)}\n"
-            f"{position_line(trader, question)}")
+    capacity_text = ""
+    if question.accepting_entries:
+        # Считаем свободный лимит по нашей новой логике
+        capacity = services.stake_capacity(trader, question)
+        capacity_text = f"\nСвободно для ставок: {capacity.quantize(Decimal('0.01'))} монет."
 
+    return (f"{question.title}\n{round(question.prob * 100)}% · {charts.delta_text(delta)}\n"
+            f"{position_line(trader, question)}{capacity_text}")
 
 def market_keyboard(question: Question) -> dict:
     return {"inline_keyboard": [[{"text": "Открыть в приложении", "web_app": {"url": app_url(f"market/{question.pk}")}}]]}
