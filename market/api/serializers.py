@@ -200,7 +200,7 @@ def chat_space(group, trader: Trader) -> dict:
     """`ChatSpace` in docs/api.md «Фаза 3b»: the chat's header for one of its members."""
     from .. import chats
     from ..rating import chat_rank
-    markets = Question.objects.filter(group=group, kind=Question.Kind.LMSR, hidden_at__isnull=True,
+    markets = Question.objects.filter(group=group, kind=Question.Kind.LMSR, hidden_at__isnull=True, publication_state="approved",
                                       status__in=[Question.Status.OPEN, Question.Status.CLOSED]).count()
     volume = Trade.objects.filter(question__group=group, cost__gt=0).aggregate(v=Sum("cost"))["v"]
     cost = chats.creation_cost(group)

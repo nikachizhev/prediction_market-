@@ -1,0 +1,15 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<p>Проверьте все тексты, правила, варианты и ссылки. Решение применится только к показанной версии.</p>
+<form method="post">{% csrf_token %}
+  <input type="hidden" name="action" value="{{ action }}">
+  <input type="hidden" name="confirm_publication" value="yes">
+  {% for row in rows %}
+    <h2>{{ row.question.title }}</h2>
+    <pre style="white-space:pre-wrap;overflow-wrap:anywhere">{{ row.content }}</pre>
+    <input type="hidden" name="_selected_action" value="{{ row.question.pk }}">
+    <input type="hidden" name="publication_token" value="{{ row.token }}">
+  {% endfor %}
+  <button type="submit">{% if decision == 'approved' %}Одобрить показанную версию{% else %}Отклонить и вернуть резерв{% endif %}</button>
+</form>
+{% endblock %}

@@ -70,7 +70,7 @@ def sync_all(sources: list[QuestionSource] | None = None) -> list[str]:
                     created += 1
             if created:
                 msgs.append(f"[{name}] создано вопросов: {created}")
-            questions = Question.objects.filter(source_type=name).exclude(status__in=FINAL)
+            questions = Question.objects.filter(source_type=name, publication_state="approved").exclude(status__in=FINAL)
             if getattr(src, "group_id", None) is not None:
                 questions = questions.filter(group_id=src.group_id)
             for q in questions:

@@ -5,6 +5,7 @@ from . import assist_views, chat_views, create_help_views, views
 app_name = "api"
 
 urlpatterns = [
+    path("publication-drafts", views.publication_drafts, name="publication_drafts"),
     path("session", views.session, name="session"),
     path("me", views.me, name="me"),
     path("categories", views.categories, name="categories"),

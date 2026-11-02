@@ -38,6 +38,8 @@ def announce_created(question: Question) -> bool:
     Also tells whether the bot can write to them at all: False when Telegram refuses or is unreachable.
     The request waits for Telegram, so the timeout is short.
     """
+    if question.publication_state != "approved":
+        return False
     creator = question.creator
     if not creator or not creator.telegram_chat_id:
         return False

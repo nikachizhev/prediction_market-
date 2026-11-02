@@ -5,3 +5,5 @@ DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memor
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 # A key from a developer's .env must never make tests call the real model.
 LLM_API_KEY = ""
+PREMODERATION_ENABLED = False
+PREMODERATION_API_KEY = ""

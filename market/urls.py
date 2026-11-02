@@ -15,6 +15,7 @@ from . import views
 app_name = "market"
 
 urlpatterns = [
+    path("me/publications/", question_views.publication_drafts, name="publication_drafts"),
     path("groups/", groups.index, name="groups"),
     path("groups/create/", groups.create, name="group_create"),
     path("groups/<int:pk>/", groups.detail, name="group_detail"),

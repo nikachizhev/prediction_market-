@@ -19,6 +19,7 @@ def notify(recipient, text, *, kind="info", question=None, group=None, key=None)
 def visible_notifications(trader):
     groups = GroupMembership.objects.filter(trader=trader, status="active").values("group_id")
     return Notification.objects.filter(recipient=trader).filter(
+        Q(question__isnull=True) | Q(question__publication_state="approved")).filter(
         Q(question__isnull=True) | Q(question__group__isnull=True) | Q(question__group_id__in=groups))
 
 

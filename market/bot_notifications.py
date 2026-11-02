@@ -189,7 +189,7 @@ def _position_text(trader: Trader, question: Question) -> str:
 
 
 def _open_markets(now: datetime):
-    return Question.objects.filter(kind=Question.Kind.LMSR, status=Question.Status.OPEN, hidden_at__isnull=True).filter(
+    return Question.objects.filter(kind=Question.Kind.LMSR, status=Question.Status.OPEN, hidden_at__isnull=True, publication_state="approved").filter(
         Q(deadline__isnull=True) | Q(deadline__gt=now))
 
 

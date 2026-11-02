@@ -50,7 +50,7 @@ def _safe(action, question: Question, *args) -> bool:
 
 
 def user_markets():
-    return Question.objects.filter(kind=Question.Kind.LMSR, creator__isnull=False, resolves_at__isnull=False)
+    return Question.objects.filter(kind=Question.Kind.LMSR, creator__isnull=False, resolves_at__isnull=False, publication_state="approved")
 
 
 def tick(now=None) -> dict:
@@ -84,7 +84,7 @@ def tick(now=None) -> dict:
                 Question.objects.filter(pk=q.pk).update(reminders_sent=number)
                 done["reminded"] += 1
 
-    for q in Question.objects.filter(resolution_state=Question.Resolution.PENDING, dispute_until__lte=now):
+    for q in Question.objects.filter(resolution_state=Question.Resolution.PENDING, dispute_until__lte=now, publication_state="approved"):
         try:
             services.finalize_resolution(q)
             done["finalized"] += 1

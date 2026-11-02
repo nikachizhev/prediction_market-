@@ -502,11 +502,15 @@ export const api = {
   /** request_key makes creation idempotent; pass the same key when retrying the same submission. */
   createMarket: (data: CreateMarketData, request_key: string = newRequestKey()) =>
     request<{
-      market: MarketDetail;
+      market: MarketDetail | null;
+      publication?: string;
+      draft_id?: number;
       balance: Money;
       /** Whether the bot's note about the outcome reached the creator; null on a replayed request, absent on an older server. */
       bot_notified?: boolean | null;
     }>('POST', '/markets', { ...data, request_key }),
+
+  publicationDrafts: () => request<{ items: { id: number; title: string; state: string; label: string; at: string }[] }>('GET', '/publication-drafts'),
 
   /** AI rules helper; 429 — the daily limit is used up, 503 — off or the model did not answer. */
   assist: (title: string, category?: string, chat?: string) =>

@@ -27,6 +27,10 @@ update() {
 	systemctl start pm-db
 	as_pm "$ROOT/venv/bin/python" manage.py migrate --noinput
 	as_pm "$ROOT/venv/bin/python" manage.py collectstatic --noinput -v 0
+	install -m 644 deploy/systemd/pm-premoderation.service /etc/systemd/system/pm-premoderation.service
+	systemctl daemon-reload
+	systemctl enable pm-premoderation
+	systemctl restart pm-premoderation
 	systemctl restart pm-web pm-worker
 	if grep -q '^TELEGRAM_BOT_TOKEN=.' .env; then
 		systemctl restart pm-bot

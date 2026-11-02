@@ -288,7 +288,7 @@ def _command(message: dict) -> None:
 
 def open_markets(group: Group, now: datetime | None = None):
     now = now or timezone.now()
-    return (Question.objects.filter(group=group, status=Question.Status.OPEN, hidden_at__isnull=True)
+    return (Question.objects.filter(group=group, status=Question.Status.OPEN, hidden_at__isnull=True, publication_state="approved")
             .filter(Q(deadline__isnull=True) | Q(deadline__gt=now))
             .annotate(people=Count("trades__trader", distinct=True)).order_by("-people", "-created_at", "-id"))
 
@@ -453,7 +453,7 @@ def fill(now: datetime) -> int:
     groups = {g.pk: g for g in Group.objects.filter(kind="chat", bot_active=True, telegram_chat_id__isnull=False)}
     if not groups:
         return 0
-    fresh = (Question.objects.filter(group_id__in=groups, created_at__gte=now - timedelta(days=1),
+    fresh = (Question.objects.filter(group_id__in=groups, created_at__gte=now - timedelta(days=1), publication_state="approved",
                                      status=Question.Status.OPEN, hidden_at__isnull=True)
              .exclude(chat_posts__kind="new_market"))
     for q in fresh:
@@ -461,7 +461,7 @@ def fill(now: datetime) -> int:
         if chats.post_enabled(group, "new_market"):
             queued += _post(group, "new_market", f"new:{q.pk}", new_market_text(q), now, question=q,
                             payload={"reply_markup": _market_markup(q)})
-    finished = (Question.objects.filter(group_id__in=groups, resolution_state=Question.Resolution.FINAL,
+    finished = (Question.objects.filter(group_id__in=groups, resolution_state=Question.Resolution.FINAL, publication_state="approved",
                                         resolved_at__gte=now - timedelta(days=7), moderation_hidden=False)
                 .exclude(chat_posts__kind="results"))
     for q in finished:
