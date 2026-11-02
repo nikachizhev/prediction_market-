@@ -23,8 +23,19 @@ def create(request):
             question.pool_yes = question.pool_no = question.b
             question.save()
             question.conflicted_traders.add(trader)
+        if question.publication_state != "approved":
+            messages.info(request, "Вопрос отправлен на проверку. До одобрения он не виден другим участникам.")
+            return redirect('market:publication_drafts')
         return redirect("market:question", pk=question.pk)
     return render(request, "market/create.html", {"form": form})
+
+
+def publication_drafts(request):
+    trader = get_trader(request)
+    if not trader:
+        return redirect('market:login')
+    questions = Question.objects.filter(creator=trader, parent__isnull=True).exclude(publication_state='approved').order_by('-created_at')[:100]
+    return render(request, 'market/publication_drafts.html', {'questions': questions})
 
 
 def detail(request, question):

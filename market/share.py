@@ -39,6 +39,8 @@ def card_text(question: Question) -> str:
 
 def mini_chart_url(question: Question) -> str | None:
     """Public URL of a JPEG mini chart (cached per market and hour), or None if it cannot be rendered."""
+    if question.publication_state != "approved":
+        return None
     hour = charts.hour_of(timezone.now())
     folder = Path(settings.MEDIA_ROOT) / "share"
     name = f"market-{question.pk}-{hour:%Y%m%d%H}.jpg"

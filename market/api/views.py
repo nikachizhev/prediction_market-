@@ -106,7 +106,7 @@ def get_market(trader: Trader, pk: int) -> Question:
     A chat market asks Telegram whether the trader is still in the chat (cached, `chats.check_member`):
     who left loses access at once, and a member opening a chat market link for the first time gets in.
     """
-    question = Question.objects.filter(kind=Question.Kind.LMSR).select_related("group").get(pk=pk)
+    question = Question.objects.filter(kind=Question.Kind.LMSR, publication_state="approved").select_related("group").get(pk=pk)
     group = question.group
     if group is not None and group.is_chat:
         if not chats.check_member(trader, group):
@@ -291,6 +291,10 @@ def create_market(request):
         request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
         category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
         request_key=data.get("request_key") or None, group=group, options=data.get("options"))
+    if question.publication_state != "approved":
+        request.trader.refresh_from_db()
+        return {"market": None, "publication": question.publication_state, "draft_id": question.pk,
+                "balance": s.money(request.trader.balance), "bot_notified": None}
     # null on a replayed request: the message went out with the first one.
     bot_notified = None
     if not question.replayed:
@@ -317,6 +321,15 @@ def create_market(request):
 @endpoint("GET")
 def market(request, pk):
     return s.detail(get_market(request.trader, pk), request.trader)
+
+
+@endpoint("GET")
+def publication_drafts(request):
+    # Only the author can read unapproved texts, including rejected personal drafts.
+    qs = Question.objects.filter(creator=request.trader, parent__isnull=True).exclude(publication_state="approved")
+    return {"items": [{"id": q.pk, "title": q.title, "state": q.publication_state,
+                       "label": q.get_publication_state_display(), "at": s.iso(q.created_at)}
+                      for q in qs.order_by("-created_at", "-pk")[:100]]}
 
 
 @endpoint("GET")

@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.core.exceptions import PermissionDenied
 
 from . import services
-from .models import Payout, Position, Question, Trade, Trader, EmailVerification
+from .models import Payout, Position, Question, Trade, Trader, EmailVerification, PublicationDecision
 from .models import BotMessage, Dispute, Event, LedgerEntry, MarketComplaint, ReferralReward
 from .question_forms import ResultForm
 from .participation import finish
@@ -64,20 +64,67 @@ class TraderAdmin(admin.ModelAdmin):
 
 @admin.register(Question)
 class QuestionAdmin(admin.ModelAdmin):
-    list_display = ("title", "kind", "source_type", "status", "outcome", "deadline", "result_link")
-    list_filter = ("resolution_state", "kind", "status", "category", "source_type")
+    list_display = ("title", "publication_state", "kind", "source_type", "status", "outcome", "deadline", "result_link")
+    list_filter = ("publication_state", "resolution_state", "kind", "status", "category", "source_type")
     search_fields = ("title", "resolution_criteria")
     readonly_fields = ("status", "outcome", "answer", "q_yes", "q_no", "pool_yes", "pool_no", "created_at", "resolved_at", "hidden_at", "moderation_hidden", "refund_compensation")
     actions = ["decide_yes", "decide_no", "decide_cancel", "unhide", "resolve_yes", "resolve_no", "close_selected", "annul_selected"]
 
     def get_readonly_fields(self, request, obj=None):
-        fields = self.readonly_fields
+        fields = self.readonly_fields + ("publication_state", "publication_reason", "publication_hash", "publication_job", "publication_attempts", "publication_retry_at")
         if obj:
             fields += ("group", "kind", "creator", "b", "alpha", "initial_prob", "options", "number_min", "number_max", "tolerance", "resolution_criteria", "source_ref", "source_type")
         return fields
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if self.has_change_permission(request):
+            for name in ('publish_checked', 'reject_publication'):
+                action = getattr(type(self), name)
+                actions[name] = (action, name, action.short_description)
+        return actions
+
+    @admin.action(description='Одобрить публикацию после ручной проверки')
+    def publish_checked(self, request, queryset):
+        return self._publication_action(request, queryset, 'approved', 'publish_checked')
+
+    @admin.action(description='Отклонить публикацию и вернуть резерв создания')
+    def reject_publication(self, request, queryset):
+        return self._publication_action(request, queryset, 'rejected', 'reject_publication')
+
+    def _publication_action(self, request, queryset, decision, action):
+        import json
+        from django.core import signing
+        from django.template.response import TemplateResponse
+        from .premoderation import digest, snapshot, review_manually
+        if not self.has_change_permission(request):
+            raise PermissionDenied()
+        questions = list(queryset.filter(parent__isnull=True))
+        selected = {q.pk for q in questions}
+        if request.POST.get('confirm_publication') == 'yes':
+            changed = 0
+            for token in request.POST.getlist('publication_token'):
+                try:
+                    data = signing.loads(token, salt='publication-review', max_age=3600)
+                    if data['id'] not in selected or data['decision'] != decision or data['user'] != request.user.pk:
+                        raise signing.BadSignature()
+                    changed += bool(review_manually(data['id'], decision, request.user, expected_hash=data['hash']))
+                except (signing.BadSignature, KeyError, TypeError):
+                    self.message_user(request, 'Подтверждение устарело или повреждено. Проверьте текст заново.', messages.ERROR)
+            self.message_user(request, f'Сохранено решений: {changed}. Изменённые тексты не одобрены; просроченные остаются на проверке.')
+            return None
+        rows = []
+        for q in questions:
+            payload = snapshot(q)
+            token = signing.dumps({'id': q.pk, 'hash': digest(payload), 'decision': decision, 'user': request.user.pk}, salt='publication-review')
+            rows.append({'question': q, 'content': json.dumps(payload, ensure_ascii=False, indent=2, default=str), 'token': token})
+        return TemplateResponse(request, 'admin/premoderation_confirm.html', {
+            **self.admin_site.each_context(request), 'title': 'Проверка публикации', 'rows': rows,
+            'action': action, 'decision': decision, 'opts': self.model._meta,
+        })
 
     def get_urls(self):
         return [path("<int:pk>/result/", self.admin_site.admin_view(self.result_view), name="market_question_result")] + super().get_urls()
@@ -208,6 +255,13 @@ class VerificationAdmin(ReadOnlyLedgerAdmin):
 
 for m in (Position, Payout):
     admin.site.register(m, ReadOnlyLedgerAdmin)
+
+
+@admin.register(PublicationDecision)
+class PublicationDecisionAdmin(ReadOnlyLedgerAdmin):
+    list_display = ('question', 'decision', 'reason', 'actor', 'model', 'created_at')
+    list_filter = ('decision', 'reason')
+    readonly_fields = ('question', 'content_hash', 'decision', 'reason', 'actor', 'model', 'created_at')
 
 
 @admin.register(Dispute)

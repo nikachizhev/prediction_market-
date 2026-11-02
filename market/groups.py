@@ -121,6 +121,6 @@ def detail(request, pk):
         "is_member": active, "is_admin": is_admin,
         "members": group.memberships.filter(status="active").select_related("trader__user") if active else [],
         "requests": group.memberships.exclude(status="active").select_related("trader__user") if is_admin else [],
-        "questions": group.questions.all()[:30] if active else [],
+        "questions": group.questions.filter(publication_state="approved")[:30] if active else [],
         "repos": group.repositories.all() if active and group.kind == "work" else [],
     })

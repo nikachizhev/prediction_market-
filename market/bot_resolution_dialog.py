@@ -33,7 +33,7 @@ def _trader(user_id) -> Trader | None:
 
 def _question(question_id) -> Question | None:
     try:
-        return Question.objects.select_related("creator", "group").filter(pk=int(question_id)).first()
+        return Question.objects.select_related("creator", "group").filter(pk=int(question_id), publication_state="approved").first()
     except (TypeError, ValueError):
         return None
 

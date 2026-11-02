@@ -343,6 +343,11 @@ export function CreateScreen() {
       tg.HapticFeedback.notification('success');
       if (typeof res.bot_notified === 'boolean') tg.setBotCanWrite(res.bot_notified);
       clearDraft();
+      if (!res.market) {
+        toast('Вопрос отправлен на проверку. Монеты зарезервированы; при отказе вернутся. Статус — в разделе «Мои».');
+        navigate('/mine', { replace: true });
+        return;
+      }
       // Replace the wizard: Back from «Рынок опубликован» must not reopen it.
       navigate(`/market/${res.market.id}/created`, {
         replace: true,
@@ -400,7 +405,7 @@ export function CreateScreen() {
 
   const labels = new Map(categories.map((c) => [c.slug, c.label]));
   const notEnough = step === 3 && !!terms && rest === null;
-  const nextLabel = step === 3 ? (terms ? `Опубликовать за ${formatMoney(cost)}` : 'Опубликовать') : 'Далее';
+  const nextLabel = step === 3 ? (terms ? `На проверку · резерв ${formatMoney(cost)}` : 'Отправить на проверку') : 'Далее';
   const resolves = resolvesAtIso(draft);
   const resolutionDay = resolves ? `${formatDayMonth(resolves, now)} в ${draft.resultTime}` : 'В дату итога';
 
@@ -449,6 +454,7 @@ export function CreateScreen() {
       </header>
 
       <div className="create-body">
+        <p className="sub small">Перед публикацией вопрос, правила и варианты ответа проверяет внешняя ИИ-модель. Спорные вопросы рассматривает модератор. До одобрения вопрос не виден участникам; монеты создания зарезервированы и вернутся при отказе.</p>
         {step === 1 && (
           <>
             <h1 className="screen-title">О чём спрашиваем?</h1>

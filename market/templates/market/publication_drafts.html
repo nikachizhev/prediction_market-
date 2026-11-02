@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Проверка публикаций</h1>
+<p>Непроверенные вопросы видите только вы. При отклонении резерв создания возвращается.</p>
+{% for question in questions %}
+<article class="card"><h2>{{ question.title }}</h2><p>{{ question.get_publication_state_display }}</p></article>
+{% empty %}<p>Вопросов на проверке нет.</p>{% endfor %}
+{% endblock %}

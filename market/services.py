@@ -29,6 +29,8 @@ def _d(x: float | Decimal | int | str) -> Decimal:
 
 
 def check_open(question):
+    if question.publication_state != "approved":
+        raise MarketError("Рынок ещё не прошёл проверку перед публикацией.")
     if question.status != Question.Status.OPEN or (question.deadline and question.deadline <= timezone.now()):
         raise MarketError("Участие в этом вопросе закрыто.")
     if question.hidden_at:
@@ -76,6 +78,8 @@ def check_can_trade(trader: Trader, question: Question) -> None:
 
 
 def check_access(trader, question):
+    if question.publication_state != "approved":
+        raise MarketError("Рынок ещё не прошёл проверку перед публикацией.")
     from .access import can_access
     if not can_access(trader, question):
         raise MarketError("Этот вопрос доступен только участникам группы.")

@@ -211,6 +211,35 @@ CATEGORIES = [
 
 
 class Question(models.Model):
+    class Publication(models.TextChoices):
+        PENDING = "pending", "Ожидает проверки"
+        CHECKING = "checking", "Проверяется"
+        APPROVED = "approved", "Опубликован"
+        REVIEW = "review", "Нужна проверка модератора"
+        REJECTED = "rejected", "Отклонён"
+        ERROR = "error", "Проверка временно недоступна"
+
+    publication_state = models.CharField(max_length=12, choices=Publication.choices, default=Publication.PENDING, db_index=True)
+    publication_reason = models.CharField(max_length=40, blank=True)
+    publication_hash = models.CharField(max_length=64, blank=True, editable=False)
+    publication_job = models.UUIDField(null=True, editable=False)
+    publication_attempts = models.PositiveSmallIntegerField(default=0, editable=False)
+    publication_retry_at = models.DateTimeField(null=True, editable=False)
+
+    def save(self, *args, **kwargs):
+        from django.db import transaction
+        from .premoderation import CONTENT, prepare_save
+        # Lock the root before editing any member of a multi-option family.
+        # A moderation worker cannot approve an old snapshot between parent invalidation and child save.
+        with transaction.atomic():
+            root_id = self.parent_id or (self.pk if not self._state.adding else None)
+            fields = kwargs.get("update_fields")
+            content_write = self._state.adding or fields is None or bool(set(fields).intersection(CONTENT))
+            if root_id and content_write:
+                list(type(self).objects.select_for_update().filter(pk=root_id).values_list("pk", flat=True))
+            prepare_save(self, kwargs)
+            return super().save(*args, **kwargs)
+
     tracks_deadline = models.BooleanField("ДА означает выполнение в срок", default=False, help_text="Включает вопрос в панель рисков. Используйте, только если ДА означает выполнение задачи к дедлайну.")
     resolved_at = models.DateTimeField(null=True, blank=True)
     group = models.ForeignKey(Group, null=True, blank=True, on_delete=models.PROTECT, related_name="questions")
@@ -240,7 +269,7 @@ class Question(models.Model):
     @property
     def accepting_entries(self):
         from django.utils import timezone
-        return self.status == self.Status.OPEN and (not self.deadline or self.deadline > timezone.now())
+        return self.publication_state == self.Publication.APPROVED and self.status == self.Status.OPEN and (not self.deadline or self.deadline > timezone.now())
 
     @property
     def display_state(self):
@@ -569,6 +598,16 @@ class ModerationPanel(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['token_fingerprint', 'admin_id'], name='one_moderation_panel')]
+
+
+class PublicationDecision(models.Model):
+    question = models.ForeignKey(Question, on_delete=models.PROTECT, related_name="publication_decisions")
+    content_hash = models.CharField(max_length=64)
+    decision = models.CharField(max_length=12)
+    reason = models.CharField(max_length=40)
+    actor = models.CharField(max_length=80)
+    model = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class Event(models.Model):

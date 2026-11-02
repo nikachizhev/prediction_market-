@@ -17,6 +17,8 @@ type LoadState = 'loading' | 'ready' | 'error';
 type Held = MineResponse['positions'][number];
 
 export function MineScreen() {
+  const [drafts, setDrafts] = useState<Awaited<ReturnType<typeof api.publicationDrafts>>['items']>([]);
+  const [draftsError, setDraftsError] = useState(false);
   const toast = useToast();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('positions');
@@ -24,6 +26,12 @@ export function MineScreen() {
   const [state, setState] = useState<LoadState>('loading');
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    api.publicationDrafts().then((result) => { if (!cancelled) { setDrafts(result.items); setDraftsError(false); } })
+      .catch(() => { if (!cancelled) setDraftsError(true); });
+    return () => { cancelled = true; };
+  }, [attempt]);
   const snapshots = useRef(new Map<number, Held>());
 
   useEffect(() => {
@@ -135,6 +143,13 @@ export function MineScreen() {
       </header>
 
       <div className="mine-body" role="tabpanel">
+        {draftsError && <p role="alert">Не удалось загрузить статусы проверки. <button type="button" onClick={() => setAttempt((n) => n + 1)}>Повторить</button></p>}
+        {drafts.length > 0 && <section className="card" style={{ padding: 16, marginBottom: 16 }} aria-label="Проверка публикаций">
+          <h2>Проверка публикаций</h2>
+          <p className="sub small">Эти вопросы видишь только ты. При отказе резерв создания возвращается.</p>
+          {drafts.map((draft) => <p key={draft.id}><strong>{draft.title}</strong><br /><span className="sub">{draft.label}</span></p>)}
+          <button type="button" className="button-secondary" onClick={() => setAttempt((n) => n + 1)}>Обновить статусы</button>
+        </section>}
         {state === 'loading' && [0, 1, 2].map((i) => <CardSkeleton key={i} />)}
 
         {state === 'error' && (

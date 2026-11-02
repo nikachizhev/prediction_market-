@@ -10,7 +10,7 @@ from .models import Group, Question, Trade
 
 def analytics(group):
     now = timezone.now()
-    questions = list(group.questions.prefetch_related("submissions").all())
+    questions = list(group.questions.filter(publication_state="approved").prefetch_related("submissions"))
     history = defaultdict(list)
     for trade in Trade.objects.filter(question__group=group).order_by("created_at", "pk"):
         history[trade.question_id].append(trade)

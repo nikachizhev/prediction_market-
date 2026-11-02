@@ -155,3 +155,8 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "no
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT", BASE_DIR / "media"))
 MINIAPP_DIST = Path(os.environ.get("MINIAPP_DIST", BASE_DIR / "miniapp" / "dist"))
+PREMODERATION_ENABLED = os.environ.get("PREMODERATION_ENABLED", "1") == "1"
+PREMODERATION_MODEL = os.environ.get("PREMODERATION_MODEL", LLM_MODEL)
+PREMODERATION_API_KEY = os.environ.get("PREMODERATION_API_KEY", LLM_API_KEY)
+PREMODERATION_URL = os.environ.get("PREMODERATION_URL", LLM_BASE_URL)
+PREMODERATION_LINK_HOSTS = {"github.com", "api.github.com", "docs.python.org"}
