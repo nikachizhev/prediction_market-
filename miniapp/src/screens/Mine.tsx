@@ -220,7 +220,7 @@ function Positions({
         return (
           <article key={item.id} className="mine-card mine-position" aria-busy={sellingId === item.id || undefined}>
             {item.chat && <ChatTag chat={item.chat} className="mine-chat-tag" />}
-            <Link to={`/market/${item.id}`} className="mine-q stretched-link">
+            <Link to={`/market/${item.parent_id ?? item.id}`} className="mine-q stretched-link">
               {item.title}
             </Link>
             <div className="mine-row">
@@ -256,7 +256,7 @@ function Positions({
                     disabled={sellingId === item.id}
                     onClick={() => onSell(item, s)}
                   >
-                    {sides.length > 1 ? `Продать ${sideLabel(s)}` : 'Продать'}
+                    Продать {sideLabel(s)}
                   </button>
                 ))}
               </div>

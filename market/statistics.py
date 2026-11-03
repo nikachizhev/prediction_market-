@@ -114,7 +114,7 @@ def best_predictions(trader, limit: int = 3) -> list[dict]:
                if t.side == t.question.outcome]
     # A winning share pays 1 coin; the gain is that minus what the buy cost, fee included.
     winners.sort(key=lambda t: (_bought_price(t), t.cost - t.shares, -t.pk))
-    return [{"market": {"id": t.question_id, "title": t.question.title}, "side": t.side,
+    return [{"market": {"id": t.question.parent_id or t.question_id, "title": t.question.title}, "side": t.side,
              "price": round(_bought_price(t), 4), "gain": t.shares - t.cost} for t in winners[:limit]]
 
 
@@ -145,6 +145,8 @@ def category_stats(trader) -> list[dict]:
     for p in positions:
         slug = p.question.category
         market_category[p.question_id] = slug
+        if p.question.parent_id:
+            market_category[p.question.parent_id] = slug
         row = rows.setdefault(slug, {"predictions": 0, "correct": 0, "profit": Decimal(0)})
         if p.yes_shares == p.no_shares:
             continue

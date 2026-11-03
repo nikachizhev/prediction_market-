@@ -291,6 +291,11 @@ class Question(models.Model):
         if self.display_state != "resolved":
             return ""
         if self.is_trading:
+            if not self.outcome and self.options:
+                subs = list(self.submarkets.all().order_by("id")) if self.pk else []
+                if subs:
+                    parts = [f"{s.option_label or s.title}: {s.get_outcome_display()}" for s in subs if s.outcome]
+                    return f"Итоги: {', '.join(parts)}" if parts else "Результаты опубликованы"
             return f"Итог: {self.get_outcome_display()}"
         if self.kind == self.Kind.NUMBER:
             return f"Ответ: {self.answer}"

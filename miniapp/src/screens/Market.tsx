@@ -79,6 +79,10 @@ export function MarketScreen() {
       .market(marketId)
       .then((m) => {
         if (cancelled) return;
+        if (m.parent_id) {
+          navigate(`/market/${m.parent_id}`, { replace: true });
+          return;
+        }
         setMarket(m);
         setState('ready');
       })
@@ -438,6 +442,7 @@ export function MarketScreen() {
                     title: sub.label ? `${m.title} — ${sub.label}` : sub.title,
                     prob: sub.prob,
                     position: sub.my_position!,
+                    b: sub.b ?? m.b,
                   },
                   side,
                 )
@@ -503,7 +508,7 @@ export function MarketScreen() {
                       )
                     }
                   >
-                    {sides.length === 1 ? 'Продать позицию' : `Продать ${sideLabel(side)}`}
+                    Продать {sideLabel(side)}
                   </button>
                 ))}
               </div>
@@ -658,9 +663,23 @@ function ReviewSection({
   const r = market.resolution!;
   const left = timeLeft(r.dispute_until);
   const proposed = r.proposed_outcome;
-  const tone = proposed === 'yes' ? 'is-yes' : proposed === 'no' ? 'is-no' : '';
+  const subs = market.submarkets && market.submarkets.length > 0 ? market.submarkets : null;
+  const tone = !subs && proposed === 'yes' ? 'is-yes' : !subs && proposed === 'no' ? 'is-no' : '';
   let payoutNote = '';
-  if (market.my_position && (proposed === 'yes' || proposed === 'no')) {
+  if (subs && proposed !== 'cancel') {
+    let totalPayout = 0;
+    let hasPos = false;
+    for (const sub of subs) {
+      const subProp = sub.resolution?.proposed_outcome;
+      if (sub.my_position && (subProp === 'yes' || subProp === 'no')) {
+        hasPos = true;
+        totalPayout += settledResult(sub.my_position, subProp).payout;
+      }
+    }
+    if (hasPos) {
+      payoutNote = ` Твоя ожидаемая выплата: ${formatMoney(Math.floor(totalPayout), 0)}.`;
+    }
+  } else if (market.my_position && (proposed === 'yes' || proposed === 'no')) {
     const { payout } = settledResult(market.my_position, proposed);
     payoutNote = ` Твоя выплата при ${sideLabel(proposed)}: ${formatMoney(Math.floor(payout), 0)}.`;
   }
@@ -672,7 +691,21 @@ function ReviewSection({
           {disputed ? 'Спор у модератора' : left ? `Окно спора: ${left}` : 'Окно спора закрыто'}
         </span>
       </div>
-      <span className={`mk-outcome ${tone}`}>{proposed === 'cancel' ? 'Отменить рынок' : outcomeLabel(proposed)}</span>
+      {subs && proposed !== 'cancel' ? (
+        <div className="mk-chips">
+          {subs.map((sub) => {
+            const sp = sub.resolution?.proposed_outcome;
+            const sTone = sp === 'yes' ? 'is-yes' : sp === 'no' ? 'is-no' : '';
+            return (
+              <span key={sub.id} className={`mk-side-chip ${sTone}`}>
+                {sub.label}: {sp === 'yes' || sp === 'no' ? sideLabel(sp) : '—'}
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <span className={`mk-outcome ${tone}`}>{proposed === 'cancel' ? 'Отменить рынок' : outcomeLabel(proposed)}</span>
+      )}
       <Evidence url={r.evidence_url} />
       {r.note && <p className="mk-text">{r.note}</p>}
       <p className="mk-text sub small">
@@ -693,15 +726,43 @@ function ReviewSection({
 }
 
 function ResolvedSection({ market }: { market: MarketDetail }) {
+  const subs = market.submarkets && market.submarkets.length > 0 ? market.submarkets : null;
   const outcome = market.outcome;
-  const result = market.my_position && outcome ? settledResult(market.my_position, outcome) : null;
+  let result: { payout: number; profit: number } | null = null;
+  let totalSpent = 0;
+  if (subs) {
+    let payout = 0;
+    let profit = 0;
+    for (const sub of subs) {
+      if (sub.my_position && sub.outcome && Number(sub.my_position.spent) > 0) {
+        const sr = settledResult(sub.my_position, sub.outcome);
+        payout += sr.payout;
+        profit += sr.profit;
+        totalSpent += Number(sub.my_position.spent);
+      }
+    }
+    if (totalSpent > 0) result = { payout, profit };
+  } else if (market.my_position && outcome) {
+    result = settledResult(market.my_position, outcome);
+    totalSpent = Number(market.my_position.spent);
+  }
   const evidence = market.resolution?.evidence_url ?? null;
   return (
     <section className="card mk-section mk-resolved" aria-label="Итог">
       <div className="mk-resolved-text">
         <span className="sub small">Итог</span>
-        <span className={`mk-outcome ${outcome === 'yes' ? 'is-yes' : outcome === 'no' ? 'is-no' : ''}`}>{outcomeLabel(outcome)}</span>
-        {result && Number(market.my_position!.spent) > 0 && (
+        {subs ? (
+          <div className="mk-chips">
+            {subs.map((sub) => (
+              <span key={sub.id} className={`mk-side-chip ${sub.outcome === 'yes' ? 'is-yes' : sub.outcome === 'no' ? 'is-no' : ''}`}>
+                {sub.label}: {outcomeLabel(sub.outcome)}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className={`mk-outcome ${outcome === 'yes' ? 'is-yes' : outcome === 'no' ? 'is-no' : ''}`}>{outcomeLabel(outcome)}</span>
+        )}
+        {result && totalSpent > 0 && (
           <span className="mk-result">
             Ты получил {formatMoney(Math.floor(result.payout), 0)}{' '}
             <span className={result.profit >= 0 ? 'is-up' : 'is-down'}>({formatSigned(Math.round(result.profit), 0)})</span>
@@ -1063,7 +1124,11 @@ function MultiOptionsSection({
                   </span>
                 </div>
               </div>
-              <span className="mk-multi-opt-pct">{subPct.yes}%</span>
+              {phase === 'resolved' && sub.outcome ? (
+                <span className={`mk-side-chip is-${sub.outcome}`}>{outcomeLabel(sub.outcome)}</span>
+              ) : (
+                <span className="mk-multi-opt-pct">{subPct.yes}%</span>
+              )}
             </div>
 
             {subStats && sub.my_position && (
@@ -1090,7 +1155,7 @@ function MultiOptionsSection({
                         disabled={sellingId === sub.id}
                         onClick={() => onSell(sub, side)}
                       >
-                        {subSides.length === 1 ? 'Продать позицию' : `Продать ${sideLabel(side)}`}
+                        Продать {sideLabel(side)}
                       </button>
                     ))}
                   </div>

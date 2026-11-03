@@ -26,13 +26,20 @@ INLINE_CACHE_SECONDS = 30
 
 
 def market_link(trader: Trader | None, question: Question) -> str:
+    target_id = question.parent_id or question.pk
     base = f"https://t.me/{settings.TELEGRAM_BOT_USERNAME}/{settings.TELEGRAM_APP_NAME}?startapp="
     if trader is not None and trader.referral_code:
-        return f"{base}ref_{trader.referral_code}-m{question.pk}"
-    return f"{base}m{question.pk}"
+        return f"{base}ref_{trader.referral_code}-m{target_id}"
+    return f"{base}m{target_id}"
 
 
 def card_text(question: Question) -> str:
+    subs = list(question.submarkets.all().order_by("id")) if question.pk else []
+    if subs:
+        opts = " · ".join(f"{s.option_label or s.title} {round(s.prob * 100)}%" for s in subs[:4])
+        if len(subs) > 4:
+            opts += f" (+{len(subs) - 4})"
+        return f"{question.title}\n{opts}"
     _, delta = charts.week_series(question)
     return f"{question.title}\nВероятность ДА: {round(question.prob * 100)}% · {charts.delta_text(delta)}"
 
@@ -97,7 +104,7 @@ def search(trader: Trader, query: str) -> list[Question]:
         chat_ids = set(Group.objects.filter(pk__in={q.group_id for q in tracked if q.group_id}, kind="chat")
                        .values_list("pk", flat=True))
         return [q for q in tracked if q.group_id not in chat_ids][:INLINE_LIMIT]
-    markets = (visible_questions(trader).filter(kind=Question.Kind.LMSR, hidden_at__isnull=True)
+    markets = (visible_questions(trader).filter(kind=Question.Kind.LMSR, parent__isnull=True, hidden_at__isnull=True)
                .exclude(group__kind="chat"))
     if query[:1] in "mм" and query[1:].isdigit():
         return list(markets.filter(pk=int(query[1:])))

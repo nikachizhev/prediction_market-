@@ -71,7 +71,8 @@ def _market_markup(question: Question) -> dict:
 
 
 def _participants(question: Question) -> int:
-    return Trade.objects.filter(question=question).values("trader").distinct().count()
+    return (Trade.objects.filter(Q(question=question) | Q(question__parent=question))
+            .values("trader").distinct().count())
 
 
 def _people(n: int) -> str:
@@ -287,10 +288,17 @@ def _command(message: dict) -> None:
 
 
 def open_markets(group: Group, now: datetime | None = None):
+    from django.db.models import IntegerField, OuterRef, Subquery
+    from django.db.models.functions import Coalesce
     now = now or timezone.now()
-    return (Question.objects.filter(group=group, status=Question.Status.OPEN, hidden_at__isnull=True, publication_state="approved")
+    family_people = (Trade.objects.annotate(root_id=Coalesce("question__parent_id", "question_id"))
+                     .filter(root_id=OuterRef("pk")).order_by().values("root_id")
+                     .annotate(c=Count("trader_id", distinct=True)).values("c"))
+    return (Question.objects.filter(group=group, parent__isnull=True, status=Question.Status.OPEN,
+                                    hidden_at__isnull=True, publication_state="approved")
             .filter(Q(deadline__isnull=True) | Q(deadline__gt=now))
-            .annotate(people=Count("trades__trader", distinct=True)).order_by("-people", "-created_at", "-id"))
+            .annotate(people=Coalesce(Subquery(family_people, output_field=IntegerField()), 0))
+            .order_by("-people", "-created_at", "-id"))
 
 
 def markets_text(group: Group) -> str:
@@ -299,7 +307,14 @@ def markets_text(group: Group) -> str:
         return "Открытых рынков в чате пока нет — создай первый в приложении."
     lines = ["Открытые рынки чата:"]
     for q in markets[:MARKETS_SHOWN]:
-        lines.append(f"• «{q.title}» — {_percent(q)}%, {_people(q.people)}")
+        subs = list(q.submarkets.all().order_by("id"))
+        if subs:
+            opts = ", ".join(f"{s.option_label or s.title} {_percent(s)}%" for s in subs[:3])
+            if len(subs) > 3:
+                opts += f" (+{len(subs) - 3})"
+            lines.append(f"• «{q.title}» ({opts}), {_people(q.people)}")
+        else:
+            lines.append(f"• «{q.title}» — {_percent(q)}%, {_people(q.people)}")
     if len(markets) > MARKETS_SHOWN:
         rest = open_markets(group).count() - MARKETS_SHOWN
         lines.append(f"И ещё {rest} — в приложении.")
@@ -421,12 +436,24 @@ def _settings_press(callback: dict) -> None:
 def new_market_text(question: Question) -> str:
     n = _participants(question)
     tail = f" · {_people(n)}" if n else ""
+    subs = list(question.submarkets.all().order_by("id"))
+    if subs:
+        opts = "\n".join(f"• {s.option_label or s.title} — {_percent(s)}%" for s in subs[:5])
+        if len(subs) > 5:
+            opts += f"\n• и ещё {len(subs) - 5}"
+        return f"Новый рынок в чате:\n«{question.title}»{tail}\n{opts}"
     return f"Новый рынок в чате:\n«{question.title}»\nВероятность ДА: {_percent(question)}%{tail}"
 
 
 def result_text(question: Question) -> str:
     if question.status == Question.Status.ANNULLED:
         return f"Рынок чата отменён:\n«{question.title}»\nМонеты вернули участникам."
+    subs = list(question.submarkets.all().order_by("id"))
+    if subs:
+        opts = "\n".join(f"• {s.option_label or s.title}: {'ДА' if s.outcome == Question.Outcome.YES else 'НЕТ'}"
+                         for s in subs)
+        return (f"Итоги рынка чата:\n«{question.title}»\n{opts}\n"
+                f"Участников: {_participants(question)}. Выплаты уже на балансах.")
     label = "ДА" if question.outcome == Question.Outcome.YES else "НЕТ"
     return (f"Итог рынка чата:\n«{question.title}» — {label}.\n"
             f"Участников: {_participants(question)}. Выплаты уже на балансах.")
@@ -453,15 +480,16 @@ def fill(now: datetime) -> int:
     groups = {g.pk: g for g in Group.objects.filter(kind="chat", bot_active=True, telegram_chat_id__isnull=False)}
     if not groups:
         return 0
-    fresh = (Question.objects.filter(group_id__in=groups, created_at__gte=now - timedelta(days=1), publication_state="approved",
-                                     status=Question.Status.OPEN, hidden_at__isnull=True)
+    fresh = (Question.objects.filter(group_id__in=groups, parent__isnull=True, created_at__gte=now - timedelta(days=1),
+                                     publication_state="approved", status=Question.Status.OPEN, hidden_at__isnull=True)
              .exclude(chat_posts__kind="new_market"))
     for q in fresh:
         group = groups[q.group_id]
         if chats.post_enabled(group, "new_market"):
             queued += _post(group, "new_market", f"new:{q.pk}", new_market_text(q), now, question=q,
                             payload={"reply_markup": _market_markup(q)})
-    finished = (Question.objects.filter(group_id__in=groups, resolution_state=Question.Resolution.FINAL, publication_state="approved",
+    finished = (Question.objects.filter(group_id__in=groups, parent__isnull=True,
+                                        resolution_state=Question.Resolution.FINAL, publication_state="approved",
                                         resolved_at__gte=now - timedelta(days=7), moderation_hidden=False)
                 .exclude(chat_posts__kind="results"))
     for q in finished:

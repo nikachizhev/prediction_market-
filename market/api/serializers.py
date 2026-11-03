@@ -78,7 +78,8 @@ def notice(item) -> dict:
     return {
         "id": item.pk, "kind": item.kind, "group": group_of(item.kind),
         "title": item.title, "text": item.text, "at": iso(item.created_at), "read": item.read_at is not None,
-        "market": {"id": item.question_id, "title": item.question.title} if item.question_id else None,
+        "market": ({"id": item.question.parent_id or item.question_id, "title": item.question.title}
+                   if item.question_id else None),
         "action": action,
     }
 
@@ -178,11 +179,15 @@ def card(question: Question, *, starred: set[int] | None = None, now: datetime |
         "participants": stats["traders"] or 0, "volume": money(stats["volume"]),
         "closes_at": iso(question.deadline), "resolves_at": iso(question.resolves_at),
         "status": market_status(question),
-        "outcome": question.outcome, "starred": question.pk in (starred or set()), "my_side": my_side,
+        "outcome": question.outcome,
+        "starred": (question.parent_id or question.pk) in (starred or set()),
+        "my_side": my_side,
         "chat": chat_ref(question), "created_at": iso(question.created_at),
         # Market depth: a chat market has its own (spec E5), the sell estimate needs it.
         "b": question.b,
     }
+    if question.parent_id:
+        result["parent_id"] = question.parent_id
     if submarkets:
         sub_sides = my_sides(trader, [s.pk for s in submarkets]) if trader else {}
         result["submarkets"] = [_submarket_card(s, now=now, my_side=sub_sides.get(s.pk)) for s in submarkets]
@@ -200,7 +205,8 @@ def chat_space(group, trader: Trader) -> dict:
     """`ChatSpace` in docs/api.md «Фаза 3b»: the chat's header for one of its members."""
     from .. import chats
     from ..rating import chat_rank
-    markets = Question.objects.filter(group=group, kind=Question.Kind.LMSR, hidden_at__isnull=True, publication_state="approved",
+    markets = Question.objects.filter(group=group, kind=Question.Kind.LMSR, parent__isnull=True, hidden_at__isnull=True,
+                                      publication_state="approved",
                                       status__in=[Question.Status.OPEN, Question.Status.CLOSED]).count()
     volume = Trade.objects.filter(question__group=group, cost__gt=0).aggregate(v=Sum("cost"))["v"]
     cost = chats.creation_cost(group)
@@ -213,7 +219,10 @@ def chat_space(group, trader: Trader) -> dict:
 
 
 def starred_ids(trader: Trader) -> set[int]:
-    return set(MarketSubscription.objects.filter(trader=trader).values_list("question_id", flat=True))
+    ids: set[int] = set()
+    for qid, pid in MarketSubscription.objects.filter(trader=trader).values_list("question_id", "question__parent_id"):
+        ids.add(pid or qid)
+    return ids
 
 
 def position(pos: Position | None, question: Question) -> dict | None:
@@ -230,9 +239,10 @@ def position(pos: Position | None, question: Question) -> dict | None:
 def author(trader: Trader | None) -> dict:
     if trader is None:
         return {"display_name": "Команда", "photo_url": None, "resolved": 0, "disputes_lost": 0}
-    resolved = trader.created_questions.filter(status=Question.Status.RESOLVED).count()
+    resolved = trader.created_questions.filter(parent__isnull=True, status=Question.Status.RESOLVED).count()
     return {"display_name": trader.display_name, "photo_url": trader.photo_url or None,
-            "resolved": resolved, "disputes_lost": trader.created_questions.filter(creator_at_fault=True).count()}
+            "resolved": resolved,
+            "disputes_lost": trader.created_questions.filter(parent__isnull=True, creator_at_fault=True).count()}
 
 
 def resolution(question: Question, trader: Trader) -> dict | None:

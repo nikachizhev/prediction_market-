@@ -20,17 +20,20 @@ def public_state(question: Question, trader: Trader) -> dict | None:
     """What the market card shows about the creator's stated outcome."""
     if not question.resolution_state:
         return None
-    from .models import Dispute
+    from django.db.models import Q
+    from .models import Dispute, Trade
+    root = question.parent or question
+    has_trade = Trade.objects.filter(trader=trader).filter(Q(question=root) | Q(question__parent=root)).exists()
     return {
         "proposed_outcome": question.proposed_outcome or None,
-        "evidence_url": question.evidence.url if question.evidence else None,
-        "note": question.evidence_note,
-        "dispute_until": question.dispute_until.isoformat() if question.dispute_until else None,
-        "can_dispute": (question.resolution_state in (Question.Resolution.PENDING, Question.Resolution.DISPUTED)
-                        and question.dispute_until is not None and question.dispute_until > timezone.now()
-                        and question.creator_id != trader.pk
-                        and question.trades.filter(trader=trader).exists()
-                        and not Dispute.objects.filter(question=question, trader=trader).exists()),
+        "evidence_url": root.evidence.url if root.evidence else None,
+        "note": root.evidence_note,
+        "dispute_until": root.dispute_until.isoformat() if root.dispute_until else None,
+        "can_dispute": (root.resolution_state in (Question.Resolution.PENDING, Question.Resolution.DISPUTED)
+                        and root.dispute_until is not None and root.dispute_until > timezone.now()
+                        and root.creator_id != trader.pk
+                        and has_trade
+                        and not Dispute.objects.filter(question=root, trader=trader).exists()),
     }
 
 
@@ -50,7 +53,10 @@ def _safe(action, question: Question, *args) -> bool:
 
 
 def user_markets():
-    return Question.objects.filter(kind=Question.Kind.LMSR, creator__isnull=False, resolves_at__isnull=False, publication_state="approved")
+    return Question.objects.filter(
+        kind=Question.Kind.LMSR, parent__isnull=True, creator__isnull=False,
+        resolves_at__isnull=False, publication_state="approved",
+    )
 
 
 def tick(now=None) -> dict:
@@ -84,7 +90,8 @@ def tick(now=None) -> dict:
                 Question.objects.filter(pk=q.pk).update(reminders_sent=number)
                 done["reminded"] += 1
 
-    for q in Question.objects.filter(resolution_state=Question.Resolution.PENDING, dispute_until__lte=now, publication_state="approved"):
+    for q in Question.objects.filter(parent__isnull=True, resolution_state=Question.Resolution.PENDING,
+                                     dispute_until__lte=now, publication_state="approved"):
         try:
             services.finalize_resolution(q)
             done["finalized"] += 1

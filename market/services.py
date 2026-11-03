@@ -272,26 +272,38 @@ def sell(trader: Trader, question: Question, side: str, shares: Decimal | float 
 @transaction.atomic
 def close_betting(question: Question) -> Question:
     question = Question.objects.select_for_update().get(pk=question.pk)
+    subs = list(question.submarkets.select_for_update().order_by("id"))
     if question.status == Question.Status.OPEN:
         question.status = Question.Status.CLOSED
         question.save(update_fields=["status"])
+    for sub in subs:
+        if sub.status == Question.Status.OPEN:
+            sub.status = Question.Status.CLOSED
+            sub.save(update_fields=["status"])
     return question
 
 
 def _lock_positions(question: Question, extra_trader_ids=()) -> tuple[list[Position], dict[int, Trader]]:
     """Lock positions, their holders and the creator (in pk order, one object per trader)."""
-    positions = list(Position.objects.select_for_update().filter(question=question).order_by("trader_id"))
+    return _lock_family_positions([question], question.creator_id, extra_trader_ids)
+
+
+def _lock_family_positions(questions: list[Question], creator_id: int | None,
+                           extra_trader_ids=()) -> tuple[list[Position], dict[int, Trader]]:
+    positions = list(Position.objects.select_for_update()
+                     .filter(question_id__in=[q.pk for q in questions]).order_by("question_id", "trader_id"))
     ids = {p.trader_id for p in positions}
     ids.update(extra_trader_ids)
-    if question.creator_id:
-        ids.add(question.creator_id)
+    if creator_id:
+        ids.add(creator_id)
     traders = {t.pk: t for t in Trader.objects.select_for_update().filter(pk__in=ids).order_by("pk")}
     for p in positions:
         p.trader = traders[p.trader_id]
     return positions, traders
 
 
-def _settle_creator(question: Question, traders: dict[int, Trader], *, refund_subsidy: bool = True) -> None:
+def _settle_creator(question: Question, traders: dict[int, Trader], *, refund_subsidy: bool = True,
+                    submarkets: list[Question] | None = None) -> None:
     """Return the unused subsidy and pay the creator's share of fees; the rest burns."""
     creator = traders.get(question.creator_id) if question.creator_id else None
     if creator is None:
@@ -299,18 +311,58 @@ def _settle_creator(question: Question, traders: dict[int, Trader], *, refund_su
     from django.db.models import Sum
     from django.db.models.functions import Coalesce
     zero = Decimal(0)
-    trades = Trade.objects.filter(question=question).aggregate(
+    subs = submarkets or []
+    family_ids = [question.pk, *(s.pk for s in subs)]
+    trades = Trade.objects.filter(question_id__in=family_ids).aggregate(
         cost=Coalesce(Sum("cost"), zero), fee=Coalesce(Sum("fee"), zero))
-    paid = Payout.objects.filter(question=question, kind=Payout.Kind.PAYOUT).aggregate(
+    paid = Payout.objects.filter(question_id__in=family_ids, kind=Payout.Kind.PAYOUT).aggregate(
         total=Coalesce(Sum("amount"), zero))["total"]
+    total_subsidy = question.subsidy + sum((s.subsidy for s in subs), zero)
     # What the market maker holds: the subsidy plus net stakes (fees excluded) minus payouts.
-    maker = question.subsidy + trades["cost"] - trades["fee"] - paid
-    subsidy_back = _floor_cent(min(max(maker, zero), question.subsidy))
+    maker = total_subsidy + trades["cost"] - trades["fee"] - paid
+    subsidy_back = _floor_cent(min(max(maker, zero), total_subsidy))
     if subsidy_back > 0 and refund_subsidy:
         _credit(creator, subsidy_back, LedgerEntry.Kind.SUBSIDY_RETURN, question)
-    creator_fee = _floor_cent(question.fee_pool * Decimal(settings.CREATOR_FEE_SHARE))
+    total_fee_pool = question.fee_pool + sum((s.fee_pool for s in subs), zero)
+    creator_fee = _floor_cent(total_fee_pool * Decimal(settings.CREATOR_FEE_SHARE))
     if creator_fee > 0:
         _credit(creator, creator_fee, LedgerEntry.Kind.CREATOR_FEE, question)
+
+
+def _resolve_family(root: Question, subs: list[Question], outcomes: dict[int, str],
+                    *, refund_subsidy: bool = True) -> Question:
+    """Resolve all option submarkets of a multiple-choice market and settle the creator once on `root`."""
+    if root.status in (Question.Status.RESOLVED, Question.Status.ANNULLED):
+        raise MarketError("Вопрос уже разрешён или аннулирован.")
+    unsettled = [s for s in subs if s.status not in (Question.Status.RESOLVED, Question.Status.ANNULLED)]
+    for sub in unsettled:
+        if outcomes.get(sub.pk) not in ("yes", "no"):
+            raise MarketError("Укажите ДА или НЕТ для каждого варианта.")
+    positions, traders = _lock_family_positions([root, *unsettled], root.creator_id)
+    by_sub: dict[int, list[Position]] = {}
+    for pos in positions:
+        by_sub.setdefault(pos.question_id, []).append(pos)
+    now = timezone.now()
+    for sub in unsettled:
+        out = outcomes[sub.pk]
+        for pos in by_sub.get(sub.pk, ()):
+            shares = pos.yes_shares if out == "yes" else pos.no_shares
+            amount = _floor_cent(shares)
+            if amount > 0:
+                _credit(pos.trader, amount, LedgerEntry.Kind.PAYOUT, sub)
+                Payout.objects.create(trader=pos.trader, question=sub, amount=amount, kind=Payout.Kind.PAYOUT)
+        sub.status = Question.Status.RESOLVED
+        sub.resolved_at = now
+        sub.outcome = out
+        sub.save(update_fields=["status", "outcome", "resolved_at"])
+    _settle_creator(root, traders, refund_subsidy=refund_subsidy, submarkets=unsettled)
+    root.status = Question.Status.RESOLVED
+    root.resolved_at = now
+    root.outcome = None
+    root.save(update_fields=["status", "outcome", "resolved_at"])
+    from .notifications import market_finished
+    market_finished(root)
+    return root
 
 
 @transaction.atomic
@@ -349,28 +401,43 @@ def annul(question: Question, *, refund_subsidy: bool = True) -> Question:
     question = Question.objects.select_for_update().get(pk=question.pk)
     if question.status in (Question.Status.RESOLVED, Question.Status.ANNULLED):
         raise MarketError("Вопрос уже разрешён или аннулирован.")
-    positions, traders = _lock_positions(question)
+    subs = list(question.submarkets.select_for_update().order_by("id"))
+    unsettled_subs = [s for s in subs if s.status not in (Question.Status.RESOLVED, Question.Status.ANNULLED)]
+    family = [question, *unsettled_subs]
+    family_ids = [q.pk for q in family]
+    by_q = {q.pk: q for q in family}
     from django.db.models import Sum
-    # Net money each trader put in: purchases with fees minus sale proceeds.
-    net = dict(Trade.objects.filter(question=question).values("trader_id").annotate(n=Sum("cost")).values_list("trader_id", "n"))
-    wanted = {tid: amount for tid, amount in net.items() if amount > 0}
-    # The market holds exactly the subsidy plus all net stakes; refunds can never exceed that.
-    pool = question.subsidy + sum(net.values(), Decimal(0))
-    total = sum(wanted.values(), Decimal(0))
-    subsidy_back = max(Decimal(0), min(question.subsidy, pool - total)) if refund_subsidy else Decimal(0)
+    rows = list(Trade.objects.filter(question_id__in=family_ids)
+                .values("question_id", "trader_id").annotate(n=Sum("cost")))
+    _, traders = _lock_family_positions(family, question.creator_id, {r["trader_id"] for r in rows})
+    # Net money each trader put into each market/option: purchases with fees minus sale proceeds.
+    wanted = [(r["question_id"], r["trader_id"], r["n"]) for r in rows if r["n"] > 0]
+    total_subsidy = question.subsidy + sum((s.subsidy for s in unsettled_subs), Decimal(0))
+    # The market holds the subsidy plus all net stakes; refunds can never exceed that.
+    pool = total_subsidy + sum((r["n"] for r in rows), Decimal(0))
+    total = sum((amount for _, _, amount in wanted), Decimal(0))
+    subsidy_back = max(Decimal(0), min(total_subsidy, pool - total)) if refund_subsidy else Decimal(0)
     available = max(Decimal(0), pool - subsidy_back)
     scale = Decimal(1) if total <= available else available / total
-    for tid, amount in sorted(wanted.items()):
+    for qid, tid, amount in sorted(wanted):
         refund = _floor_cent(amount * scale)
         if refund > 0:
-            _credit(traders[tid], refund, LedgerEntry.Kind.REFUND, question)
-            Payout.objects.create(trader=traders[tid], question=question, amount=refund, kind=Payout.Kind.REFUND)
+            target = by_q[qid]
+            _credit(traders[tid], refund, LedgerEntry.Kind.REFUND, target)
+            Payout.objects.create(trader=traders[tid], question=target, amount=refund, kind=Payout.Kind.REFUND)
     creator = traders.get(question.creator_id) if question.creator_id else None
     subsidy_back = _floor_cent(subsidy_back)
     if creator is not None and subsidy_back > 0:
         _credit(creator, subsidy_back, LedgerEntry.Kind.SUBSIDY_RETURN, question)
+    now = timezone.now()
+    for sub in subs:
+        if sub.status not in (Question.Status.RESOLVED, Question.Status.ANNULLED):
+            sub.status = Question.Status.ANNULLED
+            sub.resolved_at = now
+            sub.outcome = None
+            sub.save(update_fields=["status", "outcome", "resolved_at"])
     question.status = Question.Status.ANNULLED
-    question.resolved_at = timezone.now()
+    question.resolved_at = now
     question.outcome = None
     question.save(update_fields=["status", "outcome", "resolved_at"])
     from .notifications import market_finished
@@ -387,33 +454,56 @@ def cancel_moderated(question: Question) -> Question:
     """
     from django.db.models import Sum
     from .models import Dispute
-    question = Question.objects.select_for_update().get(pk=question.pk)
+    root_id = question.parent_id or question.pk
+    question = Question.objects.select_for_update().get(pk=root_id)
     if question.status not in (Question.Status.OPEN, Question.Status.CLOSED):
         raise MarketError("Рынок уже завершён или отменён. Повторный возврат невозможен.")
     if not question.is_trading:
         raise MarketError("Отмена с возвратом доступна только для торгового рынка.")
-    net = dict(Trade.objects.filter(question=question).values('trader_id').annotate(
-        amount=Sum('cost')).values_list('trader_id', 'amount'))
-    disputes = list(Dispute.objects.select_for_update().filter(question=question, upheld__isnull=True).order_by('trader_id'))
-    _, traders = _lock_positions(question, set(net) | {d.trader_id for d in disputes})
-    wanted = {tid: amount for tid, amount in net.items() if amount > 0}
-    total = sum(wanted.values(), Decimal(0))
-    available = max(Decimal(0), question.subsidy+sum(net.values(), Decimal(0)))
-    question.refund_compensation = max(Decimal(0), total-available)
-    for tid, amount in sorted(wanted.items()):
-        _credit(traders[tid], amount, LedgerEntry.Kind.REFUND, question)
-        Payout.objects.create(trader=traders[tid], question=question, amount=amount, kind=Payout.Kind.REFUND)
+    subs = list(question.submarkets.select_for_update().order_by("id"))
+    unsettled_subs = [s for s in subs if s.status not in (Question.Status.RESOLVED, Question.Status.ANNULLED)]
+    family = [question, *unsettled_subs]
+    family_ids = [q.pk for q in family]
+    by_q = {q.pk: q for q in family}
+    rows = list(Trade.objects.filter(question_id__in=family_ids)
+                .values('question_id', 'trader_id').annotate(amount=Sum('cost')))
+    disputes = list(Dispute.objects.select_for_update().filter(
+        question_id__in=[question.pk, *(s.pk for s in subs)], upheld__isnull=True).order_by('trader_id', 'pk'))
+    _, traders = _lock_family_positions(
+        family, question.creator_id, {r['trader_id'] for r in rows} | {d.trader_id for d in disputes})
+    wanted = [(r['question_id'], r['trader_id'], r['amount']) for r in rows if r['amount'] > 0]
+    total = sum((amount for _, _, amount in wanted), Decimal(0))
+    total_subsidy = question.subsidy + sum((s.subsidy for s in unsettled_subs), Decimal(0))
+    available = max(Decimal(0), total_subsidy + sum((r['amount'] for r in rows), Decimal(0)))
+    question.refund_compensation = max(Decimal(0), total - available)
+    for qid, tid, amount in sorted(wanted):
+        target = by_q[qid]
+        _credit(traders[tid], amount, LedgerEntry.Kind.REFUND, target)
+        Payout.objects.create(trader=traders[tid], question=target, amount=amount, kind=Payout.Kind.REFUND)
     for dispute in disputes:
         _credit(traders[dispute.trader_id], dispute.stake, LedgerEntry.Kind.DISPUTE_REFUND, question)
         dispute.upheld = True
         dispute.save(update_fields=['upheld'])
+    now = timezone.now()
+    hidden_at = question.hidden_at or now
+    for sub in subs:
+        sub.status = Question.Status.ANNULLED
+        sub.outcome = None
+        sub.resolution_state = Question.Resolution.FINAL
+        sub.creator_at_fault = True
+        sub.moderation_hidden = True
+        sub.hidden_at = sub.hidden_at or hidden_at
+        sub.resolved_at = now
+        sub.dispute_until = None
+        sub.save(update_fields=['status', 'outcome', 'resolution_state', 'creator_at_fault',
+                                'moderation_hidden', 'hidden_at', 'resolved_at', 'dispute_until'])
     question.status = Question.Status.ANNULLED
     question.outcome = None
     question.resolution_state = Question.Resolution.FINAL
     question.creator_at_fault = True
     question.moderation_hidden = True
-    question.hidden_at = question.hidden_at or timezone.now()
-    question.resolved_at = timezone.now()
+    question.hidden_at = hidden_at
+    question.resolved_at = now
     question.dispute_until = None
     question.save(update_fields=['status', 'outcome', 'resolution_state', 'creator_at_fault',
         'moderation_hidden', 'hidden_at', 'resolved_at', 'dispute_until', 'refund_compensation'])
@@ -704,36 +794,65 @@ def confirm_purchase(trader, question, token):
 # --- resolution by the creator and disputes (spec E4) ---------------------------------
 
 def _participant(trader: Trader, question: Question) -> bool:
-    return Trade.objects.filter(trader=trader, question=question).exists()
+    from django.db.models import Q
+    root_id = question.parent_id or question.pk
+    return Trade.objects.filter(trader=trader).filter(Q(question_id=root_id) | Q(question__parent_id=root_id)).exists()
 
 
 @transaction.atomic
 def propose_resolution(trader: Trader, question: Question, outcome: str, *, evidence=None,
-                       evidence_file_id: str = "", note: str = "") -> Question:
+                       evidence_file_id: str = "", note: str = "",
+                       submarket_outcomes: dict[int | str, str] | None = None) -> Question:
     """The creator states the outcome with proof; a 24-hour dispute window opens."""
     from datetime import timedelta
-    question = Question.objects.select_for_update().get(pk=question.pk)
+    root_id = question.parent_id or question.pk
+    question = Question.objects.select_for_update().get(pk=root_id)
+    subs = list(question.submarkets.select_for_update().order_by("id"))
     if question.creator_id != trader.pk:
         raise MarketError("Итог указывает только создатель рынка.")
-    if outcome not in ("yes", "no", "cancel"):
-        raise MarketError("Выберите ДА, НЕТ или отмену рынка.")
     if question.status not in (Question.Status.OPEN, Question.Status.CLOSED) or question.resolution_state:
         raise MarketError("Итог этого рынка уже указан.")
     if question.accepting_entries:
         raise MarketError("Приём прогнозов ещё идёт — итог можно указать после его окончания.")
+    outcomes_map: dict[int, str] = {}
+    if subs and outcome != "cancel":
+        if not submarket_outcomes:
+            raise MarketError("Укажите ДА или НЕТ для каждого варианта или отмените рынок.")
+        try:
+            outcomes_map = {int(k): str(v) for k, v in submarket_outcomes.items()}
+        except (TypeError, ValueError):
+            raise MarketError("Укажите ДА или НЕТ для каждого варианта или отмените рынок.") from None
+        if set(outcomes_map) != {s.pk for s in subs} or any(v not in ("yes", "no") for v in outcomes_map.values()):
+            raise MarketError("Укажите ДА или НЕТ для каждого варианта или отмените рынок.")
+        outcome = "yes"
+    elif outcome not in ("yes", "no", "cancel"):
+        raise MarketError("Выберите ДА, НЕТ или отмену рынка.")
     if outcome != "cancel" and not (evidence or evidence_file_id):
         raise MarketError("Пришлите фото или скриншот — доказательство итога.")
     now = timezone.now()
+    until = now + timedelta(hours=settings.DISPUTE_WINDOW_HOURS)
     question.status = Question.Status.CLOSED
     question.resolution_state = Question.Resolution.PENDING
     question.proposed_outcome = outcome
     question.proposed_at = now
-    question.dispute_until = now + timedelta(hours=settings.DISPUTE_WINDOW_HOURS)
+    question.dispute_until = until
     question.evidence_file_id = evidence_file_id
     question.evidence_note = (note or "")[:500]
+    fields = ["status", "resolution_state", "proposed_outcome", "proposed_at", "dispute_until",
+              "evidence_file_id", "evidence_note"]
     if evidence is not None:
         question.evidence = evidence
-    question.save()
+        fields.append("evidence")
+    question.save(update_fields=fields)
+    for sub in subs:
+        if sub.status in (Question.Status.RESOLVED, Question.Status.ANNULLED):
+            continue
+        sub.status = Question.Status.CLOSED
+        sub.resolution_state = Question.Resolution.PENDING
+        sub.proposed_outcome = "cancel" if outcome == "cancel" else outcomes_map[sub.pk]
+        sub.proposed_at = now
+        sub.dispute_until = until
+        sub.save(update_fields=["status", "resolution_state", "proposed_outcome", "proposed_at", "dispute_until"])
     return question
 
 
@@ -741,7 +860,9 @@ def propose_resolution(trader: Trader, question: Question, outcome: str, *, evid
 def open_dispute(trader: Trader, question: Question, reason: str = ""):
     """A participant challenges the stated outcome; the stake comes back if the dispute is upheld."""
     from .models import Dispute
-    question = Question.objects.select_for_update().get(pk=question.pk)
+    root_id = question.parent_id or question.pk
+    question = Question.objects.select_for_update().get(pk=root_id)
+    subs = list(question.submarkets.select_for_update().order_by("id"))
     trader = Trader.objects.select_for_update().get(pk=trader.pk)
     if question.resolution_state not in (Question.Resolution.PENDING, Question.Resolution.DISPUTED):
         raise MarketError("Оспорить можно только итог в окне спора.")
@@ -760,15 +881,27 @@ def open_dispute(trader: Trader, question: Question, reason: str = ""):
     dispute = Dispute.objects.create(question=question, trader=trader, stake=stake, reason=(reason or "")[:500])
     question.resolution_state = Question.Resolution.DISPUTED
     question.save(update_fields=["resolution_state"])
+    for sub in subs:
+        sub.resolution_state = Question.Resolution.DISPUTED
+        sub.save(update_fields=["resolution_state"])
     _after_commit("dispute_opened", question.pk)
     return dispute
 
 
-def _apply(question: Question, decision: str, *, creator_at_fault: bool) -> Question:
+def _apply(question: Question, decision: str, *, creator_at_fault: bool,
+           submarket_outcomes: dict[int, str] | None = None) -> Question:
+    subs = list(question.submarkets.select_for_update().order_by("id"))
     if decision == "cancel":
         question = annul(question, refund_subsidy=not creator_at_fault)
+    elif subs:
+        outcomes = submarket_outcomes or {s.pk: s.proposed_outcome for s in subs}
+        question = _resolve_family(question, subs, outcomes, refund_subsidy=not creator_at_fault)
     else:
         question = resolve(question, decision, refund_subsidy=not creator_at_fault)
+    for sub in subs:
+        sub.resolution_state = Question.Resolution.FINAL
+        sub.creator_at_fault = creator_at_fault
+        sub.save(update_fields=["resolution_state", "creator_at_fault"])
     question.resolution_state = Question.Resolution.FINAL
     question.creator_at_fault = creator_at_fault
     question.save(update_fields=["resolution_state", "creator_at_fault"])
@@ -778,7 +911,8 @@ def _apply(question: Question, decision: str, *, creator_at_fault: bool) -> Ques
 @transaction.atomic
 def finalize_resolution(question: Question) -> Question:
     """No dispute within the window: the creator's outcome stands."""
-    question = Question.objects.select_for_update().get(pk=question.pk)
+    root_id = question.parent_id or question.pk
+    question = Question.objects.select_for_update().get(pk=root_id)
     if question.resolution_state != Question.Resolution.PENDING:
         raise MarketError("Рынок не ждёт окончания окна спора.")
     if question.dispute_until > timezone.now():
@@ -787,19 +921,35 @@ def finalize_resolution(question: Question) -> Question:
 
 
 @transaction.atomic
-def moderator_decide(question: Question, decision: str) -> Question:
+def moderator_decide(question: Question, decision: str, *,
+                     submarket_outcomes: dict[int | str, str] | None = None) -> Question:
     """Final word on a dispute. Upheld disputes get their stake back; a wrong creator loses the subsidy."""
     from .models import Dispute
     if decision not in ("yes", "no", "cancel"):
         raise MarketError("Решение: ДА, НЕТ или отмена.")
-    question = Question.objects.select_for_update().get(pk=question.pk)
+    root_id = question.parent_id or question.pk
+    question = Question.objects.select_for_update().get(pk=root_id)
+    subs = list(question.submarkets.select_for_update().order_by("id"))
     if question.resolution_state != Question.Resolution.DISPUTED:
         raise MarketError("По этому рынку нет открытого спора.")
     if decision == "cancel":
         question = cancel_moderated(question)
         _after_commit("moderator_decided", question.pk, decision, True)
         return question
-    upheld = decision != question.proposed_outcome
+    outcomes_map: dict[int, str] | None = None
+    if subs:
+        if submarket_outcomes is not None:
+            outcomes_map = {int(k): str(v) for k, v in submarket_outcomes.items()}
+            if set(outcomes_map) != {s.pk for s in subs} or any(v not in ("yes", "no") for v in outcomes_map.values()):
+                raise MarketError("Укажите ДА или НЕТ для каждого варианта.")
+            upheld = question.proposed_outcome == "cancel" or any(outcomes_map[s.pk] != s.proposed_outcome for s in subs)
+        elif decision == question.proposed_outcome and question.proposed_outcome != "cancel":
+            outcomes_map = {s.pk: s.proposed_outcome for s in subs}
+            upheld = False
+        else:
+            raise MarketError("Для рынка с вариантами подтвердите исход автора или отмените рынок.")
+    else:
+        upheld = decision != question.proposed_outcome
     disputes = list(Dispute.objects.select_for_update().filter(question=question, upheld__isnull=True).order_by("trader_id"))
     for dispute in disputes:
         dispute.upheld = upheld
@@ -807,7 +957,7 @@ def moderator_decide(question: Question, decision: str) -> Question:
         if upheld:
             _credit(Trader.objects.select_for_update().get(pk=dispute.trader_id), dispute.stake,
                     LedgerEntry.Kind.DISPUTE_REFUND, question)
-    question = _apply(question, decision, creator_at_fault=upheld)
+    question = _apply(question, decision, creator_at_fault=upheld, submarket_outcomes=outcomes_map)
     _after_commit("moderator_decided", question.pk, decision, upheld)
     return question
 
@@ -815,10 +965,12 @@ def moderator_decide(question: Question, decision: str) -> Question:
 @transaction.atomic
 def cancel_unresolved(question: Question) -> Question:
     """The creator stayed silent past the deadline: everyone, the creator included, gets their coins back."""
-    question = Question.objects.select_for_update().get(pk=question.pk)
+    root_id = question.parent_id or question.pk
+    question = Question.objects.select_for_update().get(pk=root_id)
     if question.resolution_state or question.status not in (Question.Status.OPEN, Question.Status.CLOSED):
         raise MarketError("Итог уже указан.")
     question = annul(question)
+    question.submarkets.update(resolution_state=Question.Resolution.FINAL)
     question.resolution_state = Question.Resolution.FINAL
     question.save(update_fields=["resolution_state"])
     return question
@@ -853,7 +1005,10 @@ def grant_referral_reward(friend: Trader):
         return None
     if ReferralReward.objects.filter(friend_id=friend.pk).exists():
         return None
-    markets = Trade.objects.filter(trader_id=friend.pk, shares__gt=0).values("question_id").distinct().count()
+    from django.db.models.functions import Coalesce
+    markets = (Trade.objects.filter(trader_id=friend.pk, shares__gt=0)
+               .annotate(root_id=Coalesce("question__parent_id", "question_id"))
+               .values("root_id").distinct().count())
     if markets < settings.REFERRAL_PREDICTIONS:
         return None
     locked = {t.pk: t for t in Trader.objects.select_for_update()

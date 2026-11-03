@@ -185,7 +185,7 @@ export function createdStatusLine(
     case 'disputed':
       return `Итог оспорен · ${people}`;
     case 'resolved':
-      return `Завершён · итог ${outcomeLabel(market.outcome)}`;
+      return market.outcome ? `Завершён · итог ${outcomeLabel(market.outcome)}` : `Завершён · ${people}`;
     case 'annulled':
       return 'Рынок отменён, монеты вернулись';
   }

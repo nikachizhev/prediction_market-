@@ -40,9 +40,14 @@ def show_card(chat_id, question, page=0, *, message_id=None, result=''):
     disputes = question.disputes.select_related('trader').order_by('pk')
     total = disputes.count()
     page = min(max(page, 0), max(0, (total-1)//3))
+    subs = list(question.submarkets.all().order_by('id'))
+    if subs and question.proposed_outcome != 'cancel':
+        proposed_str = ', '.join(f'{s.option_label or s.title}: {LABELS.get(s.proposed_outcome, "—")}' for s in subs)
+    else:
+        proposed_str = LABELS.get(question.proposed_outcome, "Не указан")
     text = (f'⚖️ СПОР ОБ ИСХОДЕ\n\nРынок #{question.pk}: {question.title[:250]}\n'
             f'Критерий: {question.resolution_criteria[:600] or "Не указан"}\n'
-            f'Исход автора: {LABELS.get(question.proposed_outcome, "Не указан")}\n'
+            f'Исход автора: {proposed_str}\n'
             f'Комментарий автора: {question.evidence_note[:500] or "Нет"}\n'
             f'Обращений: {total}. Страница {page+1}.')
     for dispute in disputes[page*3:(page+1)*3]:
@@ -54,11 +59,18 @@ def show_card(chat_id, question, page=0, *, message_id=None, result=''):
     rows.append([{'text': '🔎 Полная карточка и доказательство', 'url': f'{settings.SITE_URL}/admin/market/question/{question.pk}/change/'}])
     latest = disputes.filter(upheld__isnull=True).order_by('-pk').first()
     if latest and question.resolution_state == Question.Resolution.DISPUTED:
-        for decision, label in LABELS.items():
-            caption = f'Подтвердить исход автора: {label}' if decision == question.proposed_outcome else f'Изменить исход на {label}'
-            if decision == 'cancel':
-                caption = 'Аннулировать по правилам спора'
-            rows.append([{'text': caption, 'callback_data': f'ds:ask:{decision}:{question.pk}:{latest.pk}'}])
+        if subs:
+            if question.proposed_outcome != 'cancel':
+                rows.append([{'text': 'Подтвердить исход автора',
+                              'callback_data': f'ds:ask:yes:{question.pk}:{latest.pk}'}])
+            rows.append([{'text': 'Аннулировать по правилам спора',
+                          'callback_data': f'ds:ask:cancel:{question.pk}:{latest.pk}'}])
+        else:
+            for decision, label in LABELS.items():
+                caption = f'Подтвердить исход автора: {label}' if decision == question.proposed_outcome else f'Изменить исход на {label}'
+                if decision == 'cancel':
+                    caption = 'Аннулировать по правилам спора'
+                rows.append([{'text': caption, 'callback_data': f'ds:ask:{decision}:{question.pk}:{latest.pk}'}])
     else:
         text += f'\n\nИтог: {LABELS.get(question.outcome, question.get_status_display())}.'
         record = getattr(question, 'dispute_decision', None)

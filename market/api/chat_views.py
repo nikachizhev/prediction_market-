@@ -34,7 +34,8 @@ def chat(request, code):
 def chat_markets(request, code):
     trader = request.trader
     group = chat_for(trader, code)
-    qs = (visible_questions(trader).filter(group=group, kind=Question.Kind.LMSR, hidden_at__isnull=True)
+    qs = (visible_questions(trader)
+          .filter(group=group, kind=Question.Kind.LMSR, parent__isnull=True, hidden_at__isnull=True)
           .select_related("group")
           .annotate(finished=Case(When(status__in=ACTIVE, then=Value(0)), default=Value(1),
                                   output_field=IntegerField()))
@@ -49,7 +50,7 @@ def chat_markets(request, code):
     now = timezone.now()
     starred = s.starred_ids(trader)
     sides = s.my_sides(trader, [q.pk for q in items])
-    return {"items": [s.card(q, starred=starred, now=now, my_side=sides.get(q.pk)) for q in items],
+    return {"items": [s.card(q, starred=starred, now=now, my_side=sides.get(q.pk), trader=trader) for q in items],
             "next_page": page + 1 if page * PAGE < total else None, "total": total}
 
 

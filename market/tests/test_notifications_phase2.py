@@ -192,8 +192,9 @@ def test_results_confetti_only_for_winners(send):
     services.buy(boris, q, "no", 50)
     services.resolve(q, "yes")
     q.refresh_from_db()
-    bot_resolution.send_results(q)
-    bot_resolution.send_results(q)
+    with patch("django.utils.timezone.now", return_value=NOON):
+        bot_resolution.send_results(q)
+        bot_resolution.send_results(q)
     notices.flush(NOON)
     calls = {c.args[0]: c for c in send.call_args_list}
     assert len(send.call_args_list) == 2

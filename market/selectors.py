@@ -16,12 +16,18 @@ MARKET_SORTS = {
 
 def market_list(*, search: str = "", status: str = "", source: str = "", sort: str = "new", trader=None) -> QuerySet:
     """Return market cards with their list-page aggregates."""
+    from django.db.models import IntegerField
+    from django.db.models.functions import Coalesce
     from .models import Trade
-    volumes = Trade.objects.filter(question_id=OuterRef("pk")).order_by().values("question_id").annotate(total=Sum(Abs("cost"))).values("total")
+    family_trades = (Trade.objects.annotate(root_id=Coalesce("question__parent_id", "question_id"))
+                     .filter(root_id=OuterRef("pk")).order_by().values("root_id"))
+    volumes = family_trades.annotate(total=Sum(Abs("cost"))).values("total")
+    trade_counts = family_trades.annotate(total=Count("id")).values("total")
+    trader_counts = family_trades.annotate(total=Count("trader_id", distinct=True)).values("total")
     from .access import visible_questions
-    qs = visible_questions(trader).annotate(
-        n_traders=Count("trades__trader", distinct=True),
-        n_trades=Count("trades", distinct=True),
+    qs = visible_questions(trader).filter(parent__isnull=True).annotate(
+        n_traders=Coalesce(Subquery(trader_counts, output_field=IntegerField()), 0),
+        n_trades=Coalesce(Subquery(trade_counts, output_field=IntegerField()), 0),
         n_answers=Count("submissions", distinct=True),
         volume=Subquery(volumes, output_field=DecimalField()),
     )

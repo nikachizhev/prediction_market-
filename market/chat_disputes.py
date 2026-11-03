@@ -46,9 +46,9 @@ def _plural(n: int, one: str, few: str, many: str) -> str:
     return many
 
 
-def verdict(decision: str, proposed: str) -> str:
+def verdict(decision: str, proposed: str, *, multi: bool = False) -> str:
     if decision == proposed:
-        return f"итог создателя верный ({LABELS[decision]})"
+        return "итог создателя верный" if multi else f"итог создателя верный ({LABELS[decision]})"
     if decision == "cancel":
         return "итог неверный, рынок отменён"
     return f"итог неверный, правильный — {LABELS[decision]}"
@@ -57,6 +57,7 @@ def verdict(decision: str, proposed: str) -> str:
 def card(review: ChatDisputeReview, *, photo: bool = False) -> str:
     """What an admin sees: the market, its rules, the creator's outcome and proof, the disputers' comments."""
     question = review.question
+    subs = list(question.submarkets.all().order_by("id"))
     lines = [f"<b>Спор в чате «{html.escape(review.group.name)}»</b>",
              "Итог рынка оспорили. Ты админ чата и не делал прогнозов в этом рынке — реши, кто прав.",
              "",
@@ -65,6 +66,10 @@ def card(review: ChatDisputeReview, *, photo: bool = False) -> str:
              ""]
     if question.proposed_outcome == "cancel":
         lines.append("Создатель отменяет рынок.")
+    elif subs:
+        lines.append("Итоги создателя по вариантам:")
+        for s in subs:
+            lines.append(f"• {html.escape(s.option_label or s.title)}: <b>{LABELS.get(s.proposed_outcome, '—')}</b>")
     else:
         lines.append(f"Итог создателя: <b>{LABELS.get(question.proposed_outcome, '—')}</b>")
     if question.evidence_note:
@@ -90,7 +95,7 @@ def card(review: ChatDisputeReview, *, photo: bool = False) -> str:
 
 
 def _decided_line(review: ChatDisputeReview, trader_id: int | None) -> str:
-    text = verdict(review.decision, review.question.proposed_outcome)
+    text = verdict(review.decision, review.question.proposed_outcome, multi=review.question.submarkets.exists())
     if review.decided_by_id and review.decided_by_id == trader_id:
         return f"Ты решил: {text}. Решение окончательное."
     if review.decided_by is None:
@@ -126,8 +131,10 @@ def _first_keyboard(review: ChatDisputeReview) -> dict:
 def _wrong_keyboard(review: ChatDisputeReview) -> dict:
     data = f"{CALLBACK_PREFIX}{review.pk}"
     labels = {"yes": "ДА", "no": "НЕТ", "cancel": "Отменить рынок"}
-    options = [{"text": labels[d], "callback_data": f"{data}:{d}"}
-               for d in DECISIONS if d != review.question.proposed_outcome]
+    choices = ("cancel",) if review.question.submarkets.exists() else tuple(
+        d for d in DECISIONS if d != review.question.proposed_outcome
+    )
+    options = [{"text": labels[d], "callback_data": f"{data}:{d}"} for d in choices]
     return {"inline_keyboard": [options, [{"text": "Назад", "callback_data": f"{data}:back"}]]}
 
 
@@ -168,8 +175,10 @@ def _edit_all(review: ChatDisputeReview, line_for) -> None:
 # --- who decides -----------------------------------------------------------------------------------
 
 def _has_stake(trader: Trader, question: Question) -> bool:
-    return (Trade.objects.filter(trader=trader, question=question).exists()
-            or Position.objects.filter(trader=trader, question=question).exists())
+    from django.db.models import Q
+    family_q = Q(question=question) | Q(question__parent=question)
+    return (Trade.objects.filter(trader=trader).filter(family_q).exists()
+            or Position.objects.filter(trader=trader).filter(family_q).exists())
 
 
 def eligible_admins(review: ChatDisputeReview) -> list[Trader]:
