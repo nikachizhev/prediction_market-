@@ -245,8 +245,11 @@ class Component extends DCLogic {
     return { bg: '#F2F3F5', card: '#FFFFFF', ink: '#111418', sub: '#5F6672', line: '#E3E5E8', yes: '#1A5FB8', yesTint: '#E7EFFA', no: '#B23A0B', noTint: '#FBEDE6', yesFill: '#1F6FD6', noFill: '#C2410C', gold: '#D99A00', goldTint: '#FBF1D9', overlay: 'rgba(17, 20, 24, 0.45)' };
   }
 
-  maxAmount(balance) {
-    return Math.max(1, Math.min(200, Math.floor(balance * 0.2)));
+  maxAmount(balance, invested) {
+    const basis = balance + (invested || 0);
+    const cap = Math.floor(basis * 0.3);
+    const room = Math.max(0, cap - (invested || 0));
+    return Math.max(1, Math.min(200, room, balance*0.2));
   }
 
   // LMSR, b = 144 (subsidy 100 = b·ln2), 2% fee taken from the stake
@@ -266,13 +269,18 @@ class Component extends DCLogic {
   }
 
   patchSheet(patch) {
-    this.setState((st) => ({ sheet: st.sheet ? Object.assign({}, st.sheet, patch) : null }));
+    if (!this.state.sheet) return;
+    this.state.sheet = Object.assign({}, this.state.sheet, patch);
+    this.setState({ sheet: this.state.sheet });
   }
 
   confirm() {
     const s = this.state;
     if (!s.sheet) return;
-    const amount = Math.min(s.sheet.amount, this.maxAmount(s.balance));
+    
+    const max = this.maxAmount(s.balance, s.pos ? s.pos.invested : 0);
+    const amount = Math.min(s.sheet.amount, max);
+    
     const side = s.sheet.side;
     const q = this.quote(s.p, side, amount);
     const before = Math.round(s.p * 100);
@@ -285,11 +293,17 @@ class Component extends DCLogic {
     const pos = s.pos.side === side
       ? { side: side, shares: s.pos.shares + q.shares, invested: s.pos.invested + amount }
       : { side: side, shares: q.shares, invested: amount };
-    this.setState({
-      p: q.yesAfter, series: series, pos: pos, balance: s.balance - amount, sheet: null,
-      trades: [{ side: side, amount: amount, move: before + '% → ' + after + '%', ago: 'только что', mine: true }].concat(s.trades).slice(0, 6),
-      toast: 'Принято: ' + (side === 'yes' ? 'ДА' : 'НЕТ') + ' на ' + amount + '. Выплата, если угадаешь: ' + Math.round(q.shares)
-    });
+      
+    s.p = q.yesAfter;
+    s.series = series;
+    s.pos = pos;
+    s.balance = s.balance - amount;
+    s.sheet = null;
+    s.trades = [{ side: side, amount: amount, move: before + '% → ' + after + '%', ago: 'только что', mine: true }].concat(s.trades).slice(0, 6);
+    s.toast = 'Принято: ' + (side === 'yes' ? 'ДА' : 'НЕТ') + ' на ' + amount + '. Выплата, если угадаешь: ' + Math.round(q.shares);
+
+    this.setState(s);
+    
     clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => this.setState({ toast: '' }), 2600);
   }
@@ -327,7 +341,7 @@ class Component extends DCLogic {
 
     let sheet = {};
     if (s.sheet) {
-      const max = this.maxAmount(s.balance);
+      const max = this.maxAmount(s.balance, s.pos ? s.pos.invested : 0);
       const amount = Math.min(s.sheet.amount, max);
       const q = this.quote(s.p, s.sheet.side, amount);
       const yes = s.sheet.side === 'yes';
@@ -345,15 +359,18 @@ class Component extends DCLogic {
         fee: String(Math.round(amount * 0.02 * 10) / 10).replace('.', ','),
         fill: yes ? t.yesFill : t.noFill,
         confirmLabel: 'Прогноз ' + (yes ? 'ДА' : 'НЕТ') + ' на ' + amount,
-        limitNote: 'Не больше ' + max + ' за сделку — это 20% баланса',
+        limitNote: 'Не больше ' + max + ' за сделку — это 20% баланса, и не больше 30% баланса суммарно по всем ставкам в этот рынок',
         confirm: () => this.confirm(),
         close: () => this.setState({ sheet: null })
       };
     }
 
     const posYes = s.pos.side === 'yes';
-    const openSheet = (side) => this.setState((st) => ({ sheet: { side: side, amount: Math.min(100, this.maxAmount(st.balance)) } }));
-
+    const openSheet = (side) => {
+      const max = this.maxAmount(this.state.balance, this.state.pos ? this.state.pos.invested : 0);
+      this.state.sheet = { side: side, amount: Math.min(100, max) };
+      this.setState({ sheet: this.state.sheet });
+    };
     return {
       t: t, isOpen: isOpen, isReview: isReview, isDone: isDone,
       statusLabel: statusStyle.label, statusBg: statusStyle.bg, statusInk: statusStyle.ink,

@@ -103,6 +103,7 @@ RESOLUTION_TIMEOUT_HOURS = 72   # creator silent this long after resolves_at -> 
 MARKETS_PER_DAY = 3
 MARKET_MIN_HOURS = 1
 MARKET_MAX_DAYS = 365
+MARKET_STAKE_SHARE = "0.30"
 COMPLAINTS_TO_HIDE = 3
 REFERRAL_REWARD = 300           # to both the friend and the inviter...
 REFERRAL_PREDICTIONS = 5        # ...once the friend has bought in this many different markets

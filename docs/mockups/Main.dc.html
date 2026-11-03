@@ -209,11 +209,14 @@ class Component extends DCLogic {
   }
 
   openSheet(id, side) {
-    this.setState((st) => ({ sheet: { id: id, side: side, amount: Math.min(100, this.maxAmount(st.balance)) } }));
+    this.state.sheet = { id: id, side: side, amount: Math.min(100, this.maxAmount(this.state.balance)) };
+    this.setState({ sheet: this.state.sheet });
   }
 
   patchSheet(patch) {
-    this.setState((st) => ({ sheet: st.sheet ? Object.assign({}, st.sheet, patch) : null }));
+    if (!this.state.sheet) return;
+    this.state.sheet = Object.assign({}, this.state.sheet, patch);
+    this.setState({ sheet: this.state.sheet });
   }
 
   confirm() {
@@ -230,7 +233,14 @@ class Component extends DCLogic {
     const shares = (prev && prev.side === sh.side ? prev.shares : 0) + q.shares;
     const positions = Object.assign({}, s.positions, { [m.id]: { side: sh.side, shares: shares } });
     const watched = Object.assign({}, s.watched, { [m.id]: true });
-    this.setState({ markets: markets, positions: positions, watched: watched, balance: s.balance - amount, sheet: null });
+    
+    s.markets = markets;
+    s.positions = positions;
+    s.watched = watched;
+    s.balance = s.balance - amount;
+    s.sheet = null;
+
+    this.setState(s);
     this.flash('Принято: ' + (sh.side === 'yes' ? 'ДА' : 'НЕТ') + ' на ' + amount + '. Выплата, если угадаешь: ' + Math.round(q.shares));
   }
 

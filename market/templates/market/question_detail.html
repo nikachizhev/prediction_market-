@@ -45,9 +45,12 @@
       <div class="card">Чтобы ставить, <a href="{% url 'market:login' %}?next={{ request.path|urlencode }}">войдите в аккаунт</a>.</div>
     {% elif conflicted and question.accepting_entries %}
       <div class="card"><div class="msg warning" style="margin:0">Вы не можете ставить: конфликт интересов.</div></div>
+    {% elif cannot_bet_reason %}
+      <div class="card"><div class="msg warning" style="margin:0">{{ cannot_bet_reason }}</div></div>
     {% elif can_bet %}
       <div class="card trade-ticket">
-        <span class="eyebrow">ВАШ ПРОГНОЗ</span><h2>Какой исход вы ожидаете?</h2><p class="small muted">Баланс: {{ current_trader.balance }} монет</p>
+        <span class="eyebrow">ВАШ ПРОГНОЗ</span><h2>Какой исход вы ожидаете?</h2>
+        <p class="small muted"> Баланс: {{ current_trader.balance }} монет · свободно в этот рынок: {{ stake_capacity }} (лимит {{ stake_pct }}% от ваших средств) </p>
         <form method="post" action="{% url 'market:buy' question.pk %}" id="betform">{% csrf_token %}
           <input type="hidden" name="purchase_token" value="{{ purchase_token }}">
           <div class="sides">
@@ -55,7 +58,7 @@
             <label><input type="radio" name="side" value="no"><span>НЕТ</span></label>
           </div>
           <label for="amount">Сумма, монет (макс. {{ max_bet }})</label>
-          <input type="number" id="amount" name="amount" min="1" max="{{ max_bet }}" step="0.01" value="100" required>
+          <input type="number" id="amount" name="amount" min="1" max="{{ max_bet }}" step="0.01" value="{{ default_amount }}" required>
           <div class="stake-presets">{% for amount in stake_presets %}<button type="button" data-stake="{{ amount }}">{{ amount }}</button>{% endfor %}</div>
           <div id="preview" class="muted">&nbsp;</div>
           <div class="purchase-actions"><button class="btn" type="submit" disabled>Купить акции</button><button type="button" id="purchase-help-open" class="purchase-help-trigger" aria-label="Объяснение покупки" aria-haspopup="dialog" aria-controls="purchase-help" disabled>?</button></div>
