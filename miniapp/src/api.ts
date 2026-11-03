@@ -64,6 +64,7 @@ export interface SubmarketCard extends MarketCard {
 
 export interface MarketCard {
   id: number;
+  parent_id?: number | null;
   title: string;
   category: string;
   prob: number;

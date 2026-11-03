@@ -122,8 +122,6 @@ def apply_decision(pk, state, reason, *, actor, expected_hash, job=None):
         reason=reason, actor=actor, model=settings.PREMODERATION_MODEL if actor == "automatic" else "")
     if state == "rejected":
         from .services import annul
-        for child in root.submarkets.exclude(status__in=("resolved", "annulled")):
-            annul(child)
         if root.status not in ("resolved", "annulled"):
             annul(root)
     if state == "approved":

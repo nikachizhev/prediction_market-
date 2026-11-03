@@ -360,8 +360,9 @@ def trade_result(request, question, trade):
     from ..events import log_event
     log_event(request.trader, "trade", {"market": question.pk, "side": trade.side, "sell": trade.cost < 0})
     # Following a market you hold a position in is automatic (spec E6.1).
-    MarketSubscription.objects.get_or_create(trader=request.trader, question=question,
-                                             defaults={"last_probability": question.prob})
+    root = question.parent or question
+    MarketSubscription.objects.get_or_create(trader=request.trader, question=root,
+                                             defaults={"last_probability": root.prob})
     request.trader.refresh_from_db()
     question.refresh_from_db()
     return {"balance": s.money(request.trader.balance), "market": s.detail(question, request.trader),
@@ -396,12 +397,14 @@ def sell(request, pk):
 @endpoint("POST")
 def star(request, pk):
     question = get_market(request.trader, pk)
+    root = question.parent or question
     starred = bool(body(request).get("starred"))
     if starred:
-        MarketSubscription.objects.get_or_create(trader=request.trader, question=question,
-                                                 defaults={"last_probability": question.prob})
+        MarketSubscription.objects.get_or_create(trader=request.trader, question=root,
+                                                 defaults={"last_probability": root.prob})
     else:
-        MarketSubscription.objects.filter(trader=request.trader, question=question).delete()
+        MarketSubscription.objects.filter(trader=request.trader).filter(
+            Q(question=root) | Q(question__parent=root)).delete()
     return {"starred": starred}
 
 
@@ -423,9 +426,10 @@ def share(request, pk):
 @endpoint("POST")
 def report(request, pk):
     question = get_market(request.trader, pk)
+    root_id = question.parent_id or question.pk
     reason = str(body(request).get("reason") or "")[:300]
     with transaction.atomic():
-        question = Question.objects.select_for_update().get(pk=question.pk)
+        question = Question.objects.select_for_update().get(pk=root_id)
         try:
             with transaction.atomic():
                 MarketComplaint.objects.create(question=question, trader=request.trader, reason=reason)
@@ -434,6 +438,7 @@ def report(request, pk):
         if not question.hidden_at and question.complaints.filter(status=MarketComplaint.Status.PENDING).count() >= settings.COMPLAINTS_TO_HIDE:
             question.hidden_at = timezone.now()
             question.save(update_fields=["hidden_at"])
+            question.submarkets.update(hidden_at=question.hidden_at)
     return {"ok": True}
 
 
@@ -454,17 +459,27 @@ def mine(request):
         item = s.card(pos.question, starred=starred, now=now)
         item["position"] = s.position(pos, pos.question)
         held.append(item)
-    watched = (visible.filter(subscriptions__trader=trader).select_related("group")
-               .order_by("-subscriptions__created_at"))
+    watched_ids: list[int] = []
+    seen_watched: set[int] = set()
+    for qid, pid in (MarketSubscription.objects.filter(trader=trader)
+                     .order_by("-created_at", "-id")
+                     .values_list("question_id", "question__parent_id")):
+        rid = pid or qid
+        if rid not in seen_watched:
+            seen_watched.add(rid)
+            watched_ids.append(rid)
+    watched_map = {q.pk: q for q in visible.filter(pk__in=watched_ids, parent__isnull=True).select_related("group")}
+    watched = [watched_map[rid] for rid in watched_ids if rid in watched_map]
     created = []
-    for q in visible.filter(creator=trader).select_related("group").order_by("-created_at"):
-        item = s.card(q, starred=starred, now=now)
-        item["fee_expected"] = s.money(0 if q.status == Question.Status.ANNULLED else q.fee_pool * Decimal(settings.CREATOR_FEE_SHARE))
+    for q in visible.filter(creator=trader, parent__isnull=True).select_related("group").order_by("-created_at"):
+        item = s.card(q, starred=starred, now=now, trader=trader)
+        pool = q.fee_pool + sum((sub.fee_pool for sub in q.submarkets.all()), Decimal(0))
+        item["fee_expected"] = s.money(0 if q.status == Question.Status.ANNULLED else pool * Decimal(settings.CREATOR_FEE_SHARE))
         item["needs_resolution"] = (q.status in (Question.Status.OPEN, Question.Status.CLOSED)
                                     and not q.accepting_entries and s.market_status(q) == "closed")
         item["resolve_link"] = f"https://t.me/{settings.TELEGRAM_BOT_USERNAME}?start=resolve_{q.pk}"
         created.append(item)
-    return {"positions": held, "watched": [s.card(q, starred=starred, now=now) for q in watched],
+    return {"positions": held, "watched": [s.card(q, starred=starred, now=now, trader=trader) for q in watched],
             "created": created}
 
 
@@ -497,7 +512,8 @@ def profile(request):
         "categories": [{**c, "profit": s.money(c["profit"])} for c in category_stats(trader)],
         "balance_history": [{"t": s.iso(t), "balance": s.money(b)} for t, b in history],
         "ledger": [{"kind": e.kind, "label": e.get_kind_display(), "amount": s.money(e.amount), "at": s.iso(e.created_at),
-                    "market": {"id": e.question_id, "title": e.question.title} if e.question_id else None}
+                    "market": ({"id": e.question.parent_id or e.question_id, "title": e.question.title}
+                               if e.question_id else None)}
                    for e in ledger],
     }
 

@@ -54,8 +54,10 @@ def review(complaint_id: int, decision: str, *, telegram_id=None, user=None) -> 
     elif decision == 'hide':
         question.moderation_hidden = True
         question.hidden_at = question.hidden_at or now
+        question.submarkets.update(moderation_hidden=True, hidden_at=question.hidden_at)
     elif not question.moderation_hidden:
         question.hidden_at = None
+        question.submarkets.update(hidden_at=None)
     question.save(update_fields=['moderation_hidden', 'hidden_at'])
     pending = MarketComplaint.objects.filter(question=question, status=MarketComplaint.Status.PENDING)
     if decision == 'cancel' and report.status == MarketComplaint.Status.UPHELD:
@@ -84,5 +86,6 @@ def restore(question_id: int, *, expected_action=None, telegram_id=None, user=No
     question.moderation_hidden = False
     question.hidden_at = None
     question.save(update_fields=['moderation_hidden', 'hidden_at'])
+    question.submarkets.update(moderation_hidden=False, hidden_at=None)
     ModerationAction.objects.create(question=question, action='restore', actor=actor)
     return question

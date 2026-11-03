@@ -139,6 +139,7 @@ describe('statusView', () => {
     expect(createdStatusLine({ ...base, status: 'open' }, 'ещё 12 дней')).toBe('Идёт приём · 27 участников · ещё 12 дней');
     expect(createdStatusLine({ ...base, status: 'closed', participants: 41 }, '')).toBe('Приём прогнозов закрыт · 41 участник');
     expect(createdStatusLine({ ...base, status: 'resolved', outcome: 'yes' }, '')).toBe('Завершён · итог ДА');
+    expect(createdStatusLine({ ...base, status: 'resolved', outcome: null }, '')).toBe('Завершён · 27 участников');
   });
 });
 

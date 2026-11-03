@@ -53,7 +53,8 @@ def notify_settings(trader: Trader) -> dict[str, bool]:
 
 def market_button(question: Question) -> dict:
     from .bot_resolution import app_button
-    return {"inline_keyboard": [[app_button("Открыть рынок", f"market/{question.pk}")]]}
+    target_id = question.parent_id or question.pk
+    return {"inline_keyboard": [[app_button("Открыть рынок", f"market/{target_id}")]]}
 
 
 def coins(value: Decimal) -> str:
@@ -199,7 +200,8 @@ def detect_moves(now: datetime | None = None) -> int:
     since = now - timedelta(hours=24)
     day = timezone.localtime(now, MSK).date().isoformat()
     created = 0
-    markets = _open_markets(now).filter(pk__in=Trade.objects.filter(created_at__gte=since).values("question_id"))
+    markets = (_open_markets(now).select_related("parent")
+               .filter(pk__in=Trade.objects.filter(created_at__gte=since).values("question_id")))
     for question in markets:
         before = (Trade.objects.filter(question=question, created_at__lt=since).order_by("created_at", "id")
                   .values_list("prob_after", flat=True).last())
@@ -209,16 +211,21 @@ def detect_moves(now: datetime | None = None) -> int:
         points = round(abs(current - before) * 100, 6)
         if points < settings.NOTIFY_MOVE_POINTS:
             continue
+        root = question.parent or question
         verb, arrow = ("выросла", "▲") if current > before else ("упала", "▼")
-        for sub in MarketSubscription.objects.filter(question=question).select_related("trader"):
+        seen_traders: set[int] = set()
+        for sub in MarketSubscription.objects.filter(question__in=[question, root]).select_related("trader"):
             trader = sub.trader
-            key = f"moves:{question.pk}:{trader.pk}:{day}"
-            if Notification.objects.filter(key=key).exists() or not can_access(trader, question):
+            if trader.pk in seen_traders:
+                continue
+            seen_traders.add(trader.pk)
+            key = f"moves:{root.pk}:{trader.pk}:{day}"
+            if Notification.objects.filter(key=key).exists() or not can_access(trader, root):
                 continue
             text = (f"вероятность {verb} до {round(current * 100)}% ({arrow} {round(points)} за сутки)."
                     + _position_text(trader, question))
-            enqueue(trader, "moves", key, f"{short(question.title)}:", text, question=question,
-                    payload={"reply_markup": market_button(question)}, now=now)
+            enqueue(trader, "moves", key, f"{short(question.title)}:", text, question=root,
+                    payload={"reply_markup": market_button(root)}, now=now)
             created += 1
     return created
 
@@ -228,9 +235,10 @@ def detect_closing(now: datetime | None = None) -> int:
     now = now or timezone.now()
     window = now + timedelta(hours=settings.NOTIFY_CLOSING_HOURS)
     created = 0
-    for question in _open_markets(now).filter(deadline__lte=window):
-        ids = set(MarketSubscription.objects.filter(question=question).values_list("trader_id", flat=True))
-        ids.update(Position.objects.filter(question=question).filter(Q(yes_shares__gt=0) | Q(no_shares__gt=0))
+    for question in _open_markets(now).filter(parent__isnull=True, deadline__lte=window):
+        family_q = Q(question=question) | Q(question__parent=question)
+        ids = set(MarketSubscription.objects.filter(family_q).values_list("trader_id", flat=True))
+        ids.update(Position.objects.filter(family_q).filter(Q(yes_shares__gt=0) | Q(no_shares__gt=0))
                    .values_list("trader_id", flat=True))
         ids.discard(question.creator_id)
         hours = max(1, math.ceil((question.deadline - now).total_seconds() / 3600))
@@ -273,6 +281,8 @@ def moderator_decided(question_id: int, decision: str, upheld: bool) -> None:
         return
     if decision == "cancel":
         verdict = "рынок отменён"
+    elif question.submarkets.exists():
+        verdict = "итоги по вариантам обновлены" if upheld else "итоги по вариантам подтверждены"
     else:
         verdict = f"итог {'ДА' if decision == 'yes' else 'НЕТ'}"
     if upheld:

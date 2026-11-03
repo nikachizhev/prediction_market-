@@ -140,6 +140,6 @@ def trader_stats(trader: Trader) -> dict:
         "correct": correct, "evaluated": evaluated,
         "rank": place["rank"] if place else None,
         "predictions": Trade.objects.filter(trader=trader, cost__gt=0).count(),
-        "markets_created": trader.created_questions.count(),
-        "disputes_lost": trader.created_questions.filter(creator_at_fault=True).count(),
+        "markets_created": trader.created_questions.filter(parent__isnull=True).count(),
+        "disputes_lost": trader.created_questions.filter(parent__isnull=True, creator_at_fault=True).count(),
     }

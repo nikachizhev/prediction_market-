@@ -40,9 +40,16 @@ def _quiet(method: str, **data) -> dict | None:
 
 def tracked_markets(trader: Trader) -> list[Question]:
     """Markets the trader follows (a trade or the star subscribes), newest subscription first."""
-    order = list(MarketSubscription.objects.filter(trader=trader)
-                 .order_by("-created_at", "-id").values_list("question_id", flat=True))
-    markets = visible_questions(trader).filter(pk__in=order, kind=Question.Kind.LMSR).exclude(
+    order: list[int] = []
+    seen: set[int] = set()
+    for qid, pid in (MarketSubscription.objects.filter(trader=trader)
+                     .order_by("-created_at", "-id")
+                     .values_list("question_id", "question__parent_id")):
+        rid = pid or qid
+        if rid not in seen:
+            seen.add(rid)
+            order.append(rid)
+    markets = visible_questions(trader).filter(pk__in=order, kind=Question.Kind.LMSR, parent__isnull=True).exclude(
         status__in=[Question.Status.RESOLVED, Question.Status.ANNULLED])
     by_id = {q.pk: q for q in markets}
     return [by_id[pk] for pk in order if pk in by_id]
@@ -51,7 +58,8 @@ def tracked_markets(trader: Trader) -> list[Question]:
 def find_market(trader: Trader, pk) -> Question | None:
     """Someone else's private market is the same as a missing one."""
     try:
-        return visible_questions(trader).filter(kind=Question.Kind.LMSR).get(pk=int(pk))
+        q = visible_questions(trader).filter(kind=Question.Kind.LMSR).get(pk=int(pk))
+        return q.parent if q.parent_id else q
     except (Question.DoesNotExist, ValueError, TypeError):
         return None
 
@@ -69,6 +77,9 @@ def short_title(title: str, limit: int = TITLE_LIMIT) -> str:
 
 
 def button_label(question: Question, now=None) -> str:
+    subs = list(question.submarkets.all().order_by("id")) if question.pk else []
+    if subs:
+        return f"{short_title(question.title)} · {len(subs)} вар."
     label = f"{short_title(question.title)} · {round(question.prob * 100)}%"
     points = round(change_24h(question, now))
     if points:
@@ -123,6 +134,22 @@ def position_line(trader: Trader, question: Question) -> str:
 
 
 def caption(trader: Trader, question: Question, now=None) -> str:
+    subs = list(question.submarkets.all().order_by("id")) if question.pk else []
+    if subs:
+        lines = [question.title]
+        for sub in subs[:6]:
+            lines.append(f"• {sub.option_label or sub.title} — {round(sub.prob * 100)}%")
+        if len(subs) > 6:
+            lines.append(f"• и ещё {len(subs) - 6}")
+        positions = list(Position.objects.filter(trader=trader, question__in=subs).select_related("question"))
+        held = []
+        for pos in positions:
+            if pos.yes_shares <= 0 and pos.no_shares <= 0:
+                continue
+            side, shares = ("ДА", pos.yes_shares) if pos.yes_shares >= pos.no_shares else ("НЕТ", pos.no_shares)
+            held.append(f"{pos.question.option_label or pos.question.title}: {side} ({shares.quantize(Decimal(1), rounding=ROUND_FLOOR)})")
+        lines.append("Твои позиции: " + ", ".join(held) if held else "Позиции нет — только слежу")
+        return "\n".join(lines)
     delta = change_24h(question, now)
     return (f"{question.title}\n{round(question.prob * 100)}% · {charts.delta_text(delta)}\n"
             f"{position_line(trader, question)}")
@@ -136,6 +163,9 @@ def send_chart(chat_id: int, trader: Trader, question: Question) -> None:
     """The animation with caption; reuses the Telegram file_id within the hour; text if rendering fails."""
     text = caption(trader, question)
     markup = market_keyboard(question)
+    if question.pk and question.submarkets.exists():
+        telegram.send(chat_id, text, reply_markup=markup)
+        return
     try:
         animation = charts.animation_for(question)
     except (charts.ChartError, OSError) as exc:

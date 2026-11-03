@@ -24,23 +24,27 @@ def visible_notifications(trader):
 
 
 def market_finished(question):
-    ids = set(Position.objects.filter(question=question).values_list("trader_id", flat=True))
-    ids.update(Submission.objects.filter(question=question).values_list("trader_id", flat=True))
-    ids.update(question.subscriptions.values_list("trader_id", flat=True))
-    if question.creator_id:
-        ids.add(question.creator_id)
+    root = question.parent or question
+    family_q = Q(question=root) | Q(question__parent=root)
+    ids = set(Position.objects.filter(family_q).values_list("trader_id", flat=True))
+    ids.update(Submission.objects.filter(question=root).values_list("trader_id", flat=True))
+    ids.update(root.subscriptions.values_list("trader_id", flat=True))
+    ids.update(Trader.objects.filter(market_subscriptions__question__parent=root).values_list("pk", flat=True))
+    if root.creator_id:
+        ids.add(root.creator_id)
     for trader in Trader.objects.filter(pk__in=ids):
         from .access import can_access
-        if not can_access(trader, question):
+        if not can_access(trader, root):
             continue
-        result = question.result_label or "Результат опубликован"
-        notify(trader, f"{question.title} — {result}.", kind="market_result", question=question,
-               key=f"market-result:{question.pk}:{trader.pk}")
+        result = root.result_label or "Результат опубликован"
+        notify(trader, f"{root.title} — {result}.", kind="market_result", question=root,
+               key=f"market-result:{root.pk}:{trader.pk}")
 
 
 def notification_url(item):
     if item.question_id:
-        return reverse("market:question", args=[item.question_id])
+        target_id = item.question.parent_id or item.question_id
+        return reverse("market:question", args=[target_id])
     if item.group_id:
         return reverse("market:group_detail", args=[item.group_id])
     return reverse("market:friends")
