@@ -141,8 +141,10 @@ def trade_block(question: Question, trader: Trader) -> str | None:
     if services.max_buy_amount(trader, question) <= 0:
         room = Decimal(settings.MARKET_CAP) - services.invested(trader, question)
         if room <= 0:
-            return f"В один рынок можно вложить не больше {settings.MARKET_CAP}."
+            return services.cap_message(question)
         return "На балансе не хватает монет."
+    if services.is_option_root(question):
+        return services.OPTION_ROOT_BLOCK
     return None
 
 
