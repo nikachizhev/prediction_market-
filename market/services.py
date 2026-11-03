@@ -61,8 +61,20 @@ def trade_limit(trader: Trader) -> Decimal:
 
 
 def invested(trader: Trader, question: Question) -> Decimal:
-    pos = Position.objects.filter(trader=trader, question=question).first()
-    return pos.spent if pos else Decimal(0)
+    """Net stake in the whole market: the options of a multi-option market share one cap."""
+    from django.db.models import Q, Sum
+    root_id = question.parent_id or question.pk
+    total = (Position.objects.filter(trader=trader).filter(Q(question_id=root_id) | Q(question__parent_id=root_id))
+             .aggregate(total=Sum("spent"))["total"])
+    return total or Decimal(0)
+
+
+def cap_message(question: Question, room: Decimal | None = None) -> str:
+    where = "В один рынок (на все варианты вместе)" if question.parent_id else "В один рынок"
+    text = f"{where} можно вложить не больше {settings.MARKET_CAP}."
+    if room is not None:
+        text += f" Осталось {_fmt(max(room, Decimal(0)))}."
+    return text
 
 
 def max_buy_amount(trader: Trader, question: Question) -> Decimal:
@@ -75,6 +87,19 @@ def check_can_trade(trader: Trader, question: Question) -> None:
         raise MarketError("Создатель рынка не может делать прогнозы на свой рынок.")
     if question.conflicted_traders.filter(pk=trader.pk).exists():
         raise MarketError("Конфликт интересов: вы не можете ставить на этот вопрос.")
+
+
+OPTION_ROOT_BLOCK = "Прогноз делается на конкретный вариант — выберите его в списке."
+
+
+def is_option_root(question: Question) -> bool:
+    """The root of a multi-option market only groups the options; it has no market maker of its own."""
+    return question.pk is not None and question.parent_id is None and question.submarkets.exists()
+
+
+def check_not_option_root(question: Question) -> None:
+    if is_option_root(question):
+        raise MarketError(OPTION_ROOT_BLOCK)
 
 
 def check_access(trader, question):
@@ -113,6 +138,7 @@ def quote(question: Question, side: str, amount: Decimal | float | int | str) ->
     check_open(question)
     if not question.is_trading:
         raise MarketError("Этот вопрос не поддерживает торговлю.")
+    check_not_option_root(question)
     if amount <= 0:
         raise MarketError("Сумма ставки должна быть положительной.")
     if question.status != Question.Status.OPEN:
@@ -173,6 +199,7 @@ def buy(trader: Trader, question: Question, side: str, amount: Decimal | float |
             return previous
     if question.status != Question.Status.OPEN:
         raise MarketError("Ставки на этот вопрос закрыты.")
+    check_not_option_root(question)
     check_can_trade(trader, question)
     if amount <= 0:
         raise MarketError("Сумма ставки должна быть положительной.")
@@ -181,9 +208,10 @@ def buy(trader: Trader, question: Question, side: str, amount: Decimal | float |
     limit = trade_limit(trader)
     if amount > limit:
         raise MarketError(f"Максимум за одну сделку — {_fmt(limit)}: 20% баланса, но не больше {settings.MAX_TRADE}.")
+    # The trader lock above serialises buys on sibling options, so the family cap holds under concurrency.
     room = Decimal(settings.MARKET_CAP) - invested(trader, question)
     if amount > room:
-        raise MarketError(f"В один рынок можно вложить не больше {settings.MARKET_CAP}. Осталось {_fmt(max(room, Decimal(0)))}.")
+        raise MarketError(cap_message(question, room))
     if amount != amount.quantize(CENT):
         raise MarketError("Укажите сумму не более чем с двумя знаками после запятой.")
     q = quote(question, side, amount)
@@ -228,6 +256,7 @@ def sell(trader: Trader, question: Question, side: str, shares: Decimal | float 
     check_open(question)
     if not question.is_trading:
         raise MarketError("Этот вопрос не поддерживает торговлю.")
+    check_not_option_root(question)
     if question.status != Question.Status.OPEN:
         raise MarketError("Ставки на этот вопрос закрыты.")
     if shares <= 0:
@@ -717,6 +746,13 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
             raise MarketError("Бот больше не админ в этом чате — новые рынки создать нельзя.")
         cost_coins = chats.creation_cost(group)
         b = chats.depth(cost_coins)
+    if cleaned_options:
+        # Every option is an independent YES/NO market (several may resolve ДА), each losing at most b * ln 2;
+        # splitting the depth keeps the whole family's loss within the creator's subsidy.
+        from . import chats
+        b = chats.depth(cost_coins, len(cleaned_options))
+        if b < 1:
+            raise MarketError("Для такой цены рынка слишком много вариантов.")
     cost = Decimal(cost_coins)
     if trader.balance < cost:
         raise MarketError(f"Создание рынка стоит {cost_coins} монет — на балансе не хватает.")
@@ -754,6 +790,7 @@ def prepare_purchase(trader, question, side, amount):
     from datetime import timedelta
     from .models import PurchaseConfirmation
     check_access(trader, question)
+    check_not_option_root(question)
     check_can_trade(trader, question)
     amount = _d(amount)
     if amount > max_buy_amount(trader, question):

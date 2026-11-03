@@ -34,9 +34,12 @@ def creation_cost(group: Group) -> int:
     return group.creation_cost or size_cost(group.member_count)
 
 
-def depth(cost: int) -> float:
-    """LMSR b for a subsidy: b * ln 2 <= cost, so the market maker's loss is always covered."""
-    return float(math.floor(cost / math.log(2)))
+def depth(cost: int, options: int = 1) -> float:
+    """LMSR b for a subsidy: options * b * ln 2 <= cost, so the market maker's loss is always covered.
+
+    Each option of a multi-option market is its own YES/NO market, so the subsidy is split between them.
+    """
+    return float(math.floor(cost / (options * math.log(2))))
 
 
 def new_code() -> str:
