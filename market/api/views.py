@@ -277,6 +277,10 @@ def reset_dismissals(request):
 
 def create_market(request):
     data = body(request)
+    # «Объявить в чате» (spec E8.4): only with a chat, ignored for the public feed.
+    announce = data.get("announce")
+    if announce is not None and not isinstance(announce, bool):
+        raise BadRequest("Укажите announce: true или false.")
     group = None
     if data.get("chat") not in (None, ""):
         group = chat_for(request.trader, data["chat"])
@@ -290,7 +294,8 @@ def create_market(request):
     question = services.create_market(
         request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
         category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
-        request_key=data.get("request_key") or None, group=group, options=data.get("options"))
+        request_key=data.get("request_key") or None, group=group, options=data.get("options"),
+        announce=bool(announce) and group is not None)
     if question.publication_state != "approved":
         request.trader.refresh_from_db()
         return {"market": None, "publication": question.publication_state, "draft_id": question.pk,
@@ -305,6 +310,7 @@ def create_market(request):
         if group is not None:
             # Only the fact: no chat ID or link code in analytics.
             props["chat"] = True
+            props["announce"] = question.announce
         # Analytics only (docs/api.md «Фаза 3a»): unknown values are dropped, the market is created anyway.
         if data.get("assist") in ("accepted", "edited", "undone"):
             props["assist"] = data["assist"]

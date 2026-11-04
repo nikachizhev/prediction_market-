@@ -76,12 +76,13 @@ def join(group, trader):
     return GroupMembership.objects.create(group=group, trader=trader, status="active", checked_at=timezone.now())
 
 
-def chat_market(group, creator, title="Перенесут ли коллоквиум?"):
+def chat_market(group, creator, title="Перенесут ли коллоквиум?", **kw):
     if not GroupMembership.objects.filter(group=group, trader=creator).exists():
         join(group, creator)
     now = timezone.now()
     return services.create_market(creator, title=title, criteria="По объявлению в чате", category="study",
-                                  closes_at=now + timedelta(days=3), resolves_at=now + timedelta(days=4), group=group)
+                                  closes_at=now + timedelta(days=3), resolves_at=now + timedelta(days=4), group=group,
+                                  **kw)
 
 
 def finish(question, outcome="yes", evidence=""):
@@ -333,8 +334,13 @@ def test_settings_only_for_admins(bot):
     reply = bot.sent("sendMessage", CHAT)[-1]
     assert "40 монет — по размеру чата (12 участников)" in reply["text"]
     assert "с 50% до 75%" in reply["text"]
-    data = [b["callback_data"] for row in reply["reply_markup"]["inline_keyboard"] for b in row]
-    assert f"chat:{group.pk}:post:new_market" in data and f"chat:{group.pk}:assist" in data
+    assert "Сообщения бота: «Важное» — объявленные рынки, их итоги и топ-3 недели." in reply["text"]
+    assert "3 участника чата" in reply["text"]
+    keyboard = reply["reply_markup"]["inline_keyboard"]
+    assert [b["text"] for b in keyboard[0]] == ["Тишина", "✓ Важное", "Всё"]
+    data = [b["callback_data"] for row in keyboard for b in row]
+    assert [f"chat:{group.pk}:mode:{m}" for m in ("quiet", "important", "all")] == data[:3]
+    assert f"chat:{group.pk}:assist" in data and not any(":post:" in d for d in data)
     assert [d.rsplit(":", 1)[1] for d in data if ":cost:" in d] == ["30", "40", "50", "70", "100", "150", "200",
                                                                    "auto"]
 
@@ -365,7 +371,7 @@ def test_answers_in_the_same_topic(bot):
 @pytest.mark.django_db
 def test_press_by_non_admin_changes_nothing(bot):
     group = chat()
-    handle_update(press(group, f"chat:{group.pk}:post:new_market", by=ANYA))
+    handle_update(press(group, f"chat:{group.pk}:mode:quiet", by=ANYA))
     handle_update(press(group, f"chat:{group.pk}:cost:200", by=ANYA))
     group.refresh_from_db()
     assert group.post_settings == {} and group.creation_cost is None
@@ -377,17 +383,18 @@ def test_press_by_non_admin_changes_nothing(bot):
 @pytest.mark.django_db
 def test_press_by_admin_changes_and_asks_telegram_every_time(bot):
     group = chat()
-    presses = [f"chat:{group.pk}:post:new_market", f"chat:{group.pk}:assist", f"chat:{group.pk}:cost:150"]
+    presses = [f"chat:{group.pk}:mode:all", f"chat:{group.pk}:assist", f"chat:{group.pk}:cost:150"]
     for data in presses:
         handle_update(press(group, data))
     group.refresh_from_db()
-    assert group.post_settings == {"new_market": False} and not group.assist_enabled
+    assert group.post_settings == {"mode": "all"} and chats.post_mode(group) == "all" and not group.assist_enabled
     assert group.creation_cost == 150 and chats.creation_cost(group) == 150
     assert bot.methods().count("getChatAdministrators") == len(presses)
     edit = bot.sent("editMessageText")[-1]
     assert edit["message_id"] == 77 and "150 монет — своя цена чата" in edit["text"]
     buttons = [b["text"] for row in edit["reply_markup"]["inline_keyboard"] for b in row]
-    assert "Новые рынки: выкл" in buttons and "ИИ-помощник: выкл" in buttons and "✓ 150" in buttons
+    assert "✓ Всё" in buttons and "Важное" in buttons and "ИИ-помощник: выкл" in buttons and "✓ 150" in buttons
+    assert "«Всё» — каждый новый рынок, каждый итог и топ-3 недели" in edit["text"]
     # Admin rights are gone: the next press is refused although it worked a moment ago.
     bot.admins = []
     handle_update(press(group, f"chat:{group.pk}:cost:auto"))
@@ -429,7 +436,7 @@ def test_press_from_another_chat_is_stale(bot):
 @pytest.mark.django_db
 def test_new_market_queued_once_and_sent_without_names(bot):
     group = chat()
-    market = chat_market(group, make("Автор Рынка"))
+    market = chat_market(group, make("Автор Рынка"), announce=True)
     now = msk(12)
     first = bot_chats.tick(now)
     second = bot_chats.tick(now + timedelta(minutes=1))
@@ -443,9 +450,9 @@ def test_new_market_queued_once_and_sent_without_names(bot):
 
 
 @pytest.mark.django_db
-def test_switched_off_kind_is_not_queued(bot):
-    group = chat(post_settings={"new_market": False})
-    chat_market(group, make("Автор"))
+def test_quiet_mode_queues_nothing(bot):
+    group = chat(post_settings={"mode": "quiet"})
+    chat_market(group, make("Автор"), announce=True)
     assert bot_chats.tick(msk(12))["queued"] == 0
     assert not ChatPost.objects.exists() and not bot.calls
 
@@ -453,7 +460,7 @@ def test_switched_off_kind_is_not_queued(bot):
 @pytest.mark.django_db
 def test_frozen_chat_gets_no_posts(bot):
     group = chat()
-    market = chat_market(group, make("Автор"))
+    market = chat_market(group, make("Автор"), announce=True)
     bot_chats.tick(msk(3))  # queued during the quiet hours
     assert ChatPost.objects.get().status == ChatPost.Status.QUEUED
     Group.objects.filter(pk=group.pk).update(bot_active=False)
@@ -464,12 +471,12 @@ def test_frozen_chat_gets_no_posts(bot):
 
 @pytest.mark.django_db
 def test_result_with_photo_goes_as_send_photo(bot):
-    group = chat()
+    group = chat(post_settings={"mode": "all"})
     market = chat_market(group, make("Автор"))
     anya = make("Аня", ANYA)
     join(group, anya)
     services.buy(anya, market, "yes", 20)
-    Group.objects.filter(pk=group.pk).update(post_settings={"new_market": False})
+    Question.objects.filter(pk=market.pk).update(created_at=timezone.now() - timedelta(days=2))
     finish(market, "yes", evidence="photo-file-1")
     bot_chats.tick(msk(12))
     (photo,) = bot.sent("sendPhoto", CHAT)
@@ -482,8 +489,9 @@ def test_result_with_photo_goes_as_send_photo(bot):
 
 @pytest.mark.django_db
 def test_cancelled_market_result_is_text(bot):
-    group = chat(post_settings={"new_market": False})
+    group = chat(post_settings={"mode": "all"})
     market = chat_market(group, make("Автор"))
+    Question.objects.filter(pk=market.pk).update(created_at=timezone.now() - timedelta(days=2))
     finish(market, "cancel", evidence="ignored")
     bot_chats.tick(msk(12))
     (sent,) = bot.sent("sendMessage", CHAT)
@@ -493,7 +501,7 @@ def test_cancelled_market_result_is_text(bot):
 
 @pytest.mark.django_db
 def test_daily_cap_postpones_results_and_drops_the_rest(bot):
-    group = chat()
+    group = chat(post_settings={"mode": "all"})
     now = msk(12)
     for i in range(5):
         ChatPost.objects.create(group=group, kind="new_market", key=f"old:{i}", text="x",
@@ -516,7 +524,7 @@ def test_daily_cap_postpones_results_and_drops_the_rest(bot):
 @pytest.mark.django_db
 def test_quiet_hours_wait_until_nine(bot):
     group = chat()
-    chat_market(group, make("Автор"))
+    chat_market(group, make("Автор"), announce=True)
     done = bot_chats.tick(msk(23, 30))
     assert done["queued"] == 1 and done["postponed"] == 1 and not bot.calls
     assert ChatPost.objects.get().send_after == msk(9, days=1)
@@ -550,7 +558,7 @@ def test_telegram_errors_retried_then_failed(bot):
 
 @pytest.mark.django_db
 def test_weekly_top_only_on_monday_after_nine_and_once(bot):
-    group = chat(post_settings={"new_market": False, "results": False})
+    group = chat()  # «Важное»: the market is not announced, so neither it nor its result is posted
     market = chat_market(group, make("Автор"))
     anya, boris, idle = make("Аня", ANYA), make("Борис", BORIS), make("Молчун")
     for trader in (anya, boris, idle):
