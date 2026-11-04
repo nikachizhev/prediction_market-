@@ -1,6 +1,5 @@
 """Manual publication review through the private, allowlisted moderation bot."""
 import hashlib
-import json
 import re
 from datetime import timedelta
 
@@ -52,17 +51,54 @@ def reviewed_version(pk, decision_id=None):
     return q, decision
 
 
-def show_card(chat_id, pk, *, message_id=None):
+def readable_content(q):
+    def value(item):
+        if isinstance(item, dict):
+            return '; '.join(f'{key}: {value(val)}' for key, val in item.items())
+        if isinstance(item, (list, tuple)):
+            return '\n'.join(f'• {value(val)}' for val in item)
+        return str(item)
+
+    def date(item):
+        return timezone.localtime(item).strftime('%d.%m.%Y %H:%M %Z') if item else 'Не указан'
+
+    def section(item):
+        lines = [item.title, f'Критерий результата:\n{item.resolution_criteria or "Не указан"}']
+        if item.option_label:
+            lines.append(f'Вариант: {item.option_label}')
+        if item.options:
+            lines.append(f'Варианты ответа:\n{value(item.options)}')
+        if item.source_type or item.source_ref:
+            lines.append(f'Источник: {item.get_source_type_display()}\n{item.source_ref or "Не указан"}')
+        lines += [f'Приём прогнозов до: {date(item.deadline)}',
+                  f'Итог станет известен: {date(item.resolves_at)}']
+        return '\n\n'.join(lines)
+
+    parts = [section(q)]
+    for i, child in enumerate(q.submarkets.order_by('pk'), 1):
+        parts.append(f'ВАРИАНТ {i}\n{section(child)}')
+    return '\n\n──────────\n\n'.join(parts)
+
+
+def show_card(chat_id, pk, page=0, *, message_id=None):
     moderation._actor(telegram_id=chat_id)
     q, decision = reviewed_version(pk)
-    # Split complete content into pages, never silently truncate rules/options before approval.
-    content = json.dumps(gate.snapshot(q), ensure_ascii=False, indent=2, default=str)
-    chunks = [content[i:i+1400] for i in range(0, len(content), 1400)]
-    for i, chunk in enumerate(chunks, 1):
-        bot.send(chat_id, f'Рынок #{q.pk} · текст {i}/{len(chunks)}\n{chunk}')
-    bot.render(chat_id, f'📝 Рынок #{q.pk}\nСостояние: {q.get_publication_state_display()}\nПричина: {REASONS.get(decision.reason, decision.reason)}\n\nПолный текст и варианты отправлены выше. Одобрение публикует рынок. Отклонение отменяет его и возвращает резерв создания.',
-        [[{'text': '✅ Одобрить', 'callback_data': f'pc:ask:approved:{decision.pk}'},
-          {'text': '⛔ Отклонить', 'callback_data': f'pc:ask:rejected:{decision.pk}'}]]+bot.navigation(), message_id=message_id)
+    content = readable_content(q)
+    # 1600 Unicode characters use at most 3200 UTF-16 units, leaving room for the header.
+    chunks = [content[i:i+1600] for i in range(0, len(content), 1600)]
+    page = min(max(0, page), len(chunks)-1)
+    rows = []
+    paging = []
+    if page:
+        paging.append({'text': '← Текст', 'callback_data': f'pc:card:{q.pk}:{page-1}'})
+    if page+1 < len(chunks):
+        paging.append({'text': 'Текст →', 'callback_data': f'pc:card:{q.pk}:{page+1}'})
+    if paging:
+        rows.append(paging)
+    rows.append([{'text': '✅ Одобрить', 'callback_data': f'pc:ask:approved:{decision.pk}'},
+                 {'text': '⛔ Отклонить', 'callback_data': f'pc:ask:rejected:{decision.pk}'}])
+    bot.render(chat_id, f'📝 Рынок #{q.pk} · {page+1}/{len(chunks)}\n{q.get_publication_state_display()}\nПричина: {REASONS.get(decision.reason, decision.reason)}\n\n{chunks[page]}',
+               rows+bot.navigation(), message_id=message_id)
 
 
 @transaction.atomic
@@ -86,6 +122,10 @@ def handle_callback(chat_id, data, *, message_id=None):
         match = re.fullmatch(r'pc:open:(\d{1,18})', data)
         if match:
             show_card(chat_id, int(match[1]), message_id=message_id)
+            return
+        match = re.fullmatch(r'pc:card:(\d{1,18}):(\d{1,8})', data)
+        if match:
+            show_card(chat_id, int(match[1]), int(match[2]), message_id=message_id)
             return
         match = re.fullmatch(r'pc:(ask|do):(approved|rejected):(\d{1,18})', data)
         if not match:
