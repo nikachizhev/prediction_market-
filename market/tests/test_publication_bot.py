@@ -126,8 +126,29 @@ def test_long_rules_are_delivered_completely(draft):
     draft.resolution_criteria = 'Начало ' + 'длинный текст ' * 400 + ' КОНЕЦ КРИТЕРИЯ'
     draft.save(update_fields=['resolution_criteria'])
     gate.apply_decision(draft.pk, 'review', 'too_large', actor='automatic', expected_hash=gate.digest(gate.snapshot(draft)))
-    with patch.object(bot, 'api', return_value={}) as api:
+    content = pub.readable_content(draft)
+    with patch.object(bot, 'render') as render, patch.object(bot, 'send') as send:
+        for page in range((len(content)+1599)//1600):
+            pub.show_card(123, draft.pk, page, message_id=42)
+        send.assert_not_called()
+    texts = [call.args[1] for call in render.call_args_list]
+    assert any('КОНЕЦ КРИТЕРИЯ' in text for text in texts)
+    assert all(len(text.encode('utf-16-le')) < 7800 for text in texts)
+    assert all(call.kwargs['message_id'] == 42 for call in render.call_args_list)
+    assert ''.join(text.split('\n\n', 1)[1] for text in texts) == content
+
+
+def test_card_navigation_and_decision_replace_same_message(draft):
+    version = draft.publication_decisions.latest('pk')
+    with patch.object(bot, 'api', return_value={'message_id': 42}) as api:
         pub.show_card(123, draft.pk)
-    messages = [call.kwargs['text'] for call in api.call_args_list if call.args[0] == 'sendMessage']
-    assert any('КОНЕЦ КРИТЕРИЯ' in text for text in messages)
-    assert all(len(text.encode('utf-16-le')) < 7800 for text in messages)
+        pub.handle_callback(123, f'pc:card:{draft.pk}:0', message_id=42)
+        pub.handle_callback(123, f'pc:ask:rejected:{version.pk}', message_id=42)
+        pub.handle_callback(123, f'pc:do:rejected:{version.pk}', message_id=42)
+    assert sum(call.args[0] == 'sendMessage' for call in api.call_args_list) == 1
+    edits = [call for call in api.call_args_list if call.args[0] == 'editMessageText']
+    assert len(edits) == 3
+    assert all(call.kwargs['message_id'] == 42 for call in edits)
+    assert 'Критерий результата:' in edits[0].kwargs['text']
+    assert 'resolution_criteria' not in edits[0].kwargs['text']
+    assert 'Решение сохранено' in edits[-1].kwargs['text']
