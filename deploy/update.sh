@@ -31,6 +31,12 @@ update() {
 	systemctl daemon-reload
 	systemctl enable pm-premoderation
 	systemctl restart pm-premoderation
+	install -m 644 deploy/systemd/pm-moderation-bot.service /etc/systemd/system/pm-moderation-bot.service
+	systemctl daemon-reload
+	if grep -q '^MODERATION_BOT_TOKEN=.' .env && grep -q '^MODERATION_ADMIN_IDS=.' .env; then
+		systemctl enable pm-moderation-bot
+		systemctl restart pm-moderation-bot
+	fi
 	systemctl restart pm-web pm-worker
 	if grep -q '^TELEGRAM_BOT_TOKEN=.' .env; then
 		systemctl restart pm-bot

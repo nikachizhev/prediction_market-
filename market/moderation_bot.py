@@ -90,7 +90,8 @@ def render(chat_id: int, text: str, buttons=None, *, message_id=None, notice=Fal
 
 
 def navigation():
-    return [[{'text': '👤 Кто писал боту', 'callback_data': 'mb:contacts:0'}],
+    return [[{'text': '📝 Публикация рынков', 'callback_data': 'pc:queue:0'}],
+            [{'text': '👤 Кто писал боту', 'callback_data': 'mb:contacts:0'}],
             [{'text': '⚖️ Споры об исходе', 'callback_data': 'ds:queue:0'},
              {'text': '📜 История споров', 'callback_data': 'ds:history:0'}],
             [{'text': '📥 Жалобы', 'callback_data': 'mb:queue:0'},
@@ -120,7 +121,8 @@ def renew_panel(chat_id: int):
 def show_home(chat_id, *, message_id=None):
     count = Question.objects.filter(complaints__status='pending').distinct().count()
     disputes = Question.objects.filter(resolution_state=Question.Resolution.DISPUTED).count()
-    render(chat_id, f'🛡 МОДЕРАЦИЯ\n\nЖалобы: {count} рынков.\nСпоры об исходе: {disputes} рынков.\n\n⚖️ Споры — проверка результата и выплаты\n📥 Жалобы — нарушения правил\n\nВыберите раздел кнопкой ниже.', navigation(), message_id=message_id)
+    publications = Question.objects.filter(parent__isnull=True, publication_state__in=('review', 'error')).count()
+    render(chat_id, f'🛡 МОДЕРАЦИЯ\n\nПроверка публикации: {publications} рынков.\nЖалобы: {count} рынков.\nСпоры об исходе: {disputes} рынков.\n\nВыберите раздел кнопкой ниже.', navigation(), message_id=message_id)
 
 
 def card(question: Question, complaint=None):
@@ -257,6 +259,9 @@ def handle_update(update: dict):
         command = text.split(maxsplit=1)[0].split('@')[0] if text else ''
         if command == '/queue':
             show_queue(sender_id)
+        elif command == '/publications':
+            from .publication_bot import show_queue as show_publications
+            show_publications(sender_id)
         elif command == '/history':
             show_queue(sender_id, history=True)
         elif command in ('/disputes', '/dispute_history'):
@@ -272,6 +277,10 @@ def handle_update(update: dict):
     _answer(callback)
     data = callback.get('data', '')
     panel_id = message.get('message_id')
+    if data.startswith('pc:'):
+        from .publication_bot import handle_callback
+        handle_callback(sender_id, data, message_id=panel_id)
+        return
     contacts = re.fullmatch(r'mb:contacts:(\d{1,8})', data)
     if contacts:
         show_contacts(sender_id, int(contacts[1]), message_id=panel_id)
@@ -379,4 +388,5 @@ def flush_notifications(limit=10) -> int:
             ModerationDelivery.objects.filter(pk=delivery.pk, attempts=delivery.attempts).update(sent_at=timezone.now())
             sent += 1
     from .disputes_bot import flush_notifications as flush_disputes
-    return sent + flush_disputes(limit=limit)
+    from .publication_bot import flush_notifications as flush_publications
+    return sent + flush_disputes(limit=limit) + flush_publications(limit=limit)
