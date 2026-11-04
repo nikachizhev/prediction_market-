@@ -234,3 +234,63 @@ interface ChatSpace {
 - Апдейты групп (`my_chat_member`, `chat_member`, сообщения из `group`/`supergroup`) получает `bot_chats.handle_update`. Бот запрашивает `allowed_updates` с `my_chat_member` и `chat_member`.
 - Воркер (`resolution.tick`) раз в минуту вызывает `chat_disputes.tick(now)` и `bot_chats.tick(now)`; оба идемпотентны: наполнение очереди — по уникальным ключам, без хуков в `services.py`.
 - Общие функции — `market/chats.py`: `creation_cost`, `depth`, `link`, `check_member`, `set_membership`, `refresh_member_count`, `admins`, `is_admin`, `post_enabled`, `chats_of`, `by_code`. Рейтинг чата — `rating.leaderboard(me_or_None, group=chat)`.
+
+## Фаза 3d (контракт, 04.11.2026)
+
+Меньше рутины (спека E4, E6.3, E8.4, E9.4, E9.5). Старые поля не меняются. Основа — ветка `e3d-base` (миграция 0033).
+
+```ts
+type NotifyLevel = "all" | "result" | "none";
+// all — сдвиги, «24 часа до конца» и итог; result — только итог; none — событие только во «Входящих» приложения.
+// Без явного выбора: рынок со звёздочкой — all, только с моей позицией — result, иначе none.
+
+interface Me {                                     // + к фазе 2
+  notify_quiet: boolean;     // тихий режим: бот присылает только итоги с выплатами и шаги разрешения, остальное — во «Входящих»
+}
+
+interface MarketDetail {                           // + к прежнему
+  notify_level: NotifyLevel; // колокольчик в карточке рынка
+  author: { display_name: string; photo_url: string | null; resolved: number; disputes_lost: number;
+            resolved_by_participants: number };   // + сколько рынков автора разрешили участники
+  resolution: { proposed_outcome: Side | "cancel" | null; evidence_url: string | null; note: string;
+                dispute_until: string | null; can_dispute: boolean;
+                by_participant: boolean }         // + итог предложил участник, а не автор
+              | null;                              // evidence_url = null — итог без фото, это нормальный итог
+}
+
+interface AssistResult {                           // + к фазе 3a
+  options: string[] | null;  // для «кто из…» — 2–10 вариантов ответа; null — рынок ДА/НЕТ
+}
+
+interface MarketDraftView {                        // рынок из сообщения в чате (E9.4), открывается по startapp=draft_<code>
+  code: string;
+  chat: ChatRef;
+  title: string; criteria: string; category: string | null;
+  closes_at: string | null; resolves_at: string | null;
+  options: string[];         // [] — рынок ДА/НЕТ
+  assisted: boolean;         // false — помощник не помог: заполнено только title (текст сообщения)
+  market_id: number | null;  // рынок по черновику уже создан (кнопкой в чате или раньше в приложении)
+}
+```
+
+| Метод и путь | Тело / параметры | Ответ |
+| --- | --- | --- |
+| `PATCH /api/me` | + `{notify_quiet?: boolean}` | `Me` |
+| `POST /api/markets/{id}/notify` | `{level: NotifyLevel}` — неизвестный уровень → `400`; для варианта мультирынка уровень ставится на весь рынок | `{level: NotifyLevel}` |
+| `POST /api/markets/{id}/star` | как раньше | `{starred, notify_level}` — звёздочка ставит `all`; снятие звёздочки убирает явный выбор (уровень снова по умолчанию) |
+| `POST /api/markets` | + `{announce?: boolean}` — только вместе с `chat`, без чата игнорируется: бот объявит рынок в чате (E8.4). + `{draft?: string}` — код черновика из чата: только свой, живой, того же чата, иначе `404`; рынок объявляется в чате ответом на исходное сообщение. + `assist`: `"oneline"` (создан как есть после «Сделать рынок») \| `"oneline_edited"` (после правки полей) | как раньше; `announce` и `draft: true` — в событие `market_create` |
+| `POST /api/assist` | + `{mode?: "oneline"}` — экран «О чём спорим?» | `AssistResult` (с `options`) или как раньше; `mode` пишется в `props` события `assist_request` |
+| `POST /api/events` | + `name: "oneline_wizard"`, `props: {reason: "manual" \| "unavailable"}` — ушёл в мастер: «Заполнить самому» или помощник не ответил | `{ok: true}` |
+| `GET /api/drafts/{code}` | — | `MarketDraftView`; чужой, истёкший (24 ч) черновик или не участник чата → `404` `{error: "Черновик не найден."}` |
+
+**Ссылка на черновик** — `t.me/<бот>/<приложение>?startapp=draft_<code>`: Mini App после входа открывает предпросмотр создания с полями черновика и чатом. Сервер параметр `draft_` при входе не использует.
+
+### Бот (для бэкенда)
+
+- Callback-данные: `draft:…` — `market/bot_draft.py` (`Создать за <цена>` в чате). `/market` в чате `bot_chats._command` передаёт в `bot_draft.handle_command(message, group)`. Маршрутизация — `market/telegram.py`.
+- Кнопка `🔕 Не присылать про этот рынок` под уведомлением о рынке — callback `bot_notifications` (свой префикс), ставит `none`.
+- Уровень рынка — `market/notify_levels.py`: `level`, `default_level`, `set_level` (всегда на корень мультирынка).
+- Режим чата — `Group.post_settings["mode"]`: `quiet` / `important` (по умолчанию) / `all`, см. `CHAT_POST_MODES`. Миграция 0033 перевела старые переключатели: всё выключено → `quiet`, иначе `important`.
+- Объявление в чате: `Question.announce` (галочка, из сообщения) и `Question.announced_at` (когда бот поставил объявление в очередь; итог пишем только по объявленным). Ответ на исходное сообщение — `question.chat_draft.source_message_id` → `reply_parameters` в `ChatPost.payload`.
+- Итог участника: `Question.proposed_by` (кто указал итог), `Question.proposal_bond`; запрос доказательства при споре — `evidence_requested_at`, `evidence_reminded_at`; вопрос участникам — `participants_asked_at`. Проводки: `proposal_bond`, `proposal_refund`, `proposer_fee`.
+- Параметры — `config/settings.py`: `PARTICIPANT_PROPOSAL_HOURS`, `PROPOSAL_BOND`, `EVIDENCE_HOURS`, `CHAT_ANNOUNCE_PARTICIPANTS`, `CHAT_DRAFT_HOURS`.

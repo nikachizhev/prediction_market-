@@ -118,9 +118,11 @@ def handle_update(update):
     if "callback_query" in update:
         callback = update["callback_query"]
         data = callback.get("data") or ""
-        from . import bot_chats, bot_markets, chat_disputes
+        from . import bot_chats, bot_draft, bot_markets, chat_disputes
         if bot_markets.owns(data):
             bot_markets.handle_callback(callback)
+        elif bot_draft.owns(data):
+            bot_draft.handle_callback(callback)
         elif bot_chats.owns(data):
             bot_chats.handle_callback(callback)
         elif chat_disputes.owns(data):

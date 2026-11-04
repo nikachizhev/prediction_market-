@@ -36,6 +36,7 @@ class Trader(models.Model):
     # Category slugs picked in onboarding («Что тебе интересно?»), see CATEGORIES.
     interests = models.JSONField(default=list, blank=True)
     # Bot notification switches (spec E6.3), keyed by NOTIFY_KINDS; a missing key means «on».
+    # "quiet": True — quiet mode (phase 3d): the bot sends only results with payouts and resolution steps.
     notify_prefs = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(null=True, blank=True, auto_now_add=True)
 
@@ -128,6 +129,14 @@ CHAT_POST_KINDS = [
     ("weekly_top", "Топ-3 недели"),
 ]
 
+# Bot message mode of a chat (spec E8.4, phase 3d), stored in Group.post_settings["mode"].
+CHAT_POST_MODES = [
+    ("quiet", "Тишина"),         # only answers to commands
+    ("important", "Важное"),     # announced markets, their results, weekly top-3 (default)
+    ("all", "Всё"),              # every new market and every result
+]
+CHAT_POST_MODE_DEFAULT = "important"
+
 
 class Group(models.Model):
     """A private space. Old site groups have an owner; a Telegram chat (kind="chat", spec E8) has none."""
@@ -147,9 +156,12 @@ class Group(models.Model):
     pinned_message_id = models.BigIntegerField(null=True, blank=True)
     # Admin's own creation price (CHAT_CREATION_COST_MIN..MAX); empty = by chat size.
     creation_cost = models.PositiveSmallIntegerField("своя цена создания", null=True, blank=True)
-    # {kind: bool} for CHAT_POST_KINDS; a missing key means on.
+    # {"mode": one of CHAT_POST_MODES}; a missing key means CHAT_POST_MODE_DEFAULT.
+    # Before phase 3d: {kind: bool} for CHAT_POST_KINDS — migration 0033 turned them into a mode.
     post_settings = models.JSONField("сообщения бота в чате", default=dict, blank=True)
     assist_enabled = models.BooleanField("ИИ-помощник", default=True)
+    # The bot warned the chat that /market sends the replied message to the AI helper (spec E9.4).
+    assist_warned_at = models.DateTimeField(null=True, blank=True)
 
     @property
     def is_chat(self) -> bool:
@@ -362,11 +374,25 @@ class Question(models.Model):
     evidence_file_id = models.CharField(max_length=200, blank=True, default="")
     evidence_note = models.CharField("подпись или ссылка", max_length=500, blank=True, default="")
     proposed_at = models.DateTimeField(null=True, blank=True)
+    # Who stated the outcome: the creator, or a participant when the creator stayed silent (phase 3d).
+    proposed_by = models.ForeignKey(Trader, null=True, blank=True, on_delete=models.PROTECT,
+                                    related_name="proposed_outcomes", verbose_name="итог указал")
+    # A participant's stake on the outcome (PROPOSAL_BOND); 0 for the creator.
+    proposal_bond = models.DecimalField("залог за итог", max_digits=14, decimal_places=2, default=Decimal(0))
     dispute_until = models.DateTimeField("окно спора до", null=True, blank=True)
+    # On dispute the outcome's author is asked for proof (EVIDENCE_HOURS, one reminder).
+    evidence_requested_at = models.DateTimeField("запрошено доказательство", null=True, blank=True)
+    evidence_reminded_at = models.DateTimeField(null=True, blank=True)
     creator_at_fault = models.BooleanField("создатель ошибся", default=False)
     # Bot bookkeeping, so the worker never repeats a message.
     asked_at = models.DateTimeField(null=True, blank=True)
     reminders_sent = models.PositiveSmallIntegerField(default=0)
+    # «Автор не указал итог. Знаешь, чем закончилось?» went to the participants.
+    participants_asked_at = models.DateTimeField(null=True, blank=True)
+    # Closed chat (spec E8.4, phase 3d): the creator ticked «Объявить в чате» or made it from a chat message;
+    # `announced_at` — when the bot queued the announcement (results go only for announced markets).
+    announce = models.BooleanField("объявить в чате", default=False)
+    announced_at = models.DateTimeField("объявлен в чате", null=True, blank=True)
     results_sent_at = models.DateTimeField(null=True, blank=True)
     conflicted_traders = models.ManyToManyField(
         Trader, blank=True, related_name="conflicted_questions", verbose_name="конфликт интересов"
@@ -461,6 +487,27 @@ class MarketSubscription(models.Model):
         constraints = [models.UniqueConstraint(fields=["trader", "question"], name="unique_market_subscription")]
 
 
+class MarketNotifyLevel(models.Model):
+    """The bell on the market card (spec E6.3, phase 3d): a trader's own level for one market.
+
+    Only explicit choices are stored. Without a row the level is derived: starred → all,
+    a position → result, otherwise none (see `market/notify_levels.py`).
+    """
+    class Level(models.TextChoices):
+        ALL = "all", "Всё"
+        RESULT = "result", "Только итог"
+        NONE = "none", "Ничего"
+
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="notify_levels")
+    # Always the root market (an option's parent).
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="notify_levels")
+    level = models.CharField(max_length=6, choices=Level.choices)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["trader", "question"], name="unique_market_notify_level")]
+
+
 class PurchaseConfirmation(models.Model):
     trader = models.ForeignKey(Trader, on_delete=models.CASCADE)
     question = models.ForeignKey(Question, on_delete=models.CASCADE)
@@ -514,6 +561,9 @@ class LedgerEntry(models.Model):
         CREATOR_FEE = "creator_fee", "Комиссия создателю"
         DISPUTE = "dispute", "Спор"
         DISPUTE_REFUND = "dispute_refund", "Спор признан"
+        PROPOSAL_BOND = "proposal_bond", "Залог за итог"
+        PROPOSAL_BOND_REFUND = "proposal_refund", "Залог за итог вернули"
+        PROPOSER_FEE = "proposer_fee", "Комиссия за итог"
 
     # Coins that appear from nothing; excluded from profit in the rating.
     BONUS_KINDS = (Kind.STARTER, Kind.DAILY, Kind.INSURANCE, Kind.REFERRAL)
@@ -775,7 +825,7 @@ class ChatPost(models.Model):
     # Bot API method: sendMessage, or sendPhoto for a result with its evidence.
     method = models.CharField(max_length=20, default="sendMessage")
     text = models.TextField()
-    # Extra parameters of the method: reply_markup, photo, ...
+    # Extra parameters of the method: reply_markup, photo, reply_parameters, ...
     payload = models.JSONField(default=dict, blank=True)
     question = models.ForeignKey(Question, null=True, blank=True, on_delete=models.CASCADE, related_name="chat_posts")
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.QUEUED, db_index=True)
@@ -788,6 +838,38 @@ class ChatPost(models.Model):
         verbose_name = "сообщение в чат"
         verbose_name_plural = "сообщения в чаты"
         ordering = ["send_after", "id"]
+
+
+class MarketDraft(models.Model):
+    """A market prepared from a chat message by /market (spec E9.4): preview in the chat, `Создать` there
+    or `Изменить` in the Mini App (`startapp=draft_<code>`). Only the caller may use it; lives CHAT_DRAFT_HOURS.
+    """
+    code = models.CharField(max_length=16, unique=True)
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="market_drafts")
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="market_drafts")
+    # The message the command replied to: the announcement goes as a reply to it.
+    source_text = models.TextField(blank=True, default="")
+    source_message_id = models.BigIntegerField(null=True, blank=True)
+    thread_id = models.BigIntegerField(null=True, blank=True)
+    # The bot's preview message in the chat, edited after `Создать`.
+    preview_message_id = models.BigIntegerField(null=True, blank=True)
+    # Fields as the helper filled them; without the helper only `title` (the message text).
+    assisted = models.BooleanField(default=False)
+    title = models.CharField(max_length=240, blank=True, default="")
+    criteria = models.TextField(blank=True, default="")
+    category = models.CharField(max_length=20, blank=True, default="")
+    closes_at = models.DateTimeField(null=True, blank=True)
+    resolves_at = models.DateTimeField(null=True, blank=True)
+    options = models.JSONField(default=list, blank=True)
+    # The market made from it (from the chat or the Mini App); a second `Создать` returns it.
+    question = models.OneToOneField(Question, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name="chat_draft")
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "черновик рынка из чата"
+        verbose_name_plural = "черновики рынков из чата"
 
 
 class ChatDisputeReview(models.Model):

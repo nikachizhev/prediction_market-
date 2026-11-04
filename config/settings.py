@@ -100,6 +100,10 @@ CREATOR_FEE_SHARE = "0.5"       # the creator's part of the fee; the rest burns
 DISPUTE_COST = 20               # refunded if the dispute is upheld
 DISPUTE_WINDOW_HOURS = 24
 RESOLUTION_TIMEOUT_HOURS = 72   # creator silent this long after resolves_at -> market is cancelled
+# Phase 3d (spec E4): the creator is right by default; proof only on dispute; a silent creator -> participants.
+PARTICIPANT_PROPOSAL_HOURS = 24 # after resolves_at a participant may state the outcome if the creator hasn't
+PROPOSAL_BOND = 20              # a participant's stake on the stated outcome; back when it stands, burns if overturned
+EVIDENCE_HOURS = 24             # on dispute the outcome's author has this long to send proof (one reminder)
 MARKETS_PER_DAY = 3
 MARKET_MIN_HOURS = 1
 MARKET_MAX_DAYS = 365
@@ -121,6 +125,8 @@ CHAT_CREATION_COST_MAX = 200
 CHAT_MEMBER_CHECK_MINUTES = 10  # getChatMember answer is trusted this long
 CHAT_DAILY_POSTS = 5            # bot messages per chat per Moscow day
 CHAT_DISPUTE_HOURS = 48         # chat admins silent this long -> the dispute goes to the project team
+CHAT_ANNOUNCE_PARTICIPANTS = 3  # an unannounced chat market is announced once this many chat members bet (spec E8.4)
+CHAT_DRAFT_HOURS = 24           # a /market draft lives this long (spec E9.4)
 
 # AI rules helper (spec E9.1): any OpenAI-compatible chat completions API, OpenRouter by default.
 # Without a key the helper is off and the creation wizard works as before.
