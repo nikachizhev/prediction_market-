@@ -371,10 +371,8 @@ def quote(request, pk):
 def trade_result(request, question, trade):
     from ..events import log_event
     log_event(request.trader, "trade", {"market": question.pk, "side": trade.side, "sell": trade.cost < 0})
-    # Following a market you hold a position in is automatic (spec E6.1).
-    root = question.parent or question
-    MarketSubscription.objects.get_or_create(trader=request.trader, question=root,
-                                             defaults={"last_probability": root.prob})
+    # A position makes the market tracked by itself (spec E6.1) — no star: starred → «Всё»,
+    # a position alone → «Только итог» (spec E6.3, phase 3d).
     request.trader.refresh_from_db()
     question.refresh_from_db()
     return {"balance": s.money(request.trader.balance), "market": s.detail(question, request.trader),
@@ -410,7 +408,7 @@ def sell(request, pk):
 def star(request, pk):
     """The star follows the market and sets its bell to «Всё»; taking it off drops the explicit level (phase 3d)."""
     from .. import notify_levels
-    from ..bot_notifications import forget_level
+    from ..notify_levels import forget_level
     from ..models import MarketNotifyLevel
     question = get_market(request.trader, pk)
     root = question.parent or question
@@ -494,6 +492,12 @@ def mine(request):
                      .order_by("-created_at", "-id")
                      .values_list("question_id", "question__parent_id")):
         rid = pid or qid
+        if rid not in seen_watched:
+            seen_watched.add(rid)
+            watched_ids.append(rid)
+    # A position makes the market tracked by itself, without a star (spec E6.1).
+    for pos in positions:
+        rid = pos.question.parent_id or pos.question_id
         if rid not in seen_watched:
             seen_watched.add(rid)
             watched_ids.append(rid)

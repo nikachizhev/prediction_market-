@@ -88,11 +88,6 @@ def bot_allowed(trader: Trader, kind: str, question: Question | None = None) -> 
     return True
 
 
-def forget_level(trader: Trader, question: Question) -> None:
-    """Drop the explicit choice: the level is derived from the star and the position again."""
-    MarketNotifyLevel.objects.filter(trader=trader, question=question.parent or question).delete()
-
-
 def _mute_row(root_id: int) -> list[dict]:
     return [{"text": MUTE_LABEL, "callback_data": f"{MUTE_PREFIX}{root_id}"}]
 
@@ -438,7 +433,7 @@ def handle_callback(callback: dict) -> None:
                       "callback_data": f"{MUTE_PREFIX}back:{question.pk}:{chosen or NO_CHOICE}"}])
     else:
         if previous == NO_CHOICE:
-            forget_level(trader, question)
+            notify_levels.forget_level(trader, question)
         else:
             notify_levels.set_level(trader, question, previous)
         text = text.removesuffix(muted)
