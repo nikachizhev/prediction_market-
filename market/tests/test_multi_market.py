@@ -389,6 +389,7 @@ def test_unified_lists_subscriptions_mine_profile_chats_and_referrals(client, bo
         code=chats.new_code(),
         bot_active=True,
         member_count=15,
+        post_settings={"mode": "all"},  # «Всё»: every new market and result is posted (spec E8.4)
     )
     GroupMembership.objects.create(group=grp, trader=creator, status="active", checked_at=timezone.now())
     GroupMembership.objects.create(group=grp, trader=anya, status="active", checked_at=timezone.now())
