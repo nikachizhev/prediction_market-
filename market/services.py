@@ -687,7 +687,8 @@ def check_market_fields(*, title: str, criteria: str, category: str, closes_at, 
 
 @transaction.atomic
 def create_market(trader: Trader, *, title: str, criteria: str, category: str, closes_at, resolves_at,
-                  request_key=None, group=None, options: list[str] | None = None) -> Question:
+                  request_key=None, group=None, options: list[str] | None = None,
+                  announce: bool = False) -> Question:
     """User-created YES/NO or multi-option market: the creator pays the market maker's subsidy.
 
     With `request_key` the call is idempotent: a repeat by the same creator returns the market
@@ -695,6 +696,7 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
     With `group` (a closed chat, spec E8.3) the market is the chat's: the creator must be a member
     by the last check (the caller refreshes it with `chats.check_member`), the chat must not be frozen,
     and the price and depth follow the chat's rules and stay fixed in the market.
+    `announce` (chat markets only, spec E8.4): the bot announces the market in the chat.
     """
     from datetime import timedelta
     from uuid import UUID
@@ -761,7 +763,7 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
             title=title, resolution_criteria=criteria, deadline=closes_at, initial_prob=0.5,
             b=b, creator=trader, category=category, resolves_at=resolves_at, subsidy=cost,
             request_key=request_key, group_id=group.pk if group is not None else None,
-            options=cleaned_options,
+            options=cleaned_options, announce=bool(announce and group is not None),
         )
     except IntegrityError:
         # Another trader raced us with the same key; never reveal their market.

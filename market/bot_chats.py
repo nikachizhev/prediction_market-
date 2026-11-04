@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 CALLBACK_PREFIX = "chat:"
 GROUP_TYPES = ("group", "supergroup")
-COMMANDS = ("markets", "top", "settings")
+COMMANDS = ("markets", "top", "settings", "market")
 # Own creation price buttons in /settings (spec E5, decisions of phase 3b); clipped to CHAT_CREATION_COST_MIN..MAX.
 COST_CHOICES = (30, 40, 50, 70, 100, 150, 200)
 MARKETS_SHOWN = 10
@@ -271,6 +271,10 @@ def _command(message: dict) -> None:
     group = _chat_of(chat_id)
     if group is None:
         _say(chat_id, UNKNOWN_CHAT, thread=thread)
+        return
+    if name == "market":
+        from . import bot_draft
+        bot_draft.handle_command(message, group)
         return
     if name == "markets":
         text, markup = markets_text(group), _open_chat_markup(group)
