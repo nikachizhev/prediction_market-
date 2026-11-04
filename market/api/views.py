@@ -190,6 +190,12 @@ def me(request):
         if "notify" in data:
             trader.notify_prefs = {**(trader.notify_prefs or {}), **notify_of(data["notify"])}
             fields.append("notify_prefs")
+        if "notify_quiet" in data:
+            if not isinstance(data["notify_quiet"], bool):
+                raise BadRequest("Тихий режим можно только включить или выключить.")
+            trader.notify_prefs = {**(trader.notify_prefs or {}), "quiet": data["notify_quiet"]}
+            if "notify_prefs" not in fields:
+                fields.append("notify_prefs")
         if data.get("onboarded") and not trader.onboarded_at:
             trader.onboarded_at = timezone.now()
             fields.append("onboarded_at")
@@ -396,16 +402,33 @@ def sell(request, pk):
 
 @endpoint("POST")
 def star(request, pk):
+    """The star follows the market and sets its bell to «Всё»; taking it off drops the explicit level (phase 3d)."""
+    from .. import notify_levels
+    from ..bot_notifications import forget_level
+    from ..models import MarketNotifyLevel
     question = get_market(request.trader, pk)
     root = question.parent or question
     starred = bool(body(request).get("starred"))
     if starred:
         MarketSubscription.objects.get_or_create(trader=request.trader, question=root,
                                                  defaults={"last_probability": root.prob})
+        notify_levels.set_level(request.trader, root, MarketNotifyLevel.Level.ALL)
     else:
         MarketSubscription.objects.filter(trader=request.trader).filter(
             Q(question=root) | Q(question__parent=root)).delete()
-    return {"starred": starred}
+        forget_level(request.trader, root)
+    return {"starred": starred, "notify_level": notify_levels.level(request.trader, root)}
+
+
+@endpoint("POST")
+def notify_level(request, pk):
+    """The bell on the market card (spec E6.3, phase 3d); an option's level is the whole market's."""
+    from .. import notify_levels
+    question = get_market(request.trader, pk)
+    value = body(request).get("level")
+    if not isinstance(value, str) or value not in notify_levels.LEVELS:
+        raise BadRequest("Неизвестный уровень уведомлений.")
+    return {"level": notify_levels.set_level(request.trader, question, value)}
 
 
 @endpoint("POST")
