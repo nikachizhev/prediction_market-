@@ -21,6 +21,7 @@ urlpatterns = [
     path("markets/<int:pk>/buy", views.buy, name="buy"),
     path("markets/<int:pk>/sell", views.sell, name="sell"),
     path("markets/<int:pk>/star", views.star, name="star"),
+    path("markets/<int:pk>/notify", views.notify_level, name="notify_level"),
     path("markets/<int:pk>/share", views.share, name="share"),
     path("markets/<int:pk>/report", views.report, name="report"),
     path("chats", chat_views.chat_list, name="chats"),

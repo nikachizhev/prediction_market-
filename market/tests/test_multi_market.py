@@ -414,7 +414,9 @@ def test_unified_lists_subscriptions_mine_profile_chats_and_referrals(client, bo
         deadline=now + timedelta(hours=12),
     )
     assert bot_notifications.detect_closing(now) == 2  # 1 for `root` + 1 for `chat_root`
-    assert BotMessage.objects.filter(trader=anya, kind="closing", question=chat_root).count() == 1
+    # Anya only holds a position here: level «Только итог», so «24 часа до конца» stays in the inbox (phase 3d).
+    assert Notification.objects.filter(recipient=anya, kind="closing", question=chat_root).count() == 1
+    assert not BotMessage.objects.filter(trader=anya, kind="closing", question=chat_root).exists()
     assert BotMessage.objects.filter(trader=anya, kind="closing", question__parent__isnull=False).count() == 0
 
     # Resolving the chat multi-market queues ONE results ChatPost summarizing per-option outcomes.

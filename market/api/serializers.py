@@ -9,8 +9,8 @@ from django.conf import settings
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
-from .. import assist
-from ..bot_notifications import group_of, notify_settings
+from .. import assist, notify_levels
+from ..bot_notifications import group_of, notify_settings, quiet_mode
 from ..models import CATEGORIES, MarketSubscription, Position, Question, Trade, Trader
 from ..notifications import visible_notifications
 
@@ -67,6 +67,7 @@ def me(trader: Trader) -> dict:
         "invested": {str(p.question_id): money(p.spent) for p in open_positions},
         "limits": limits(),
         "notify": notify_settings(trader),
+        "notify_quiet": quiet_mode(trader),
         "unread_notifications": visible_notifications(trader).filter(read_at__isnull=True).count(),
         "assist": assist.state(trader),
     }
@@ -296,6 +297,7 @@ def detail(question: Question, trader: Trader) -> dict:
                     "at": iso(t.created_at), "sell": t.cost < 0} for t in trades],
         "resolution": resolution(question, trader),
         "top_moves": top_moves(question),
+        "notify_level": notify_levels.level(trader, question),
     })
     submarkets = list(question.submarkets.all().order_by("id"))
     if submarkets:
