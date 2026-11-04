@@ -649,22 +649,30 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
     cost = Decimal(cost_coins)
     if trader.balance < cost:
         raise MarketError(f"Создание рынка стоит {cost_coins} монет — на балансе не хватает.")
+        # Делим стоимость создания и параметр b поровну между всеми вариантами
+    num_markets = len(cleaned_options) if cleaned_options else 1
+    child_b = b / num_markets
+    child_subsidy = cost / num_markets
+
     try:
         question = create_question(
             title=title, resolution_criteria=criteria, deadline=closes_at, initial_prob=0.5,
-            b=b, creator=trader, category=category, resolves_at=resolves_at, subsidy=cost,
+            # Если это мультирынок, родительский рынок создаем без субсидии (он просто контейнер)
+            b=b if not cleaned_options else 1, 
+            creator=trader, category=category, resolves_at=resolves_at, 
+            subsidy=cost if not cleaned_options else Decimal(0),
             request_key=request_key, group_id=group.pk if group is not None else None,
             options=cleaned_options,
         )
     except IntegrityError:
-        # Another trader raced us with the same key; never reveal their market.
         raise MarketError("Этот идентификатор уже использован для другого рынка. Обновите страницу.") from None
+        
     for label in cleaned_options:
         create_question(
             title=f"{title} — {label}"[:240], option_label=label, parent=question,
             resolution_criteria=criteria, deadline=closes_at, initial_prob=0.5,
-            b=b, creator=trader, category=category, resolves_at=resolves_at,
-            subsidy=Decimal(0), group_id=group.pk if group is not None else None,
+            b=child_b, creator=trader, category=category, resolves_at=resolves_at,
+            subsidy=child_subsidy, group_id=group.pk if group is not None else None,
         )
     question.replayed = False
     trader.balance -= cost

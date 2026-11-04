@@ -274,33 +274,44 @@ class Component extends DCLogic {
     this.setState({ sheet: this.state.sheet });
   }
 
-  confirm() {
+   confirm() {
     const s = this.state;
-    if (!s.sheet) return;
+    const sh = s.sheet;
+    if (!sh) return;
     
+    const m = s.markets.find((x) => x.id === sh.id); // В Market.dc.html этой строки нет
     const max = this.maxAmount(s.balance, s.pos ? s.pos.invested : 0);
-    const amount = Math.min(s.sheet.amount, max);
+    const amount = Math.min(sh.amount, max);
     
-    const side = s.sheet.side;
-    const q = this.quote(s.p, side, amount);
-    const before = Math.round(s.p * 100);
+    const q = this.quote(m ? m.p : s.p, sh.side, amount);
+    const before = Math.round((m ? m.p : s.p) * 100);
     const after = Math.round(q.yesAfter * 100);
-    const series = {};
-    Object.keys(s.series).forEach((k) => {
-      const sr = s.series[k];
-      series[k] = Object.assign({}, sr, { data: sr.data.slice(0, -1).concat([after]) });
-    });
-    const pos = s.pos.side === side
-      ? { side: side, shares: s.pos.shares + q.shares, invested: s.pos.invested + amount }
-      : { side: side, shares: q.shares, invested: amount };
-      
-    s.p = q.yesAfter;
-    s.series = series;
-    s.pos = pos;
-    s.balance = s.balance - amount;
+    const exactCost = amount; 
+    
+    const markets = m ? s.markets.map((x) => x.id !== m.id ? x : Object.assign({}, x, { p: q.yesAfter, d: x.d + (after - before), hist: x.hist.slice(0, -1).concat([after]) })) : s.markets;
+    
+    const prev = s.positions ? s.positions[m.id] : s.pos; // Для разных файлов
+    const shares = (prev && prev.side === sh.side ? prev.shares : 0) + q.shares;
+    
+    // СИНХРОННОЕ ОБНОВЛЕНИЕ СТЕЙТА
+    s.markets = markets;
+    if (s.positions) {
+        s.positions = Object.assign({}, s.positions, { [m.id]: { side: sh.side, shares: shares } });
+        s.watched = Object.assign({}, s.watched, { [m.id]: true });
+    } else {
+        s.pos = { side: sh.side, shares: shares, invested: (prev ? prev.invested : 0) + amount };
+        const series = {};
+        Object.keys(s.series).forEach((k) => {
+          const sr = s.series[k];
+          series[k] = Object.assign({}, sr, { data: sr.data.slice(0, -1).concat([after]) });
+        });
+        s.series = series;
+        s.p = q.yesAfter;
+    }
+    
+    s.balance = s.balance - exactCost;
     s.sheet = null;
-    s.trades = [{ side: side, amount: amount, move: before + '% → ' + after + '%', ago: 'только что', mine: true }].concat(s.trades).slice(0, 6);
-    s.toast = 'Принято: ' + (side === 'yes' ? 'ДА' : 'НЕТ') + ' на ' + amount + '. Выплата, если угадаешь: ' + Math.round(q.shares);
+    s.toast = 'Принято: ' + (sh.side === 'yes' ? 'ДА' : 'НЕТ') + ' на ' + amount + '. Выплата, если угадаешь: ' + Math.round(q.shares);
 
     this.setState(s);
     
