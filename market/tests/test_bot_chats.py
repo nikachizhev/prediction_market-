@@ -598,6 +598,6 @@ def test_setup_bot_sets_group_commands(bot):
     call_command("setup_bot")
     (group_list,) = [d for d in bot.sent("setMyCommands") if d.get("scope")]
     assert group_list["scope"] == {"type": "all_group_chats"}
-    assert [c["command"] for c in group_list["commands"]] == ["markets", "top", "settings"]
+    assert [c["command"] for c in group_list["commands"]] == ["markets", "top", "settings", "market"]
     private = [d for d in bot.sent("setMyCommands") if not d.get("scope")]
     assert private[0]["commands"][0]["command"] == "start"

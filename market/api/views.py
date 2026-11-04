@@ -275,6 +275,19 @@ def reset_dismissals(request):
     return {"restored": deleted}
 
 
+# `assist` in POST /api/markets (docs/api.md «Фаза 3a», «Фаза 3d»): the wizard's card and the one-line screen.
+ASSIST_VALUES = ("accepted", "edited", "undone", "oneline", "oneline_edited")
+
+
+def _same_key(stored, sent) -> bool:
+    """Is `sent` the request key the draft's market was created with (a replay of that request)?"""
+    import uuid
+    try:
+        return stored is not None and uuid.UUID(str(sent)) == stored
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
 def create_market(request):
     data = body(request)
     group = None
@@ -282,15 +295,33 @@ def create_market(request):
         group = chat_for(request.trader, data["chat"])
         # The price by chat size is taken now and fixed in the market (spec E5).
         chats.refresh_member_count(group)
+    draft = None
+    if data.get("draft") not in (None, ""):
+        # A draft from /market in a chat (spec E9.4): only one's own, live, of the same chat; else 404.
+        from ..models import MarketDraft
+        from .draft_views import find_draft, not_found
+        draft = find_draft(request.trader, data["draft"])
+        if draft is None or group is None or draft.group_id != group.pk:
+            return not_found()
     closes_at = parse_datetime(str(data.get("closes_at") or ""))
     resolves_at = parse_datetime(str(data.get("resolves_at") or ""))
     for value in (closes_at, resolves_at):
         if value is not None and timezone.is_naive(value):
             raise BadRequest("Укажите дату с часовым поясом.")
-    question = services.create_market(
-        request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
-        category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
-        request_key=data.get("request_key") or None, group=group, options=data.get("options"))
+    with transaction.atomic():
+        if draft is not None:
+            # The lock keeps the chat's `Создать` button and this request from making two markets of one draft.
+            draft = MarketDraft.objects.select_for_update().get(pk=draft.pk)
+            if draft.question_id and not _same_key(draft.question.request_key, data.get("request_key")):
+                raise BadRequest("Рынок по этому черновику уже создан.")
+        question = services.create_market(
+            request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
+            category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
+            request_key=data.get("request_key") or None, group=group, options=data.get("options"),
+            announce=draft is not None)
+        if draft is not None and not draft.question_id:
+            draft.question = question
+            draft.save(update_fields=["question"])
     if question.publication_state != "approved":
         request.trader.refresh_from_db()
         return {"market": None, "publication": question.publication_state, "draft_id": question.pk,
@@ -306,8 +337,11 @@ def create_market(request):
             # Only the fact: no chat ID or link code in analytics.
             props["chat"] = True
         # Analytics only (docs/api.md «Фаза 3a»): unknown values are dropped, the market is created anyway.
-        if data.get("assist") in ("accepted", "edited", "undone"):
+        if data.get("assist") in ASSIST_VALUES:
             props["assist"] = data["assist"]
+        if draft is not None:
+            props["draft"] = True
+            props["announce"] = True
         template = data.get("template")
         if isinstance(template, str) and re.fullmatch(r"[a-z0-9_-]{1,40}", template):
             props["template"] = template
@@ -568,9 +602,15 @@ def events(request):
     from ..events import CLIENT_EVENTS, log_event
     data = body(request)
     name = str(data.get("name") or "")
+    props = data.get("props") if isinstance(data.get("props"), dict) else {}
+    if name == "oneline_wizard":
+        # «О чём спорим?» → the three-step wizard (spec E9.5): «Заполнить самому» or the helper did not answer.
+        if props.get("reason") not in ("manual", "unavailable"):
+            raise BadRequest("Неизвестная причина.")
+        log_event(request.trader, name, {"reason": props["reason"]})
+        return {"ok": True}
     if name not in CLIENT_EVENTS:
         raise BadRequest("Неизвестное событие.")
-    props = data.get("props") if isinstance(data.get("props"), dict) else {}
     if name in ("feed_impression", "market_open"):
         market_id = props.get("market")
         if isinstance(market_id, bool) or not isinstance(market_id, int):
