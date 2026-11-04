@@ -610,6 +610,18 @@ class PublicationDecision(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class PublicationDelivery(models.Model):
+    decision = models.ForeignKey(PublicationDecision, on_delete=models.CASCADE, related_name="deliveries")
+    admin_id = models.PositiveBigIntegerField()
+    token_fingerprint = models.CharField(max_length=64)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    next_attempt = models.DateTimeField(default=timezone.now, db_index=True)
+    attempts = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["decision", "admin_id", "token_fingerprint"], name="one_publication_delivery")]
+
+
 class Event(models.Model):
     """Product analytics (spec E7): one row per user action, read by BI without personal data."""
     trader = models.ForeignKey(Trader, null=True, blank=True, on_delete=models.SET_NULL, related_name="events")
