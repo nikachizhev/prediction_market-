@@ -338,9 +338,8 @@ def test_unified_lists_subscriptions_mine_profile_chats_and_referrals(client, bo
         {"side": "no", "amount": "30.00", "request_key": str(uuid.uuid4())},
     )[0] == 200
 
-    # Auto-subscription attaches to parent, not child submarkets.
-    assert MarketSubscription.objects.filter(trader=anya, question=root).exists()
-    assert not MarketSubscription.objects.filter(trader=anya, question__in=subs).exists()
+    # A trade tracks the market without starring it (spec E6.1, E6.3 phase 3d).
+    assert not MarketSubscription.objects.filter(trader=anya).exists()
 
     # Selectors, bot_markets, inline share search return only root.
     assert [q.pk for q in selectors.market_list(trader=anya)] == [root.pk]
