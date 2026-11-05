@@ -4,8 +4,10 @@ from django.urls import include, path, re_path
 from django.views.static import serve
 
 from market.miniapp_views import miniapp
+from market.http_metrics import metrics_response
 
 urlpatterns = [
+    path("metrics", metrics_response, name="metrics"),
     path("admin/", admin.site.urls),
     path("api/", include("market.api.urls")),
     re_path(r"^app/(?P<path>.*)$", miniapp, name="miniapp"),
