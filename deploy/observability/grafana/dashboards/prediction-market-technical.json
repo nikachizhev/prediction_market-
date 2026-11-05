@@ -472,7 +472,7 @@
     {
       "id": 9,
       "type": "stat",
-      "title": "Воркер: heartbeat устарел > 60с",
+      "title": "Воркер: heartbeat устарел > 180с",
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -487,7 +487,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(time() - pm_worker_last_success_timestamp_seconds) > bool 60",
+          "expr": "(time() - pm_worker_last_success_timestamp_seconds) > bool 180",
           "legendFormat": "Устарел",
           "datasource": {
             "type": "prometheus",

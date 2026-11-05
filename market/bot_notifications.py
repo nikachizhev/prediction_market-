@@ -164,6 +164,8 @@ def flush(now: datetime | None = None) -> dict:
         try:
             telegram.send(trader.telegram_chat_id, message.text, **(message.payload or {}))
         except Exception:  # noqa: BLE001 - Telegram may be down; retried next tick
+            from .worker_metrics import record_telegram_failure
+            record_telegram_failure('notifications')
             log.warning("bot message %s to trader %s failed", message.pk, trader.pk, exc_info=True)
             message.attempts += 1
             if message.attempts >= MAX_ATTEMPTS:

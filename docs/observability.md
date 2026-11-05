@@ -52,6 +52,9 @@ docker compose -f compose.observability.yaml up -d
 - `pm_worker_ticks_total{result}`, `pm_worker_tick_duration_seconds`, `pm_worker_last_success_timestamp_seconds`, `pm_worker_telegram_failures_total{action}` — циклы и ошибки фонового воркера.
 - `up{job}` — доступность app/worker/prometheus. Недоступный воркер проверяется отдельно от heartbeat.
 
+Heartbeat считается устаревшим через 180 секунд: стандартная пауза воркера — 60 секунд после цикла, остальное — запас на обработку и scrape. При увеличении `run_worker --interval` или длительных циклах увеличьте порог в `build_dashboard.py` и пересоберите dashboard.
+Ошибки очереди уведомлений учитываются как `pm_worker_telegram_failures_total{action="notifications"}` на каждой неудачной попытке отправки, включая повторы; окончательный статус `failed` повторно счётчик не увеличивает.
+
 Имена, Telegram ID, ID рынков, параметры запросов и тексты ошибок не попадают в labels. Сбор раз в 10 секунд; хранение Prometheus — 15 дней. Для большого объёма БД нужен отдельный кеширующий exporter/предагрегация: текущий вариант рассчитан на локальную MVP-нагрузку.
 
 ## Реализация и проверки

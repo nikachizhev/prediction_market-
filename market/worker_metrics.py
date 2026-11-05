@@ -7,7 +7,7 @@ LAST_SUCCESS = Gauge('pm_worker_last_success_timestamp_seconds', 'Last completed
 TICKS = Counter('pm_worker_ticks_total', 'Worker ticks', ['result'], registry=REGISTRY)
 DURATION = Histogram('pm_worker_tick_duration_seconds', 'Worker tick duration', registry=REGISTRY)
 TELEGRAM_FAILURES = Counter('pm_worker_telegram_failures_total', 'Handled Telegram action failures', ['action'], registry=REGISTRY)
-ACTIONS = {'ask_creator', 'remind_creator', 'send_results'}
+ACTIONS = {'ask_creator', 'remind_creator', 'send_results', 'notifications'}
 for result in ('success', 'error'):
     TICKS.labels(result)
 for action in sorted(ACTIONS | {'other'}):

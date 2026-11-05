@@ -150,6 +150,33 @@ def test_handled_telegram_failure_is_counted():
     assert _safe(fail, Question(pk=1)) is False
     assert TELEGRAM_FAILURES.labels('other')._value.get() == before+1
 
+
+@pytest.mark.django_db
+def test_notification_failures_count_each_attempt_without_double_counting():
+    from datetime import datetime, timezone as dt_timezone
+    from market import bot_notifications as notices
+    from market.models import BotMessage
+    from market.worker_metrics import TELEGRAM_FAILURES, observe_tick
+
+    now = datetime(2026, 11, 5, 12, tzinfo=dt_timezone.utc)
+    trader = account('notification-metrics')
+    trader.telegram_chat_id = 123456
+    trader.save(update_fields=['telegram_chat_id'])
+    messages = [BotMessage.objects.create(
+        trader=trader, kind='results', key=f'metrics-{i}', text='Result', send_after=now,
+    ) for i in range(3)]
+    counter = TELEGRAM_FAILURES.labels('notifications')
+    before = counter._value.get()
+    with patch('market.bot_notifications.telegram.send', side_effect=RuntimeError('offline')):
+        for attempt in range(1, notices.MAX_ATTEMPTS + 1):
+            result = observe_tick(lambda: notices.flush(now))
+            assert counter._value.get() == before + 3 * attempt
+            assert result['failed'] == (3 if attempt == notices.MAX_ATTEMPTS else 0)
+            now += timedelta(minutes=attempt)
+    assert BotMessage.objects.filter(pk__in=[m.pk for m in messages], status='failed').count() == 3
+    observe_tick(lambda: notices.flush(now))
+    assert counter._value.get() == before + 3 * notices.MAX_ATTEMPTS
+
 @pytest.mark.django_db
 def test_demo_seed_is_idempotent_and_never_contacts_telegram(settings):
     from django.core.management import call_command
