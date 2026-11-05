@@ -3,6 +3,8 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
+from market.tests.bot_job_helpers import drain_jobs
+
 import pytest
 from django.core.management import call_command
 from django.test import override_settings
@@ -51,7 +53,7 @@ def bot():
     fake = Bot()
     download = MagicMock(ok=True, content=b"\xff\xd8fake-jpeg")
     with patch("market.telegram.api", side_effect=fake), \
-            patch("market.telegram.requests.get", return_value=download) as get:
+            patch("requests.Session.get", return_value=download) as get:
         fake.get = get
         yield fake
 
@@ -130,6 +132,7 @@ def test_creator_full_flow(bot, people, market):
                             f"а тебе — половина комиссии: <b>+{fee}</b>.")
     assert done["reply_markup"]["inline_keyboard"][0][0]["web_app"]["url"] == f"https://example.test/app/market/{market.pk}"
 
+    drain_jobs()
     for user in (ANYA, BORIS):
         note = bot.sent("sendPhoto", user)[-1]
         assert note["photo"] == "big" and "<b>ДА</b>" in note["caption"]
@@ -147,8 +150,8 @@ def test_double_confirm_is_harmless(bot, people, market):
     market.refresh_from_db()
     assert market.resolution_state == "pending" and market.proposed_outcome == "no"
     new = bot.calls[calls:]
-    assert not [d for m, d in new if m in ("sendMessage", "sendPhoto")]
-    assert [d for m, d in new if m == "answerCallbackQuery"][0]["text"] == "Итог уже опубликован."
+    assert not [d for m, d in new if m == "sendPhoto"]
+    assert bot.texts(CREATOR)[-1] == "Итог уже опубликован."
     # After publishing, the outcome buttons explain why nothing happens.
     handle_update(press(CREATOR, f"res:{market.pk}:yes"))
     assert bot.texts(CREATOR)[-1] == "Итог этого рынка уже указан."
@@ -191,6 +194,7 @@ def test_cancel_without_photo(bot, people, market):
     market.refresh_from_db()
     assert market.resolution_state == "pending" and market.proposed_outcome == "cancel" and not market.evidence
     assert "Отмена рынка опубликована" in bot.texts(CREATOR)[-1]
+    drain_jobs()
     assert "оспорь" in bot.texts(ANYA)[-1] and not bot.sent("sendPhoto", ANYA)
 
 
@@ -212,6 +216,7 @@ def test_image_document_is_accepted(bot, people, market):
     handle_update(doc)
     assert bot.sent("sendDocument", CREATOR)[-1]["document"] == "doc1"
     handle_update(press(CREATOR, f"resok:{market.pk}", 10))
+    drain_jobs()
     assert bot.sent("sendDocument", ANYA)
 
 

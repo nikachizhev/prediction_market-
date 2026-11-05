@@ -811,3 +811,34 @@ class ChatDisputeReview(models.Model):
         verbose_name = "спор в чате"
         verbose_name_plural = "споры в чатах"
 
+
+
+class BotJob(models.Model):
+    """Durable immediate Telegram work, separate from rate-limited notifications."""
+
+    class Kind(models.TextChoices):
+        MESSAGE = 'message', 'сообщение'
+        CHART = 'chart', 'график'
+
+    class Status(models.TextChoices):
+        QUEUED = 'queued', 'в очереди'
+        RUNNING = 'running', 'в работе'
+        DONE = 'done', 'готово'
+        FAILED = 'failed', 'ошибка'
+        SKIPPED = 'skipped', 'пропущено'
+
+    key = models.CharField(max_length=200, unique=True)
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name='bot_jobs')
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='bot_jobs')
+    payload = models.JSONField(default=dict)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.QUEUED)
+    available_at = models.DateTimeField(default=timezone.now)
+    lease_until = models.DateTimeField(null=True, blank=True)
+    lease_token = models.UUIDField(null=True, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['status', 'available_at'], name='bot_job_ready_idx')]
