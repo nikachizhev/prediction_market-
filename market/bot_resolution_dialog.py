@@ -232,13 +232,15 @@ def handle_callback(callback: dict) -> None:
     if chat.get("type") != "private" or user_id is None or chat.get("id") != user_id:
         _quiet("answerCallbackQuery", **answer)
         return
+    _quiet("answerCallbackQuery", **answer)
     action, _, rest = data.partition(":")
     handler = HANDLERS.get(action)
     note = None
     if handler:
         question_id, _, arg = rest.partition(":")
         note = handler(user_id, message, _question(question_id), arg)
-    _quiet("answerCallbackQuery", **answer, **({"text": note} if note else {}))
+    if note:
+        telegram.send(user_id, note)
 
 
 # --- creator ---------------------------------------------------------------------------------------
@@ -271,7 +273,7 @@ def _on_outcome(user_id, message, question, outcome) -> str | None:
     else:
         telegram.send(user_id, f"Итог: <b>{LABELS[outcome]}</b>. Пришли фото или скриншот, который это "
                                "подтверждает — его увидят все участники.", parse_mode="HTML")
-    return LABELS[outcome]
+    return None
 
 
 def _on_option(user_id, message, question, arg) -> str | None:
@@ -319,7 +321,7 @@ def _on_option(user_id, message, question, arg) -> str | None:
         _quiet("editMessageText", chat_id=user_id, message_id=message["message_id"],
                text=_multi_dialog_text(question, subs, picked),
                reply_markup=outcome_keyboard(question, picked))
-    return f"{(by_id[sub_id].option_label or by_id[sub_id].title)[:40]}: {LABELS[choice]}"
+    return None
 
 
 def _on_next(user_id, message, question, _arg) -> str | None:
@@ -342,7 +344,7 @@ def _on_next(user_id, message, question, _arg) -> str | None:
     telegram.send(user_id, f"Итоги по вариантам:\n{_multi_summary_html(subs, picked)}\n\n"
                            "Пришли фото или скриншот, который это подтверждает — его увидят все участники.",
                   parse_mode="HTML")
-    return "Пришли фото"
+    return None
 
 
 def _draft(user_id, question) -> ResolutionDraft | None:
@@ -407,15 +409,14 @@ def _on_confirm(user_id, message, question, _arg) -> str | None:
             error = str(exc)
         else:
             error = None
-        is_document = draft.evidence_is_document
+            notify_participants(question, is_document=draft.evidence_is_document)
         transaction.on_commit(lambda d=draft: d.evidence and d.evidence.delete(save=False))
         draft.delete()
     if error:
         telegram.send(user_id, error)
         return None
     _report_to_creator(user_id, question)
-    notify_participants(question, is_document=is_document)
-    return "Опубликовано"
+    return None
 
 
 def _report_to_creator(user_id, question: Question) -> None:
@@ -438,7 +439,7 @@ def _report_to_creator(user_id, question: Question) -> None:
 
 
 def notify_participants(question: Question, *, is_document: bool = False) -> int:
-    """The stated outcome with its proof and a «Оспорить» button for everyone who traded."""
+    """Queue outcome evidence in the same transaction as the confirmed resolution."""
     title = html.escape(question.title[:200])
     subs = list(question.submarkets.all().order_by("id"))
     if question.proposed_outcome == "cancel":
@@ -459,15 +460,19 @@ def notify_participants(question: Question, *, is_document: bool = False) -> int
     people = (Trader.objects.filter(Q(trades__question=question) | Q(trades__question__parent=question),
                                     telegram_chat_id__isnull=False)
               .exclude(pk=question.creator_id).distinct())
+    from .bot_jobs import enqueue_message
     for trader in people:
-        try:
-            if question.evidence_file_id:
-                _send_evidence(trader.telegram_chat_id, question.evidence_file_id, is_document, text, markup)
-            else:
-                telegram.send(trader.telegram_chat_id, text, parse_mode="HTML", reply_markup=markup)
-            sent += 1
-        except telegram.TelegramError:
-            log.warning("could not notify trader %s about market %s", trader.pk, question.pk)
+        payload = {"parse_mode": "HTML", "reply_markup": markup}
+        if question.evidence_file_id:
+            method = "sendDocument" if is_document else "sendPhoto"
+            payload.update({"document" if is_document else "photo": question.evidence_file_id,
+                            "caption": text[:CAPTION_LIMIT]})
+        else:
+            method = "sendMessage"
+            payload["text"] = text
+        enqueue_message(f"outcome:{question.pk}:{question.proposed_at.isoformat()}:{trader.pk}",
+                        trader, question, method, payload)
+        sent += 1
     return sent
 
 
@@ -501,7 +506,7 @@ def _on_dispute_confirm(user_id, message, question, _arg) -> str | None:
         return None
     who = "проверят админы чата" if _chat_market(question) else "проверит модератор"
     telegram.send(user_id, f"Спор открыт, списано {settings.DISPUTE_COST} монет. Итог {who}.")
-    return "Спор открыт"
+    return None
 
 
 def _on_dispute_decline(user_id, message, question, _arg) -> str | None:

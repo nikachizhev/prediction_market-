@@ -37,13 +37,16 @@ update() {
 		systemctl enable pm-moderation-bot
 		systemctl restart pm-moderation-bot
 	fi
+	install -m 644 deploy/systemd/pm-bot-jobs.service /etc/systemd/system/pm-bot-jobs.service
+	systemctl daemon-reload
 	systemctl restart pm-web pm-worker
 	if grep -q '^TELEGRAM_BOT_TOKEN=.' .env; then
-		systemctl restart pm-bot
+		systemctl enable pm-bot-jobs
+		systemctl restart pm-bot-jobs pm-bot
 	else
 		echo "TELEGRAM_BOT_TOKEN is empty in .env: the bot is not started."
 	fi
-	systemctl --no-pager --lines=0 status pm-db pm-web pm-worker pm-bot | grep -E '^●|Active:' || true
+	systemctl --no-pager --lines=0 status pm-db pm-web pm-worker pm-bot pm-bot-jobs | grep -E '^●|Active:' || true
 }
 
 update "$@"
