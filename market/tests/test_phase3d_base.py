@@ -1,4 +1,4 @@
-"""Phase 3d base: migration 0034, per-market notify levels, `create_market(announce=)`, `/market` routing."""
+"""Phase 3d base: migration 0036, per-market notify levels, `create_market(announce=)`, `/market` routing."""
 import importlib
 from datetime import timedelta
 from decimal import Decimal
@@ -14,7 +14,7 @@ from market.models import ChatPost, Group, GroupMembership, MarketNotifyLevel, M
 pytestmark = pytest.mark.django_db
 
 D = Decimal
-migration = importlib.import_module("market.migrations.0034_phase_3d")
+migration = importlib.import_module("market.migrations.0036_phase_3d_data")
 
 
 def make(name, balance=1000, tg=None):
