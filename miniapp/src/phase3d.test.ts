@@ -1,4 +1,5 @@
 // Phase 3d in the market card, settings, links and the API client (spec E4, E6.3, E9.4, E9.5).
+import { toastDuration } from './components/Toast';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from './api';
 import { draftFromStartParam, chatFromStartParam, marketFromStartParam } from './links';
@@ -168,5 +169,12 @@ describe('API of «О чём спорим?» and chat drafts', () => {
       'key-3',
     );
     expect(bodyOf(fetch, 0)).toMatchObject({ chat: 'k7Q2', draft: 'Dk29x', announce: true, assist: 'oneline_edited', request_key: 'key-3' });
+  });
+});
+
+describe('toast duration', () => {
+  it('keeps short messages short and gives long ones time to be read', () => {
+    expect(toastDuration('Сохранено')).toBe(2600);
+    expect(toastDuration('я'.repeat(110))).toBe(6600);
   });
 });
