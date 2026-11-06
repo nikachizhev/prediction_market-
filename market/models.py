@@ -157,7 +157,7 @@ class Group(models.Model):
     # Admin's own creation price (CHAT_CREATION_COST_MIN..MAX); empty = by chat size.
     creation_cost = models.PositiveSmallIntegerField("своя цена создания", null=True, blank=True)
     # {"mode": one of CHAT_POST_MODES}; a missing key means CHAT_POST_MODE_DEFAULT.
-    # Before phase 3d: {kind: bool} for CHAT_POST_KINDS — migration 0034 turned them into a mode.
+    # Before phase 3d: {kind: bool} for CHAT_POST_KINDS — migration 0036 turned them into a mode.
     post_settings = models.JSONField("сообщения бота в чате", default=dict, blank=True)
     assist_enabled = models.BooleanField("ИИ-помощник", default=True)
     # The bot warned the chat that /market sends the replied message to the AI helper (spec E9.4).
