@@ -46,6 +46,7 @@ import {
   audienceOptions,
   withChat,
   creationTerms,
+  expectedCost,
   pickedChat,
   previewMetaSuffix,
   settleChat,
@@ -504,7 +505,7 @@ export function CreateScreen() {
     const signature = JSON.stringify(payload);
     if (attempt.current?.payload !== signature) attempt.current = { key: newRequestKey(), payload: signature };
     try {
-      const res = await api.createMarket(payload, attempt.current.key);
+      const res = await api.createMarket({ ...payload, ...expectedCost(chat, terms) }, attempt.current.key);
       attempt.current = null;
       setBalance(res.balance);
       tg.HapticFeedback.notification('success');
@@ -524,6 +525,13 @@ export function CreateScreen() {
       tg.HapticFeedback.notification('error');
       // A 4xx refusal created nothing; after a lost connection or a 5xx the retry keeps the key.
       if (err instanceof ApiError && err.status >= 400 && err.status < 500) attempt.current = null;
+      if (err instanceof ApiError && err.status === 409) {
+        // The chat's price moved: show the new one on the button, the next press confirms it.
+        setDraftChat(null);
+        setChatsAttempt((n) => n + 1);
+        toast(err.message, 'error');
+        return;
+      }
       const refused = draftCreateFailure(draftRef.current, err);
       if (refused === 'made') {
         // The button in the chat was faster: the draft leads to its market.

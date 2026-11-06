@@ -21,6 +21,14 @@ class MarketError(ValueError):
     """Business-rule violation; message is user-facing (Russian)."""
 
 
+class PriceChanged(MarketError):
+    """The creation price is not the one the creator saw; nothing was charged."""
+
+    def __init__(self, cost: int):
+        super().__init__(f"Цена создания изменилась: теперь {cost} монет. Нажми ещё раз, чтобы создать.")
+        self.cost = cost
+
+
 def _d(x: float | Decimal | int | str) -> Decimal:
     value = x if isinstance(x, Decimal) else Decimal(repr(float(x)) if isinstance(x, float) else str(x))
     if not value.is_finite():
@@ -706,7 +714,7 @@ def check_market_fields(*, title: str, criteria: str, category: str, closes_at, 
 @transaction.atomic
 def create_market(trader: Trader, *, title: str, criteria: str, category: str, closes_at, resolves_at,
                   request_key=None, group=None, options: list[str] | None = None,
-                  announce: bool = False) -> Question:
+                  announce: bool = False, expected_cost: int | None = None) -> Question:
     """User-created YES/NO or multi-option market: the creator pays the market maker's subsidy.
 
     With `request_key` the call is idempotent: a repeat by the same creator returns the market
@@ -715,6 +723,7 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
     by the last check (the caller refreshes it with `chats.check_member`), the chat must not be frozen,
     and the price and depth follow the chat's rules and stay fixed in the market.
     `announce` (chat markets only, spec E8.4): the bot announces the market in the chat.
+    `expected_cost`: the price the creator saw; if the chat's price has moved, PriceChanged and no charge.
     """
     from datetime import timedelta
     from uuid import UUID
@@ -774,6 +783,8 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
         if b < 1:
             raise MarketError("Для такой цены рынка слишком много вариантов.")
     cost = Decimal(cost_coins)
+    if expected_cost is not None and expected_cost != cost_coins:
+        raise PriceChanged(cost_coins)
     if trader.balance < cost:
         raise MarketError(f"Создание рынка стоит {cost_coins} монет — на балансе не хватает.")
     try:

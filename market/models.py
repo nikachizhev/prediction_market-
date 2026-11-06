@@ -861,6 +861,8 @@ class MarketDraft(models.Model):
     closes_at = models.DateTimeField(null=True, blank=True)
     resolves_at = models.DateTimeField(null=True, blank=True)
     options = models.JSONField(default=list, blank=True)
+    # The price on the `Создать` button: the market is created only at this price (the admin or chat size may move it).
+    shown_cost = models.PositiveSmallIntegerField(null=True, blank=True)
     # The market made from it (from the chat or the Mini App); a second `Создать` returns it.
     question = models.OneToOneField(Question, null=True, blank=True, on_delete=models.SET_NULL,
                                     related_name="chat_draft")

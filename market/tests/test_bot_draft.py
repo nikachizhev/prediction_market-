@@ -41,13 +41,14 @@ class Bot:
     def __init__(self):
         self.calls = []
         self.members = {ANYA, BORIS}
+        self.member_count = 12
 
     def __call__(self, method, **data):
         self.calls.append((method, data))
         if method == "getChatMember":
             return {"status": "member" if data["user_id"] in self.members else "left"}
         if method == "getChatMemberCount":
-            return 12
+            return self.member_count
         if method == "answerCallbackQuery":
             return True
         return {"message_id": 900 + len(self.calls)}
@@ -362,6 +363,47 @@ def test_create_makes_the_chat_market_once(bot, group, anya):
     assert LedgerEntry.objects.filter(trader=anya, kind=LedgerEntry.Kind.CREATION).count() == 1
     assert bot.alerts()[-1] == (bot_draft.ALERT_ALREADY, False)
     assert Event.objects.filter(name="market_create").count() == 1
+
+
+def test_price_moved_after_preview_charges_nothing_and_updates_the_button(bot, group, anya):
+    draft = made_draft(bot, anya)
+    assert draft.shown_cost == 40
+    Group.objects.filter(pk=group.pk).update(creation_cost=70)
+    press(ANYA, draft)
+    anya.refresh_from_db()
+    draft.refresh_from_db()
+    assert anya.balance == D(1000) and not Question.objects.exists() and draft.question_id is None
+    (edit,) = bot.sent("editMessageText")
+    assert edit["reply_markup"]["inline_keyboard"][0][0]["text"] == "Создать за 70"
+    assert draft.shown_cost == 70 and bot.alerts()[-1][1] is True and "70" in bot.alerts()[-1][0]
+    press(ANYA, draft)  # the person has seen the new price: this press is the confirmation
+    anya.refresh_from_db()
+    assert anya.balance == D(930) and Question.objects.get().subsidy == D(70)
+
+
+def test_price_moved_and_preview_not_updated_keeps_asking(bot, group, anya):
+    draft = made_draft(bot, anya)
+    Group.objects.filter(pk=group.pk).update(creation_cost=70)
+    original = bot.__call__
+    def broken_edit(method, **data):
+        if method == "editMessageText":
+            raise TelegramError("down")
+        return original(method, **data)
+    with patch("market.telegram.api", side_effect=broken_edit):
+        press(ANYA, draft)
+    draft.refresh_from_db()
+    anya.refresh_from_db()
+    assert draft.shown_cost == 40 and anya.balance == D(1000) and not Question.objects.exists()
+    assert bot.alerts()[-1] == (bot_draft.ALERT_FAILED, True)
+
+
+def test_price_moved_by_chat_size_is_caught_too(bot, group, anya):
+    draft = made_draft(bot, anya)
+    bot.member_count = 20  # crossed the tier: 40 → 70, the size comes from Telegram at the press
+    press(ANYA, draft)
+    anya.refresh_from_db()
+    assert anya.balance == D(1000) and not Question.objects.exists()
+    assert bot.sent("editMessageText")[0]["reply_markup"]["inline_keyboard"][0][0]["text"] == "Создать за 70"
 
 
 def test_create_with_options(bot, anya):

@@ -439,6 +439,8 @@ export interface CreateMarketData {
   announce?: boolean;
   /** Code of the chat draft the market is made from (phase 3d, spec E9.4). */
   draft?: string;
+  /** The chat price on the button; if it has moved the server refuses with 409 and charges nothing. */
+  expected_cost?: number;
 }
 
 // ---- Transport ----

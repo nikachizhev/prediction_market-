@@ -638,6 +638,14 @@ export function creationTerms(
   return { cost: Number(chat.creation_cost), b: chat.b };
 }
 
+/** What the server must charge: a chat's price can move while the button shows the old one. */
+export function expectedCost(
+  chat: ChatSpace | null | undefined,
+  terms: { cost: number } | null,
+): { expected_cost: number } | Record<string, never> {
+  return chat && terms ? { expected_cost: terms.cost } : {};
+}
+
 /** The helper is off for a chat whose admin (or the server) switched it off. */
 export function assistForChat(
   assist: AssistState | undefined,
