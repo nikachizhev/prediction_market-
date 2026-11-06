@@ -318,20 +318,26 @@ def create_market(request):
     for value in (closes_at, resolves_at):
         if value is not None and timezone.is_naive(value):
             raise BadRequest("Укажите дату с часовым поясом.")
-    with transaction.atomic():
-        if draft is not None:
-            # The lock keeps the chat's `Создать` button and this request from making two markets of one draft.
-            draft = MarketDraft.objects.select_for_update().get(pk=draft.pk)
-            if draft.question_id and not _same_key(draft.question.request_key, data.get("request_key")):
-                raise BadRequest("Рынок по этому черновику уже создан.")
-        question = services.create_market(
-            request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
-            category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
-            request_key=data.get("request_key") or None, group=group, options=data.get("options"),
-            announce=(bool(announce) and group is not None) or draft is not None)
-        if draft is not None and not draft.question_id:
-            draft.question = question
-            draft.save(update_fields=["question"])
+    expected_cost = data.get("expected_cost")
+    if expected_cost is not None and (isinstance(expected_cost, bool) or not isinstance(expected_cost, int)):
+        raise BadRequest("Укажите expected_cost числом.")
+    try:
+        with transaction.atomic():
+            if draft is not None:
+                # The lock keeps the chat's `Создать` button and this request from making two markets of one draft.
+                draft = MarketDraft.objects.select_for_update().get(pk=draft.pk)
+                if draft.question_id and not _same_key(draft.question.request_key, data.get("request_key")):
+                    raise BadRequest("Рынок по этому черновику уже создан.")
+            question = services.create_market(
+                request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
+                category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
+                request_key=data.get("request_key") or None, group=group, options=data.get("options"),
+                announce=(bool(announce) and group is not None) or draft is not None, expected_cost=expected_cost)
+            if draft is not None and not draft.question_id:
+                draft.question = question
+                draft.save(update_fields=["question"])
+    except services.PriceChanged as exc:
+        return JsonResponse({"error": str(exc), "creation_cost": s.money(exc.cost)}, status=409)
     if question.publication_state != "approved":
         request.trader.refresh_from_db()
         return {"market": None, "publication": question.publication_state, "draft_id": question.pk,

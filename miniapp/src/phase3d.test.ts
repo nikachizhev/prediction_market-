@@ -1,7 +1,8 @@
 // Phase 3d in the market card, settings, links and the API client (spec E4, E6.3, E9.4, E9.5).
-import { toastDuration } from './components/Toast';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from './api';
+import { toastDuration } from './components/Toast';
+import { expectedCost } from './create';
 import { draftFromStartParam, chatFromStartParam, marketFromStartParam } from './links';
 import { afterStar, authorLine, isNotifyLevel, NOTIFY_LEVELS, notifyLevelLabel, resolutionView } from './market';
 import { hasQuietMode, notifySummary, QUIET_OPTION, withQuiet } from './notifications';
@@ -176,5 +177,14 @@ describe('toast duration', () => {
   it('keeps short messages short and gives long ones time to be read', () => {
     expect(toastDuration('Сохранено')).toBe(2600);
     expect(toastDuration('я'.repeat(110))).toBe(6600);
+  });
+});
+
+describe('price on the button', () => {
+  it('is sent only for a chat with a known price', () => {
+    const chat = { code: 'c' } as Parameters<typeof expectedCost>[0];
+    expect(expectedCost(chat, { cost: 40 })).toEqual({ expected_cost: 40 });
+    expect(expectedCost(chat, null)).toEqual({});
+    expect(expectedCost(null, { cost: 100 })).toEqual({});
   });
 });

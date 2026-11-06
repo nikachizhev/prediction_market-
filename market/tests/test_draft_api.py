@@ -5,6 +5,7 @@ Telegram and the model are always mocked.
 """
 import uuid
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from django.test import override_settings
@@ -144,6 +145,56 @@ def test_draft_already_used_by_the_chat_button(anya):
         assert (code, data) == (400, {"error": "Рынок по этому черновику уже создан."})
         assert anya.post("markets", from_draft(draft))[0] == 400
     assert Question.objects.count() == 1
+
+
+def test_expected_cost_matches_and_creates(anya):
+    group = chat()
+    join(group, ANYA)
+    with telegram(count=28):
+        code, data = anya.post("markets", create_payload(chat=group.code, expected_cost=70))
+    assert code == 200 and Decimal(data["balance"]) == Decimal(930)
+
+
+def test_moved_price_is_refused_without_a_charge(anya):
+    group = chat()
+    join(group, ANYA)
+    with telegram(count=28):
+        code, data = anya.post("markets", create_payload(chat=group.code, expected_cost=40))
+    assert code == 409 and data["creation_cost"] == "70.00" and "70" in data["error"]
+    assert not Question.objects.exists() and trader(ANYA).balance == Decimal(1000)
+    assert not LedgerEntry.objects.filter(kind="creation").exists()
+
+
+def test_moved_price_leaves_the_draft_free(anya):
+    group = chat()
+    join(group, ANYA)
+    draft = make_draft(group, ANYA)
+    with telegram(count=28):
+        assert anya.post("markets", from_draft(draft, expected_cost=40))[0] == 409
+        draft.refresh_from_db()
+        assert draft.question_id is None
+        assert anya.post("markets", from_draft(draft, expected_cost=70))[0] == 200
+
+
+def test_replay_returns_the_market_even_if_the_price_moved_since(anya):
+    group = chat()
+    join(group, ANYA)
+    payload = create_payload(chat=group.code, expected_cost=70, request_key=str(uuid.uuid4()))
+    with telegram(count=28):
+        first = anya.post("markets", payload)[1]
+    with telegram(count=60):  # now 100, but this is a repeat of the same request
+        code, again = anya.post("markets", payload)
+    assert code == 200 and again["market"]["id"] == first["market"]["id"]
+    assert trader(ANYA).balance == Decimal(930)
+
+
+@pytest.mark.parametrize("bad", ["40", 40.5, True])
+def test_expected_cost_must_be_an_integer(anya, bad):
+    group = chat()
+    join(group, ANYA)
+    with telegram(count=28):
+        assert anya.post("markets", create_payload(chat=group.code, expected_cost=bad))[0] == 400
+    assert not Question.objects.exists()
 
 
 def test_draft_must_be_own_live_and_of_the_same_chat(anya, boris):

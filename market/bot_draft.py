@@ -225,10 +225,11 @@ def handle_command(message: dict, group: Group) -> None:
         draft.title = text if len(text) <= assist.TITLE_MAX else text[:assist.TITLE_MAX - 1].rstrip() + "…"
     draft.save()
     cost = chats.creation_cost(group)
+    draft.shown_cost = cost
     sent = say(preview_text(draft, cost, note), preview_markup(draft, cost))
     if sent and sent.get("message_id"):
         draft.preview_message_id = sent["message_id"]
-        draft.save(update_fields=["preview_message_id"])
+    draft.save(update_fields=["shown_cost", "preview_message_id"])
 
 
 # --- Создать ------------------------------------------------------------------------------------
@@ -253,7 +254,7 @@ def create_from(draft: MarketDraft) -> tuple[Question, bool]:
         question = services.create_market(
             draft.trader, title=draft.title, criteria=draft.criteria, category=draft.category,
             closes_at=draft.closes_at, resolves_at=draft.resolves_at, request_key=request_key(draft.code),
-            group=draft.group, options=draft.options or None, announce=True)
+            group=draft.group, options=draft.options or None, announce=True, expected_cost=draft.shown_cost)
         draft.question = question
         draft.save(update_fields=["question"])
     return question, not question.replayed
@@ -273,6 +274,19 @@ def _edit_preview(draft: MarketDraft, question: Question, message: dict) -> None
                      text=text, reply_markup=markup)
     except TelegramError:
         log.warning("draft preview in chat %s not updated", draft.group.telegram_chat_id, exc_info=True)
+
+
+def _show_new_price(draft: MarketDraft, cost: int, message: dict) -> bool:
+    """The button shows the new price; only then a press may charge it."""
+    try:
+        telegram.api("editMessageText", chat_id=draft.group.telegram_chat_id,
+                     message_id=message.get("message_id") or draft.preview_message_id,
+                     text=preview_text(draft, cost), reply_markup=preview_markup(draft, cost))
+    except TelegramError:
+        log.warning("draft price in chat %s not updated", draft.group.telegram_chat_id, exc_info=True)
+        return False
+    MarketDraft.objects.filter(pk=draft.pk).update(shown_cost=cost)
+    return True
 
 
 def handle_callback(callback: dict) -> None:
@@ -317,6 +331,9 @@ def _press(callback: dict) -> None:
     chats.refresh_member_count(group)
     try:
         question, created = create_from(draft)
+    except services.PriceChanged as exc:
+        _answer(callback, str(exc) if _show_new_price(draft, exc.cost, message) else ALERT_FAILED, alert=True)
+        return
     except MarketError as exc:
         _answer(callback, str(exc), alert=True)
         return
