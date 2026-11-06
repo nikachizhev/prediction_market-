@@ -1381,7 +1381,7 @@ export function CreateScreen() {
             )}
             <div className="hint-box create-note sub">
               <InfoIcon />
-              <span>Если не укажешь итог в течение 72 часов после этой даты, рынок отменится и всем вернутся монеты.</span>
+              <span>Если промолчишь сутки после этой даты, итог смогут предложить участники. Никто не предложит за 72 часа — рынок отменится и всем вернутся монеты.</span>
             </div>
             <div className="hint-box create-note sub">
               <InfoIcon />
@@ -1450,8 +1450,8 @@ export function CreateScreen() {
           </span>
           <h2 className="create-ask-title">Разреши боту писать тебе</h2>
           <p className="create-ask-text sub">
-            {resolutionDay} бот спросит, чем закончился рынок. Если итог не указать за 72 часа, рынок отменится и всем
-            вернутся монеты.
+            {resolutionDay} бот спросит, чем закончился рынок. Если промолчишь сутки, итог смогут предложить участники.
+            Никто не предложит за 72 часа — рынок отменится и всем вернутся монеты.
           </p>
           <button type="button" className="button-primary is-ink button-block" onClick={allowAndPublish} disabled={busy}>
             Разрешить и опубликовать
