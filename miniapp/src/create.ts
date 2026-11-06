@@ -16,6 +16,11 @@ import { formatDayMonth, formatPercent, plural, pluralize } from './format';
 
 export type CreateStep = 1 | 2 | 3;
 export type CreateMode = 'binary' | 'multiple';
+/**
+ * Which screen of «Создать» is open (spec E9.5): line — «О чём спорим?»; quick — the ready market
+ * from the helper (or a chat draft) with tap-to-edit fields; wizard — the three steps.
+ */
+export type CreateFlow = 'line' | 'quick' | 'wizard';
 
 /** Field groups the helper or a template fills; each shows an «ИИ» / «Шаблон» mark until edited. */
 export type FilledGroup = 'dates' | 'criteria' | 'category';
@@ -72,6 +77,13 @@ export interface CreateDraft {
   suggestion: QuestionSuggestion | null;
   /** «Кто увидит»: code of the closed chat; null — everyone (the public feed). */
   chat: string | null;
+  flow: CreateFlow;
+  /** Text of «О чём спорим?» as typed: the helper gets it, the wizard starts from it. */
+  line: string;
+  /** «Объявить в чате» (spec E8.4); sent only with a chat. */
+  announce: boolean;
+  /** Code of the chat draft (startapp=draft_<code>, spec E9.4); the market is made from it. */
+  draftCode: string | null;
 }
 
 export type CreateField = 'title' | 'options' | 'criteria' | 'category' | 'closes' | 'resolves';
@@ -118,6 +130,10 @@ export function defaultDraft(now: Date = new Date()): CreateDraft {
     assist: null,
     suggestion: null,
     chat: null,
+    flow: 'line',
+    line: '',
+    announce: false,
+    draftCode: null,
   };
 }
 
@@ -208,7 +224,10 @@ export function canProceed(draft: CreateDraft, step: CreateStep, now: Date = new
   return titleOk && rulesOk;
 }
 
-/** Body of POST /api/markets, or null while the draft is incomplete; `assist` and `template` only when used. */
+/**
+ * Body of POST /api/markets, or null while the draft is incomplete; `assist` and `template` only when
+ * used, `announce` and `draft` only with a chat.
+ */
 export function createPayload(draft: CreateDraft): CreateMarketData | null {
   const closes_at = closesAtIso(draft);
   const resolves_at = resolvesAtIso(draft);
@@ -222,6 +241,8 @@ export function createPayload(draft: CreateDraft): CreateMarketData | null {
     ...(draft.assist ? { assist: draft.assist } : {}),
     ...(draft.templateId ? { template: draft.templateId } : {}),
     ...(draft.chat ? { chat: draft.chat } : {}),
+    ...(draft.chat && draft.announce ? { announce: true } : {}),
+    ...(draft.chat && draft.draftCode ? { draft: draft.draftCode } : {}),
   };
   if (draft.mode === 'multiple') {
     return { ...base, options: cleanedOptions(draft) };
@@ -275,8 +296,12 @@ export type DraftEdit = Partial<
     | 'resultDate'
     | 'resultTime'
     | 'chat'
+    | 'announce'
   >
 >;
+
+/** Changes that are not corrections of the helper's market: navigation and where it is announced. */
+const NOT_CONTENT: (keyof DraftEdit)[] = ['step', 'chat', 'announce'];
 
 const GROUP_OF: Partial<Record<keyof DraftEdit, FilledGroup>> = {
   closeDate: 'dates',
@@ -300,6 +325,8 @@ export function editDraft(draft: CreateDraft, patch: DraftEdit): CreateDraft {
     // The helper fills every group, so a change to any of them corrects its suggestion.
     if (draft.assist === 'accepted') next.assist = 'edited';
   }
+  // «О чём спорим?»: any correction of the ready market, the question and options included.
+  if (draft.assist === 'oneline' && changed.some((k) => !NOT_CONTENT.includes(k))) next.assist = 'oneline_edited';
   if (changed.includes('title')) {
     // A new question needs a new suggestion: the helper card starts over.
     next.before = null;
@@ -589,7 +616,8 @@ export function pickedChat(draft: Pick<CreateDraft, 'chat'>, chats: ChatSpace[] 
  */
 export function settleChat(draft: CreateDraft, chats: ChatSpace[]): CreateDraft {
   if (!draft.chat) return draft;
-  return openChats(chats).some((c) => c.code === draft.chat) ? draft : { ...draft, chat: null };
+  // A chat draft and «Объявить в чате» belong to that chat only.
+  return openChats(chats).some((c) => c.code === draft.chat) ? draft : { ...draft, chat: null, draftCode: null, announce: false };
 }
 
 /** Price and depth of a new market at the picked place; null while the chat is not known yet. */
@@ -655,7 +683,12 @@ function readSuggestion(value: unknown): QuestionSuggestion | null {
   return { question: value.question, why: isText(value.why) ? value.why : '', state, own: value.own };
 }
 
-/** A stored draft; one saved before templates and the helper gets the new fields empty. */
+const ASSIST_OUTCOMES: AssistOutcome[] = ['accepted', 'edited', 'undone', 'oneline', 'oneline_edited'];
+
+/**
+ * A stored draft; one saved before templates and the helper gets the new fields empty, one saved
+ * before «О чём спорим?» opens in the wizard, where it was.
+ */
 export function readDraft(value: unknown): CreateDraft | null {
   if (!isRecord(value)) return null;
   const { step, title, criteria, category, closeDate, closeTime, resultDate, resultTime, assist, templateId } = value;
@@ -675,9 +708,16 @@ export function readDraft(value: unknown): CreateDraft | null {
     filledBy: readSource(value.filledBy),
     templateId: isText(templateId) && templateId !== '' ? templateId : null,
     before: readSnapshot(value.before),
-    assist: assist === 'accepted' || assist === 'edited' || assist === 'undone' ? assist : null,
+    assist: ASSIST_OUTCOMES.find((a) => a === assist) ?? null,
     suggestion: readSuggestion(value.suggestion),
     chat: isText(value.chat) && value.chat !== '' ? value.chat : null,
+    flow: value.flow === 'line' || value.flow === 'quick' ? value.flow : 'wizard',
+    line: isText(value.line) ? value.line : '',
+    announce: value.announce === true,
+    draftCode: isText(value.draftCode) && value.draftCode !== '' ? value.draftCode : null,
+    ...(value.mode === 'multiple' && Array.isArray(value.options)
+      ? { mode: 'multiple' as const, options: value.options.filter(isText) }
+      : {}),
   };
 }
 
@@ -715,5 +755,5 @@ export function clearDraft(): void {
 export function resolutionRule(draft: CreateDraft, now: Date = new Date()): string {
   const resolves = resolvesAtIso(draft);
   const when = resolves ? `${formatDayMonth(resolves, now)} в ${draft.resultTime}` : 'В дату итога';
-  return `${when} бот спросит, чем закончилось: нажмёшь ДА или НЕТ и пришлёшь фото или скриншот`;
+  return `${when} бот спросит, чем закончилось: ДА или НЕТ одним нажатием, фото — по желанию`;
 }

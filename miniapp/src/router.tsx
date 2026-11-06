@@ -4,7 +4,7 @@ import { BalancePill } from './components/BalancePill';
 import { TabBar } from './components/TabBar';
 import { useToast } from './components/Toast';
 import { grantMessage } from './grants';
-import { chatFromStartParam, marketFromStartParam } from './links';
+import { chatFromStartParam, draftFromStartParam, marketFromStartParam } from './links';
 import { Onboarding } from './screens/Onboarding';
 import { Placeholder } from './screens/Placeholder';
 import { useSession } from './session';
@@ -73,7 +73,7 @@ let deepLinkHandled = false;
 
 /**
  * `startapp=ref_<code>-m<id>` or `m<id>` opens the market, `chat_<code>` the closed chat,
- * once the session is ready.
+ * `draft_<code>` the creation preview of a chat draft, once the session is ready.
  */
 function useMarketDeepLink(ready: boolean) {
   const navigate = useNavigate();
@@ -86,7 +86,12 @@ function useMarketDeepLink(ready: boolean) {
       return;
     }
     const chat = chatFromStartParam(tg.startParam);
-    if (chat !== null) navigate(`/chat/${encodeURIComponent(chat)}`);
+    if (chat !== null) {
+      navigate(`/chat/${encodeURIComponent(chat)}`);
+      return;
+    }
+    const draft = draftFromStartParam(tg.startParam);
+    if (draft !== null) navigate(`/create?draft=${encodeURIComponent(draft)}`);
   }, [ready, navigate]);
 }
 

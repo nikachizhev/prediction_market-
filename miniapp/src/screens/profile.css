@@ -479,3 +479,8 @@
   font-size: 15px;
   font-weight: 500;
 }
+
+/* Quiet mode (phase 3d) sits above the per-type switches, set apart by a line. */
+.profile-notify-quiet {
+  border-bottom: 1px solid var(--line);
+}
