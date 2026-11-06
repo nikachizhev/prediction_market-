@@ -129,6 +129,46 @@ def test_wrong_creator_without_photo_still_loses_the_subsidy(people, market):
 
 # --- who may state the outcome --------------------------------------------------------------------------
 
+def test_someone_who_left_the_chat_cannot_state_the_outcome(people, market):
+    _, anya, boris, _ = people
+    group = Group.objects.create(name="Чат", kind="chat", telegram_chat_id=-100555, code=chats.new_code(),
+                                 bot_active=True)
+    GroupMembership.objects.create(group=group, trader=anya, status="left")
+    GroupMembership.objects.create(group=group, trader=boris, status="active", checked_at=timezone.now())
+    Question.objects.filter(pk=market.pk).update(group=group)
+    q = overdue(market)
+    before = balance(anya)
+    with pytest.raises(MarketError):
+        services.propose_by_participant(anya, q, "yes")
+    assert balance(anya) == before and not Question.objects.get(pk=q.pk).resolution_state
+    assert services.propose_by_participant(boris, q, "no").proposed_by_id == boris.pk
+
+
+def test_old_finish_form_cannot_bypass_a_stated_outcome(people, market):
+    from market.participation import finish
+    creator, anya, _, _ = people
+    q = services.propose_by_participant(anya, overdue(market), "yes")
+    before = balance(anya)
+    with pytest.raises(MarketError, match="Итог уже указан"):
+        finish(q, creator, "no")
+    with pytest.raises(MarketError, match="Итог уже указан"):
+        finish(q, None, "no", administrator=True)
+    q.refresh_from_db()
+    assert q.status == Question.Status.CLOSED and q.resolution_state == Question.Resolution.PENDING
+    assert balance(anya) == before
+
+
+def test_creator_is_not_told_about_their_own_dispute(people, market, django_capture_on_commit_callbacks):
+    creator, anya, boris, _ = people
+    q = services.propose_by_participant(anya, overdue(market), "yes")
+    with django_capture_on_commit_callbacks(execute=True):
+        services.open_dispute(creator, q)
+    assert not BotMessage.objects.filter(key=f"dispute-opened:{q.pk}").exists()
+    with django_capture_on_commit_callbacks(execute=True):
+        services.open_dispute(boris, q)  # someone else's dispute is news
+    assert BotMessage.objects.filter(key=f"dispute-opened:{q.pk}", trader=creator).exists()
+
+
 def test_participant_rules(people, market):
     creator, anya, _, stranger = people
     with pytest.raises(MarketError, match="через 24 ч"):

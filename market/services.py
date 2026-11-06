@@ -970,6 +970,7 @@ def propose_by_participant(trader: Trader, question: Question, outcome: str, *,
     """
     question, subs = _lock_root(question)
     trader = Trader.objects.select_for_update().get(pk=trader.pk)
+    check_access(trader, question)  # someone who left a closed chat no longer speaks for its markets
     if question.creator_id == trader.pk:
         raise MarketError("Создатель указывает итог сам, без залога.")
     if not _participant(trader, question):
@@ -1044,7 +1045,8 @@ def open_dispute(trader: Trader, question: Question, reason: str = ""):
     for sub in subs:
         sub.resolution_state = Question.Resolution.DISPUTED
         sub.save(update_fields=["resolution_state"])
-    _after_commit("dispute_opened", question.pk)
+    if not creator_vs_participant:  # the creator doesn't need to hear about their own dispute
+        _after_commit("dispute_opened", question.pk)
     if ask_proof:
         # Only a row in the durable bot queue: nothing here talks to Telegram.
         from .bot_resolution import request_evidence
@@ -1150,7 +1152,7 @@ def moderator_decide(question: Question, decision: str, *,
             outcomes_map = {s.pk: s.proposed_outcome for s in subs}
             upheld = False
         else:
-            raise MarketError("Для рынка с вариантами подтвердите исход автора или отмените рынок.")
+            raise MarketError("Для рынка с вариантами подтвердите указанный итог или отмените рынок.")
     else:
         upheld = decision != question.proposed_outcome
     disputes = list(Dispute.objects.select_for_update().filter(question=question, upheld__isnull=True).order_by("trader_id"))

@@ -57,8 +57,8 @@ def show_card(chat_id, question, page=0, *, message_id=None, result=''):
     text = (f'⚖️ СПОР ОБ ИСХОДЕ\n\nРынок #{question.pk}: {question.title[:250]}\n'
             f'Критерий: {question.resolution_criteria[:600] or "Не указан"}\n'
             f'Итог указал: {who}\n'
-            f'Исход автора: {proposed_str}\n'
-            f'Комментарий автора: {question.evidence_note[:500] or "Нет"}\n'
+            f'Указанный итог: {proposed_str}\n'
+            f'Комментарий: {question.evidence_note[:500] or "Нет"}\n'
             f'{proof}\n'
             f'Обращений: {total}. Страница {page+1}.')
     for dispute in disputes[page*3:(page+1)*3]:
@@ -66,19 +66,19 @@ def show_card(chat_id, question, page=0, *, message_id=None, result=''):
         text += f'\n\n#{dispute.pk} · {dispute.trader.pseudonym or dispute.trader.name}\nЗалог: {dispute.stake}. {status}.\n{dispute.reason or "Причина не указана"}'
     rows = []
     if question.evidence or question.evidence_file_id:
-        rows.append([{'text': '🖼 Получить доказательство автора', 'callback_data': f'ds:proof:{question.pk}'}])
+        rows.append([{'text': '🖼 Получить доказательство', 'callback_data': f'ds:proof:{question.pk}'}])
     rows.append([{'text': '🔎 Полная карточка и доказательство', 'url': f'{settings.SITE_URL}/admin/market/question/{question.pk}/change/'}])
     latest = disputes.filter(upheld__isnull=True).order_by('-pk').first()
     if latest and question.resolution_state == Question.Resolution.DISPUTED:
         if subs:
             if question.proposed_outcome != 'cancel':
-                rows.append([{'text': 'Подтвердить исход автора',
+                rows.append([{'text': 'Подтвердить указанный итог',
                               'callback_data': f'ds:ask:yes:{question.pk}:{latest.pk}'}])
             rows.append([{'text': 'Аннулировать по правилам спора',
                           'callback_data': f'ds:ask:cancel:{question.pk}:{latest.pk}'}])
         else:
             for decision, label in LABELS.items():
-                caption = f'Подтвердить исход автора: {label}' if decision == question.proposed_outcome else f'Изменить исход на {label}'
+                caption = f'Подтвердить указанный итог: {label}' if decision == question.proposed_outcome else f'Изменить исход на {label}'
                 if decision == 'cancel':
                     caption = 'Аннулировать по правилам спора'
                 rows.append([{'text': caption, 'callback_data': f'ds:ask:{decision}:{question.pk}:{latest.pk}'}])

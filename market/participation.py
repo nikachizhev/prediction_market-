@@ -36,6 +36,9 @@ def finish(question, trader, value=None, *, administrator=False):
         raise MarketError("Завершить вопрос может только автор.")
     if question.status in ("resolved", "annulled"):
         raise MarketError("Вопрос уже завершён.")
+    if question.resolution_state:
+        # A stated outcome settles through the dispute window: the bond and the fee share depend on it.
+        raise MarketError("Итог уже указан: он встанет после окна спора или решения по спору.")
     if question.kind == "poll":
         question.status = "closed"
         question.resolved_at = timezone.now()
