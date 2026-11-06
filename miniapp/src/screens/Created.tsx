@@ -124,9 +124,7 @@ export function CreatedScreen() {
                     Итог: <b>ДА</b>
                   </span>
                 </div>
-                <div className="mini-keys is-narrow">
-                  <span className="mini-key">Приложить фото</span>
-                </div>
+                <span className="mini-key is-wide">Приложить фото</span>
               </div>
             </div>
           </li>

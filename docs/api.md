@@ -278,8 +278,8 @@ interface MarketDraftView {                        // рынок из сообщ
 | `PATCH /api/me` | + `{notify_quiet?: boolean}` | `Me` |
 | `POST /api/markets/{id}/notify` | `{level: NotifyLevel}` — неизвестный уровень → `400`; для варианта мультирынка уровень ставится на весь рынок | `{level: NotifyLevel}` |
 | `POST /api/markets/{id}/star` | как раньше | `{starred, notify_level}` — звёздочка ставит `all`; снятие звёздочки убирает явный выбор (уровень снова по умолчанию) |
-| `POST /api/markets` | + `{announce?: boolean}` — только вместе с `chat`, без чата игнорируется: бот объявит рынок в чате (E8.4). + `{draft?: string}` — код черновика из чата: только свой, живой, того же чата, иначе `404`; рынок объявляется в чате ответом на исходное сообщение. + `assist`: `"oneline"` (создан как есть после «Сделать рынок») \| `"oneline_edited"` (после правки полей) | как раньше; `announce` и `draft: true` — в событие `market_create` |
-| `POST /api/assist` | + `{mode?: "oneline"}` — экран «О чём спорим?» | `AssistResult` (с `options`) или как раньше; `mode` пишется в `props` события `assist_request` |
+| `POST /api/markets` | + `{announce?: boolean}` — только вместе с `chat`, без чата игнорируется: бот объявит рынок в чате (E8.4). + `{draft?: string}` — код черновика из чата: только свой, живой, того же чата, иначе `404`; рынок объявляется в чате ответом на исходное сообщение. Рынок по черновику уже создан и ключ другой → `400`. + `assist`: `"oneline"` (создан как есть после «Сделать рынок») \| `"oneline_edited"` (после правки полей) | как раньше; `announce` и `draft: true` — в событие `market_create` |
+| `POST /api/assist` | + `{mode?: "oneline"}` — экран «О чём спорим?» | `AssistResult` (с `options`) или как раньше; `mode` пишется в `props` события `assist_request` (`/market` в чате пишет `mode: "chat"`) |
 | `POST /api/events` | + `name: "oneline_wizard"`, `props: {reason: "manual" \| "unavailable"}` — ушёл в мастер: «Заполнить самому» или помощник не ответил | `{ok: true}` |
 | `GET /api/drafts/{code}` | — | `MarketDraftView`; чужой, истёкший (24 ч) черновик или не участник чата → `404` `{error: "Черновик не найден."}` |
 

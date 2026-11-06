@@ -13,6 +13,12 @@ type ShowToast = (text: string, kind?: ToastKind) => void;
 const ToastContext = createContext<ShowToast>(() => {});
 
 const DURATION_MS = 2600;
+const MS_PER_CHAR = 60;
+
+/** Long messages stay longer: a short toast would vanish before they are read. */
+export function toastDuration(text: string): number {
+  return Math.max(DURATION_MS, text.length * MS_PER_CHAR);
+}
 
 /** Provides useToast(); renders the toast at the top of the screen like in the mockup. */
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -26,7 +32,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!toast) return;
-    const id = window.setTimeout(() => setToast(null), DURATION_MS);
+    const id = window.setTimeout(() => setToast(null), toastDuration(toast.text));
     return () => window.clearTimeout(id);
   }, [toast]);
 
