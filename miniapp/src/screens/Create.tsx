@@ -1,7 +1,9 @@
-// Market creation wizard from docs/mockups/Create.dc.html (spec E3, three steps) with templates,
-// the AI rules helper and similar markets from docs/mockups/quick-create/Main.dc.html (spec E9.1–E9.3),
-// «Кто увидит» and the price by place for closed chats (spec E8.3, E5).
-import { useCallback, useEffect, useRef, useState } from 'react';
+// «Создать»: «О чём спорим?» and the ready market from the helper (spec E9.5, phase 3d — no mockup),
+// a chat draft opened by startapp=draft_<code> (spec E9.4), and the market creation wizard from
+// docs/mockups/Create.dc.html (spec E3, three steps) with templates, the AI rules helper and similar
+// markets from docs/mockups/quick-create/Main.dc.html (spec E9.1–E9.3), «Кто увидит», the price by
+// place and «Объявить в чате» for closed chats (spec E8.3, E8.4, E5).
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   api,
@@ -13,6 +15,22 @@ import {
   type MarketCard,
   type MarketTemplate,
 } from '../api';
+import {
+  chatDraftTarget,
+  draftCreateFailure,
+  lineAnswer,
+  lineFailure,
+  lineFromDraft,
+  lineReady,
+  lineUsesAssist,
+  quickProblems,
+  wizardEvent,
+  wizardFromLine,
+  type LineOutcome,
+  type QuickField,
+  type WizardReason,
+} from '../oneline';
+import { QuickFields } from './QuickFields';
 import { BottomSheet } from '../components/BottomSheet';
 import { MainAction } from '../components/MainAction';
 import { MarketCardView } from '../components/MarketCardView';
@@ -26,6 +44,7 @@ import {
   assistCard,
   assistForChat,
   audienceOptions,
+  withChat,
   creationTerms,
   pickedChat,
   previewMetaSuffix,
@@ -83,6 +102,10 @@ const EXAMPLES_MULTIPLE: { title: string; options: string[] }[] = [
   },
 ];
 const OWN_RULE = 'Ты не сможешь делать прогнозы на свой рынок';
+const DRAFT_MISSING = 'Черновик не найден: он живёт 24 часа и открывается только у того, кто вызвал /market. Можно создать рынок здесь.';
+const DRAFT_GONE = 'Черновик не найден: он живёт 24 часа. Рынок можно создать и без него — нажми ещё раз.';
+const DRAFT_NOT_PUBLISHED = 'Рынок по этому черновику ещё не опубликован. Статус — в разделе «Мои».';
+const CHAT_FROZEN = 'Бот больше не администратор в этом чате, поэтому новые рынки создать нельзя.';
 const LATER_RULES = ['У участников будет 24 часа, чтобы оспорить итог', 'Половина комиссии со всех сделок — твоя'];
 /** Template category open at first, as in the mockup. */
 const DEFAULT_TEMPLATE_CATEGORY = 'study';
@@ -103,15 +126,23 @@ export function CreateScreen() {
   const toast = useToast();
   const { me, balance, setBalance, patchMe } = useSession();
   const [params, setParams] = useSearchParams();
-  // «Создать рынок для чата» opens the wizard as /create?chat=<code> with the chat picked.
+  // «Создать рынок для чата» opens «Создать» as /create?chat=<code> with the chat picked.
   const [draft, setDraftState] = useState<CreateDraft>(() => {
     const loaded = loadDraft();
     const chat = params.get('chat');
     if (!chat || chat === loaded.chat) return loaded;
-    const picked = { ...loaded, chat };
+    // The helper's ready market was made for another place: start over from its line.
+    const picked: CreateDraft =
+      loaded.flow === 'quick' ? { ...defaultDraft(), line: loaded.line, chat } : { ...loaded, chat, draftCode: null };
     saveDraft(picked);
     return picked;
   });
+  // startapp=draft_<code> opens /create?draft=<code>: the chat draft is loaded first.
+  const [draftLoad, setDraftLoad] = useState<string | null>(() => params.get('draft'));
+  // The chat of the opened draft, known even if GET /api/chats answered before the membership appeared.
+  const [draftChat, setDraftChat] = useState<ChatSpace | null>(null);
+  const [lineBusy, setLineBusy] = useState(false);
+  const [editing, setEditing] = useState<QuickField | null>(null);
   const draftRef = useRef(draft);
   const [categories, setCategories] = useState<Category[]>(cachedCategories);
   const [templates, setTemplates] = useState<MarketTemplate[]>(cachedTemplates);
@@ -161,7 +192,7 @@ export function CreateScreen() {
   }, []);
 
   useEffect(() => {
-    if (params.has('chat')) setParams({}, { replace: true });
+    if (params.has('chat') || params.has('draft')) setParams({}, { replace: true });
   }, [params, setParams]);
 
   useEffect(() => {
@@ -219,10 +250,12 @@ export function CreateScreen() {
     }
   }, []);
 
+  const chatList = useMemo(() => withChat(chats, draftChat), [chats, draftChat]);
+
   // A chat that is no longer available (left, frozen) falls back to everyone.
   useEffect(() => {
-    if (chats && chatsFresh) commit(settleChat(draftRef.current, chats));
-  }, [chats, chatsFresh, commit]);
+    if (chatList && chatsFresh) commit(settleChat(draftRef.current, chatList));
+  }, [chatList, chatsFresh, commit]);
 
   /** A change made by the creator: removes the «ИИ» / «Шаблон» mark of the field. */
   const update = useCallback((patch: DraftEdit) => commit(editDraft(draftRef.current, patch)), [commit]);
@@ -235,21 +268,93 @@ export function CreateScreen() {
     [update],
   );
 
-  const step = draft.step;
+  /** A whole new draft (a helper's answer, a chat draft, starting over): nothing of the old one is kept. */
+  const replaceDraft = useCallback(
+    (next: CreateDraft) => {
+      commit(next);
+      setServerErrors({});
+      setEditing(null);
+      mainRef.current?.scrollIntoView({ block: 'start' });
+    },
+    [commit],
+  );
 
-  // On steps 2 and 3 Telegram's back button returns to the previous step.
+  const step = draft.step;
+  const flow = draft.flow;
+  const wizard = flow === 'wizard';
+  const quick = flow === 'quick';
+
+  /** Back to «О чём спорим?» with its text. */
+  const backToLine = useCallback(() => {
+    assistRequest.current += 1;
+    setAssistUi('idle');
+    replaceDraft(lineFromDraft(draftRef.current));
+  }, [replaceDraft]);
+
+  // Telegram's back button: steps 2 and 3 return to the previous step, step 1 and the ready market to «О чём спорим?».
   useEffect(() => {
-    if (step === 1) return;
+    if (flow === 'line') return;
     tg.BackButton.show();
-    const off = tg.BackButton.onClick(() => goTo((step - 1) as CreateStep));
+    const off = tg.BackButton.onClick(() => (wizard && step > 1 ? goTo((step - 1) as CreateStep) : backToLine()));
     return () => {
       off();
       tg.BackButton.hide();
     };
-  }, [step, goTo]);
+  }, [flow, wizard, step, goTo, backToLine]);
 
-  // Similar markets on the review step (spec E9.3); an error or nothing similar — no block.
-  const similarQuery = step === 3 ? draft.title.trim() : '';
+  // The chat draft of startapp=draft_<code>: its market if it is made already, otherwise its preview.
+  useEffect(() => {
+    if (!draftLoad) return;
+    let cancelled = false;
+    const open = async () => {
+      const view = await api.chatDraft(draftLoad);
+      if (cancelled) return;
+      const target = chatDraftTarget(view);
+      if ('market' in target) {
+        if (draftRef.current.draftCode === draftLoad) clearDraft();
+        // Until premoderation approves it the market itself answers 404; its status is in «Мои».
+        const unpublished = await api
+          .publicationDrafts()
+          .then((res) => res.items.some((item) => item.id === target.market))
+          .catch(() => false);
+        if (cancelled) return;
+        if (unpublished) toast(DRAFT_NOT_PUBLISHED);
+        navigate(unpublished ? '/mine' : `/market/${target.market}`, { replace: true });
+        return;
+      }
+      // The price and the helper depend on the chat. GET /api/drafts has just checked the membership.
+      const space = await api.chat(view.chat.code);
+      if (cancelled) return;
+      if (space.frozen) {
+        toast(CHAT_FROZEN, 'error');
+        replaceDraft(defaultDraft());
+        setDraftLoad(null);
+        return;
+      }
+      assistRequest.current += 1;
+      setAssistUi('idle');
+      setDraftChat(space);
+      replaceDraft(target.draft);
+      setDraftLoad(null);
+    };
+    open().catch((err: unknown) => {
+      if (cancelled) return;
+      if (err instanceof ApiError && err.status === 404) {
+        toast(DRAFT_MISSING, 'error');
+        replaceDraft(defaultDraft());
+      } else {
+        toast(err instanceof ApiError ? err.message : 'Что-то пошло не так. Попробуйте ещё раз.', 'error');
+      }
+      setDraftLoad(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [draftLoad, navigate, replaceDraft, toast]);
+
+  // Similar markets on the review step and the ready market (spec E9.3); an error or nothing similar — no block.
+  const reviewing = (wizard && step === 3) || quick;
+  const similarQuery = reviewing ? draft.title.trim() : '';
   useEffect(() => {
     if (similarQuery.length < TITLE_MIN) {
       setSimilar([]);
@@ -274,20 +379,22 @@ export function CreateScreen() {
     };
   }, [similarQuery]);
 
-  const listed = !!draft.chat && !!chats?.some((c) => c.code === draft.chat);
-  const chat = pickedChat(draft, chatsFresh || listed ? chats : null);
-  const audience = audienceOptions(chats);
+  const listed = !!draft.chat && !!chatList?.some((c) => c.code === draft.chat);
+  const chat = pickedChat(draft, chatsFresh || listed ? chatList : null);
+  const audience = audienceOptions(chatList);
   const assist = assistForChat(me?.assist, chat);
   const card = assistCard(draft, assistUi, assist);
-  const loading = step === 2 && card === 'loading';
+  const loading = wizard && step === 2 && card === 'loading';
   // Price and depth by place (spec E5); unknown until the chat list arrives.
   const terms = me ? creationTerms(me.limits, chat) : null;
   const cost = terms ? terms.cost : 0;
   const rest = balanceAfterCreation(balance, cost);
-  const ready = canProceed(draft, step, now) && !loading;
+  const ready = canProceed(draft, quick ? 3 : step, now) && !loading;
   const dates = dateErrors(draft, now);
   const fieldError = (field: CreateField) =>
     serverErrors[field] ?? (field === 'closes' || field === 'resolves' ? dates[field] : undefined);
+  const problems = quick ? quickProblems(draft, now) : {};
+  const quickProblem = (field: QuickField) => serverErrors[field] ?? problems[field];
 
   const setLeft = (left: unknown) => {
     if (typeof left !== 'number' || !Number.isFinite(left)) return;
@@ -329,6 +436,66 @@ export function CreateScreen() {
     }
   };
 
+  const toWizard = (next: CreateDraft, reason: WizardReason) => {
+    replaceDraft(next);
+    const event = wizardEvent(reason);
+    api.event(event.name, event.props).catch(() => {});
+  };
+
+  /** «Заполнить самому»: the wizard with templates, the line in the question field. */
+  const fillMyself = () => {
+    tg.HapticFeedback.impact('light');
+    assistRequest.current += 1;
+    setLineBusy(false);
+    setAssistUi('idle');
+    toWizard(wizardFromLine(draftRef.current), 'manual');
+  };
+
+  const applyLine = (outcome: LineOutcome) => {
+    if (outcome.kind === 'quick') {
+      replaceDraft(outcome.draft);
+      tg.HapticFeedback.notification('success');
+      return;
+    }
+    toWizard(outcome.draft, 'unavailable');
+    // After replaceDraft: a new title resets the helper card, this sets what happened.
+    setAssistUi(outcome.ui);
+    if (outcome.ui === 'warn') {
+      setWarning(outcome.warning ?? '');
+      tg.HapticFeedback.notification('warning');
+    } else if (outcome.ui === 'limit') {
+      toast('Подсказки на сегодня закончились — заполни рынок сам.');
+    } else if (outcome.ui === 'off') {
+      toast('Помощник сейчас не отвечает — заполни рынок сам.');
+    }
+  };
+
+  /** «Сделать рынок»: the helper makes the whole market; off, no answer or no suggestions left — the wizard. */
+  const makeMarket = async () => {
+    const current = draftRef.current;
+    if (!lineReady(current.line) || lineBusy) return;
+    tg.HapticFeedback.impact('light');
+    if (!lineUsesAssist(assist)) {
+      applyLine({ kind: 'wizard', draft: wizardFromLine(current), ui: assist?.enabled ? 'limit' : 'idle', warning: null });
+      return;
+    }
+    const request = ++assistRequest.current;
+    setLineBusy(true);
+    let outcome: LineOutcome;
+    try {
+      const res = await api.assist(current.line.trim(), undefined, current.chat ?? undefined, 'oneline');
+      setLeft(res.left);
+      if (request !== assistRequest.current) return;
+      outcome = lineAnswer(draftRef.current, res);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) setLeft(0);
+      if (request !== assistRequest.current) return;
+      outcome = lineFailure(draftRef.current, err);
+    }
+    setLineBusy(false);
+    applyLine(outcome);
+  };
+
   const submit = async () => {
     const payload = createPayload(draft);
     if (!payload || submitting.current) return;
@@ -357,11 +524,22 @@ export function CreateScreen() {
       tg.HapticFeedback.notification('error');
       // A 4xx refusal created nothing; after a lost connection or a 5xx the retry keeps the key.
       if (err instanceof ApiError && err.status >= 400 && err.status < 500) attempt.current = null;
+      const refused = draftCreateFailure(draftRef.current, err);
+      if (refused === 'made') {
+        // The button in the chat was faster: the draft leads to its market.
+        setDraftLoad(draftRef.current.draftCode);
+        return;
+      }
+      if (refused === 'gone') {
+        commit({ ...draftRef.current, draftCode: null });
+        toast(DRAFT_GONE, 'error');
+        return;
+      }
       const message = err instanceof ApiError ? err.message : 'Что-то пошло не так. Попробуйте ещё раз.';
       const field = err instanceof ApiError && err.status === 400 ? errorField(message) : null;
       if (field) {
         setServerErrors({ [field]: message });
-        goTo(stepOfField(field));
+        if (draftRef.current.flow === 'wizard') goTo(stepOfField(field));
       } else {
         toast(message, 'error');
       }
@@ -374,7 +552,7 @@ export function CreateScreen() {
   const next = () => {
     if (!ready) return;
     tg.HapticFeedback.impact('light');
-    if (step < 3) goTo((step + 1) as CreateStep);
+    if (wizard && step < 3) goTo((step + 1) as CreateStep);
     else if (tg.canRequestWriteAccess && !tg.botCanWrite) setAskWrite(true);
     else void submit();
   };
@@ -398,14 +576,25 @@ export function CreateScreen() {
     setServerErrors({});
     assistRequest.current += 1;
     setAssistUi('idle');
+    setLineBusy(false);
+    setEditing(null);
     setTplOpen(null);
     setTplValues({});
     navigate('/');
   };
 
   const labels = new Map(categories.map((c) => [c.slug, c.label]));
-  const notEnough = step === 3 && !!terms && rest === null;
-  const nextLabel = step === 3 ? (terms ? `На проверку · резерв ${formatMoney(cost)}` : 'Отправить на проверку') : 'Далее';
+  const notEnough = reviewing && !!terms && rest === null;
+  const nextLabel = quick
+    ? terms
+      ? `Создать за ${formatMoney(cost)}`
+      : 'Создать'
+    : step === 3
+      ? terms
+        ? `На проверку · резерв ${formatMoney(cost)}`
+        : 'Отправить на проверку'
+      : 'Далее';
+  const lineAssist = lineUsesAssist(assist);
   const resolves = resolvesAtIso(draft);
   const resolutionDay = resolves ? `${formatDayMonth(resolves, now)} в ${draft.resultTime}` : 'В дату итога';
 
@@ -434,6 +623,143 @@ export function CreateScreen() {
   const mark = (group: FilledGroup) =>
     draft.filledBy && draft.marks.includes(group) ? <FillMark by={draft.filledBy} /> : null;
 
+  const audienceBlock =
+    audience.length > 0 ? (
+      <div role="group" aria-label="Кто увидит рынок" className="create-audience">
+        <span className="field-label">Кто увидит</span>
+        {audience.map((option) => {
+          const on = option.chat === (chat ? chat.code : null);
+          return (
+            <button
+              key={option.chat ?? 'all'}
+              type="button"
+              className={`create-audience-option ${on ? 'is-on' : ''}`}
+              aria-pressed={on}
+              onClick={() => {
+                if (on) return;
+                tg.HapticFeedback.selection();
+                update({ chat: option.chat });
+              }}
+            >
+              <span className="create-audience-radio" aria-hidden="true">
+                <span />
+              </span>
+              <span className="create-audience-text">
+                <span className="create-audience-label">{option.label}</span>
+                <span className="sub create-audience-sub">{option.sub}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    ) : null;
+
+  const similarBlock =
+    similar.length > 0 ? (
+      <section aria-label="Похожие рынки" className="create-similar">
+        <div className="create-section-head">
+          <span className="create-similar-title">Похожие рынки уже есть</span>
+          <span className="sub field-hint">Можно сделать прогноз там — или всё равно создать свой.</span>
+        </div>
+        {similar.map((m) => (
+          <article key={m.id} className="create-similar-card">
+            <div className="create-similar-text">
+              <span className="create-similar-question">{m.title}</span>
+              <span className="sub create-similar-line">{similarLine(m)}</span>
+            </div>
+            <button type="button" className="create-button is-outline create-similar-open" onClick={() => navigate(`/market/${m.id}`)}>
+              Открыть
+            </button>
+          </article>
+        ))}
+      </section>
+    ) : null;
+
+  const costBlock = (
+    <>
+      <section aria-label="Стоимость" className="card create-cost">
+        <div className="quote-row">
+          <span className="sub">Создание рынка</span>
+          <span className="quote-strong">{terms ? formatMoney(cost) : '—'}</span>
+        </div>
+        <div className="quote-row">
+          <span className="sub">Баланс после</span>
+          <span className={`quote-value ${terms && rest === null ? 'quote-error' : ''}`}>
+            {!terms ? '—' : rest === null ? 'не хватает' : formatMoney(rest)}
+          </span>
+        </div>
+        {terms && (
+          <span className="sub create-cost-note">
+            Эти {formatMoney(cost)} монет покрывают работу маркет-мейкера. Что не потратится, вернётся после итога.
+            {chat && ` Ставка в ${formatMoney(cost)} монет сдвинет вероятность с 50% до 75%: чем дешевле рынок, тем легче он двигается.`}
+          </span>
+        )}
+      </section>
+      {!terms && me && (
+        <div className="hint-box create-warning" role="alert">
+          <InfoIcon />
+          <span>
+            {chatsFailed ? 'Не удалось загрузить чат, поэтому цена создания пока неизвестна. ' : 'Загружаем цену создания для чата… '}
+            {chatsFailed && (
+              <button type="button" className="create-link" onClick={() => setChatsAttempt((n) => n + 1)}>
+                Повторить
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+      {notEnough && (
+        <div className="hint-box create-warning" role="alert">
+          <InfoIcon />
+          <span>
+            Не хватает монет: на балансе {formatMoney(balance)}, а создание рынка стоит {formatMoney(cost)}.
+          </span>
+        </div>
+      )}
+    </>
+  );
+
+  // «Объявить в чате» (spec E8.4): a market made from a chat message is announced by the server anyway.
+  const announceBlock = !draft.chat ? null : draft.draftCode ? (
+    <p className="sub small create-announce-note">Бот объявит рынок в чате ответом на исходное сообщение.</p>
+  ) : (
+    <label className="create-check">
+      <input
+        type="checkbox"
+        checked={draft.announce}
+        onChange={(e) => {
+          tg.HapticFeedback.selection();
+          update({ announce: e.target.checked });
+        }}
+      />
+      <span className="create-check-box" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 12.5l4.5 4.5L19 7.5" />
+        </svg>
+      </span>
+      <span className="create-check-text">
+        <span className="create-check-label">Объявить в чате</span>
+        {/* Hint text is ours (no mockup for phase 3d), based on spec E8.4. */}
+        <span className="sub create-check-hint">
+          Бот напишет о рынке в чат. Без галочки он объявит рынок, когда в нём поставят 3 участника чата.
+        </span>
+      </span>
+    </label>
+  );
+
+  const rulesBlock = (
+    <ul className="create-rules">
+      {[OWN_RULE, resolutionRule(draft, now), ...LATER_RULES].map((r) => (
+        <li key={r}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--yes)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 12.5l4.5 4.5L19 7.5" />
+          </svg>
+          <span>{r}</span>
+        </li>
+      ))}
+    </ul>
+  );
+
   return (
     <div className="screen create" ref={mainRef}>
       <header className="create-header">
@@ -444,20 +770,124 @@ export function CreateScreen() {
             </svg>
           </button>
           <span className="create-heading">Новый рынок</span>
-          <span className="create-step sub">{step} / 3</span>
+          <span className="create-step sub">{wizard ? `${step} / 3` : ''}</span>
         </div>
-        <div className="create-progress" aria-hidden="true">
-          {[1, 2, 3].map((n) => (
-            <span key={n} className={step >= n ? 'is-done' : ''} />
-          ))}
-        </div>
+        {wizard && (
+          <div className="create-progress" aria-hidden="true">
+            {[1, 2, 3].map((n) => (
+              <span key={n} className={step >= n ? 'is-done' : ''} />
+            ))}
+          </div>
+        )}
       </header>
 
       <div className="create-body">
-        <p className="sub small">Перед публикацией вопрос, правила и варианты ответа проверяет внешняя ИИ-модель. Спорные вопросы рассматривает модератор. До одобрения вопрос не виден участникам; монеты создания зарезервированы и вернутся при отказе.</p>
-        {step === 1 && (
+        {draftLoad && (
+          <div className="create-draft-loading" role="status" aria-label="Загружаем черновик">
+            <Skeleton height={28} width="70%" radius={8} />
+            <Skeleton height={220} radius={16} />
+            <Skeleton height={96} radius={16} />
+          </div>
+        )}
+
+        {!draftLoad && flow === 'line' && (
+          <>
+            <h1 className="screen-title">О чём спорим?</h1>
+            <div className="field">
+              <div className="field-head">
+                <label htmlFor="create-line" className="visually-hidden">
+                  О чём спорим?
+                </label>
+                <span className="sub field-counter create-line-counter">
+                  {draft.line.length} / {TITLE_MAX}
+                </span>
+              </div>
+              <textarea
+                id="create-line"
+                className="input create-line-input"
+                rows={3}
+                maxLength={TITLE_MAX}
+                value={draft.line}
+                disabled={lineBusy}
+                onChange={(e) => commit({ ...draftRef.current, line: e.target.value.slice(0, TITLE_MAX) })}
+                placeholder="Например: Сдам ли я сессию без троек?"
+              />
+            </div>
+            {audienceBlock}
+            <button
+              type="button"
+              className="button-primary is-ink button-block"
+              onClick={() => void makeMarket()}
+              disabled={!lineReady(draft.line) || lineBusy}
+              aria-busy={lineBusy || undefined}
+            >
+              {lineBusy ? 'Помощник собирает рынок…' : 'Сделать рынок'}
+            </button>
+            {lineBusy ? (
+              <span role="status" className="sub small create-line-note">
+                Обычно 2–3 секунды.
+              </span>
+            ) : (
+              <span className="sub small create-line-note">
+                {lineAssist
+                  ? 'Текст уйдёт ИИ-помощнику — без имени и Telegram ID. Он соберёт рынок, а ты проверишь и поправишь.'
+                  : assist?.enabled
+                    ? 'Подсказки на сегодня закончились — откроется обычный мастер.'
+                    : 'ИИ-помощник сейчас выключен — откроется обычный мастер.'}
+                {lineAssist && assist ? ` ${assistLeftLabel(assist.left)}.` : ''}
+              </span>
+            )}
+            <button type="button" className="create-link create-line-manual" onClick={fillMyself}>
+              Заполнить самому
+            </button>
+          </>
+        )}
+
+        {!draftLoad && quick && (
+          <>
+            <h1 className="screen-title">Проверь и создай</h1>
+            <p className="sub small">
+              {draft.assist ? 'Проверь каждое поле: за итог отвечаешь ты, а не ИИ. ' : ''}Нажми на поле, чтобы поправить.
+            </p>
+            <QuickFields
+              draft={draft}
+              update={update}
+              categories={categories}
+              problem={quickProblem}
+              editing={editing}
+              onEdit={setEditing}
+              now={now}
+            />
+            {chat && <p className="sub small create-quick-place">Только чат «{chat.title}»: увидят и смогут ставить только участники чата.</p>}
+            {similarBlock}
+            {costBlock}
+            {announceBlock}
+            <p className="sub small">Перед публикацией вопрос, правила и варианты ответа проверяет внешняя ИИ-модель. Спорные вопросы рассматривает модератор. До одобрения вопрос не виден участникам; монеты создания зарезервированы и вернутся при отказе.</p>
+            {rulesBlock}
+          </>
+        )}
+
+        {!draftLoad && wizard && <p className="sub small">Перед публикацией вопрос, правила и варианты ответа проверяет внешняя ИИ-модель. Спорные вопросы рассматривает модератор. До одобрения вопрос не виден участникам; монеты создания зарезервированы и вернутся при отказе.</p>}
+        {!draftLoad && wizard && step === 1 && (
           <>
             <h1 className="screen-title">О чём спрашиваем?</h1>
+            {assistUi === 'warn' && (
+              <section role="alert" className="create-assist is-warn">
+                <div className="create-assist-row is-tight">
+                  <svg className="create-assist-icon create-warn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 4l9 16H3z" />
+                    <path d="M12 10v4M12 17v.01" />
+                  </svg>
+                  <div className="create-assist-text is-loose">
+                    <span className="create-assist-title">{warning}</span>
+                    <span className="create-assist-note">
+                      Такие рынки запрещены и скрываются по жалобам. Спроси о событии, а не о человеке, — например,
+                      «Пройдёт ли экзамен по расписанию?»
+                    </span>
+                  </div>
+                </div>
+              </section>
+            )}
             <div className="field">
               <span className="field-label">Формат рынка</span>
               <div className="create-mode-tabs" role="tablist" aria-label="Формат рынка">
@@ -679,39 +1109,11 @@ export function CreateScreen() {
               </section>
             ) : null}
 
-            {audience.length > 0 && (
-              <div role="group" aria-label="Кто увидит рынок" className="create-audience">
-                <span className="field-label">Кто увидит</span>
-                {audience.map((option) => {
-                  const on = option.chat === (chat ? chat.code : null);
-                  return (
-                    <button
-                      key={option.chat ?? 'all'}
-                      type="button"
-                      className={`create-audience-option ${on ? 'is-on' : ''}`}
-                      aria-pressed={on}
-                      onClick={() => {
-                        if (on) return;
-                        tg.HapticFeedback.selection();
-                        update({ chat: option.chat });
-                      }}
-                    >
-                      <span className="create-audience-radio" aria-hidden="true">
-                        <span />
-                      </span>
-                      <span className="create-audience-text">
-                        <span className="create-audience-label">{option.label}</span>
-                        <span className="sub create-audience-sub">{option.sub}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            {!draft.draftCode && audienceBlock}
           </>
         )}
 
-        {step === 2 && (
+        {!draftLoad && wizard && step === 2 && (
           <>
             <h1 className="screen-title">Сроки и правила итога</h1>
 
@@ -991,28 +1393,10 @@ export function CreateScreen() {
           </>
         )}
 
-        {step === 3 && (
+        {!draftLoad && wizard && step === 3 && (
           <>
             <h1 className="screen-title">Проверь и публикуй</h1>
-            {similar.length > 0 && (
-              <section aria-label="Похожие рынки" className="create-similar">
-                <div className="create-section-head">
-                  <span className="create-similar-title">Похожие рынки уже есть</span>
-                  <span className="sub field-hint">Можно сделать прогноз там — или всё равно создать свой.</span>
-                </div>
-                {similar.map((m) => (
-                  <article key={m.id} className="create-similar-card">
-                    <div className="create-similar-text">
-                      <span className="create-similar-question">{m.title}</span>
-                      <span className="sub create-similar-line">{similarLine(m)}</span>
-                    </div>
-                    <button type="button" className="create-button is-outline create-similar-open" onClick={() => navigate(`/market/${m.id}`)}>
-                      Открыть
-                    </button>
-                  </article>
-                ))}
-              </section>
-            )}
+            {similarBlock}
             <span className="field-label sub">Так рынок увидят в ленте</span>
             <div className="create-preview" ref={(el) => el?.setAttribute('inert', '')} aria-label="Предпросмотр карточки">
               <MarketCardView
@@ -1023,78 +1407,38 @@ export function CreateScreen() {
                 onStar={noop}
               />
             </div>
-            <section aria-label="Стоимость" className="card create-cost">
-              <div className="quote-row">
-                <span className="sub">Создание рынка</span>
-                <span className="quote-strong">{terms ? formatMoney(cost) : '—'}</span>
-              </div>
-              <div className="quote-row">
-                <span className="sub">Баланс после</span>
-                <span className={`quote-value ${terms && rest === null ? 'quote-error' : ''}`}>
-                  {!terms ? '—' : rest === null ? 'не хватает' : formatMoney(rest)}
-                </span>
-              </div>
-              {terms && (
-                <span className="sub create-cost-note">
-                  Эти {formatMoney(cost)} монет покрывают работу маркет-мейкера. Что не потратится, вернётся после итога.
-                  {chat && ` Ставка в ${formatMoney(cost)} монет сдвинет вероятность с 50% до 75%: чем дешевле рынок, тем легче он двигается.`}
-                </span>
-              )}
-            </section>
-            {!terms && me && (
-              <div className="hint-box create-warning" role="alert">
-                <InfoIcon />
-                <span>
-                  {chatsFailed ? 'Не удалось загрузить чат, поэтому цена создания пока неизвестна. ' : 'Загружаем цену создания для чата… '}
-                  {chatsFailed && (
-                    <button type="button" className="create-link" onClick={() => setChatsAttempt((n) => n + 1)}>
-                      Повторить
-                    </button>
-                  )}
-                </span>
-              </div>
-            )}
-            {notEnough && (
-              <div className="hint-box create-warning" role="alert">
-                <InfoIcon />
-                <span>
-                  Не хватает монет: на балансе {formatMoney(balance)}, а создание рынка стоит {formatMoney(cost)}.
-                </span>
-              </div>
-            )}
-            <ul className="create-rules">
-              {[OWN_RULE, resolutionRule(draft, now), ...LATER_RULES].map((r) => (
-                <li key={r}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--yes)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M5 12.5l4.5 4.5L19 7.5" />
-                  </svg>
-                  <span>{r}</span>
-                </li>
-              ))}
-            </ul>
+            {costBlock}
+            {announceBlock}
+            {rulesBlock}
           </>
         )}
       </div>
 
-      <div className={`create-bar ${isTelegram() ? 'is-native' : ''}`}>
-        {step > 1 && !isTelegram() && (
-          <button type="button" className="create-back" onClick={() => goTo((step - 1) as CreateStep)}>
-            Назад
-          </button>
-        )}
-        <div className="create-next">
-          {/* Hidden while the sheet is open: Telegram's MainButton would sit under it. */}
-          {!askWrite && (
-            <MainAction
-              text={nextLabel}
-              onClick={next}
-              disabled={!ready || notEnough || !me || !terms}
-              busy={busy}
-              variant="ink"
-            />
+      {!draftLoad && flow !== 'line' && (
+        <div className={`create-bar ${isTelegram() ? 'is-native' : ''}`}>
+          {!isTelegram() && (
+            <button
+              type="button"
+              className="create-back"
+              onClick={() => (wizard && step > 1 ? goTo((step - 1) as CreateStep) : backToLine())}
+            >
+              Назад
+            </button>
           )}
+          <div className="create-next">
+            {/* Hidden while a sheet is open: Telegram's MainButton would sit under it. */}
+            {!askWrite && editing === null && (
+              <MainAction
+                text={nextLabel}
+                onClick={next}
+                disabled={!ready || notEnough || !me || !terms}
+                busy={busy}
+                variant="ink"
+              />
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <BottomSheet open={askWrite} onClose={() => setAskWrite(false)} label="Разреши боту писать тебе">
         <div className="create-ask">

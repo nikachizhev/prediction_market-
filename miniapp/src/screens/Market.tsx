@@ -1,7 +1,7 @@
 // Market card from docs/mockups/Market.dc.html: open / waiting / review / finished states.
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { api, ApiError, type HistoryPeriod, type MarketDetail, type Side, type SubmarketCard } from '../api';
+import { api, ApiError, type HistoryPeriod, type MarketDetail, type NotifyLevel, type Side, type SubmarketCard } from '../api';
 import { lineYAt } from '../chartMotion';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { BottomSheet } from '../components/BottomSheet';
@@ -11,8 +11,10 @@ import { useSell } from '../components/SellSheet';
 import { Skeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
 import { useTradeSheet } from '../components/TradeSheet';
-import { formatCompact, formatDayMonth, formatEnds, formatMoney, formatPercent, formatSigned, plural, pluralize } from '../format';
+import { formatCompact, formatDayMonth, formatEnds, formatMoney, formatPercent, formatSigned } from '../format';
 import {
+  afterStar,
+  authorLine,
   botChatLink,
   buildChart,
   canSell,
@@ -22,6 +24,8 @@ import {
   datesLine,
   heldSides,
   initials,
+  NOTIFY_LEVELS,
+  notifyLevelLabel,
   outcomeLabel,
   periodChange,
   periodWord,
@@ -29,6 +33,7 @@ import {
   pointIndexAt,
   positionAfterSell,
   positionStats,
+  resolutionView,
   settledResult,
   sharesLabel,
   sharesOf,
@@ -63,6 +68,9 @@ export function MarketScreen() {
   const [history, setHistory] = useState<{ period: HistoryPeriod; points: HistoryPoint[] } | null>(null);
   const [historyKey, setHistoryKey] = useState(0);
   const [reportOpen, setReportOpen] = useState(false);
+  const [bellOpen, setBellOpen] = useState(false);
+  // Bumped by every star or bell change: only the latest answer may set the level.
+  const levelRequest = useRef(0);
 
   const marketRef = useRef<MarketDetail | null>(null);
   marketRef.current = market;
@@ -223,11 +231,40 @@ export function MarketScreen() {
     const starred = !m.starred;
     tg.HapticFeedback.selection();
     setMarket((prev) => (prev ? { ...prev, starred } : prev));
-    api.star(m.id, starred).catch((err: unknown) => {
-      setMarket((prev) => (prev ? { ...prev, starred: !starred } : prev));
-      toast(err instanceof ApiError ? err.message : 'Не получилось. Попробуйте ещё раз.', 'error');
-    });
+    const request = ++levelRequest.current;
+    api
+      .star(m.id, starred)
+      .then((res) => {
+        // The star sets «Всё», removing it brings back the default level.
+        if (request === levelRequest.current) setMarket((prev) => (prev ? afterStar(prev, res) : prev));
+      })
+      .catch((err: unknown) => {
+        setMarket((prev) => (prev ? { ...prev, starred: !starred } : prev));
+        toast(err instanceof ApiError ? err.message : 'Не получилось. Попробуйте ещё раз.', 'error');
+      });
   }, [toast]);
+
+  const pickLevel = useCallback(
+    (level: NotifyLevel) => {
+      const m = marketRef.current;
+      setBellOpen(false);
+      if (!m || !m.notify_level || m.notify_level === level) return;
+      const before = m.notify_level;
+      tg.HapticFeedback.selection();
+      setMarket((prev) => (prev ? { ...prev, notify_level: level } : prev));
+      const request = ++levelRequest.current;
+      api
+        .setNotifyLevel(m.id, level)
+        .then((res) => {
+          if (request === levelRequest.current) setMarket((prev) => (prev ? { ...prev, notify_level: res.level } : prev));
+        })
+        .catch((err: unknown) => {
+          if (request === levelRequest.current) setMarket((prev) => (prev ? { ...prev, notify_level: before } : prev));
+          toast(err instanceof ApiError ? err.message : 'Не получилось. Попробуйте ещё раз.', 'error');
+        });
+    },
+    [toast],
+  );
 
   const share = useCallback(() => {
     const m = marketRef.current;
@@ -279,6 +316,20 @@ export function MarketScreen() {
                 <path d="M5 13v5.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V13" />
               </svg>
             </button>
+            {market.notify_level && (
+              <button
+                type="button"
+                className="mk-icon-button"
+                aria-haspopup="dialog"
+                aria-label={`Уведомления о рынке: ${notifyLevelLabel(market.notify_level)}`}
+                onClick={() => {
+                  tg.HapticFeedback.selection();
+                  setBellOpen(true);
+                }}
+              >
+                <BellIcon level={market.notify_level} />
+              </button>
+            )}
             <button
               type="button"
               className="mk-icon-button"
@@ -372,10 +423,7 @@ export function MarketScreen() {
           )}
           <div className="mk-author-text">
             <span className="mk-author-name">{m.author.display_name}</span>
-            <span className="sub small">
-              Автор · разрешил {pluralize(m.author.resolved, 'рынок', 'рынка', 'рынков')} · {m.author.disputes_lost}{' '}
-              {plural(m.author.disputes_lost, 'проигранный спор', 'проигранных спора', 'проигранных споров')}
-            </span>
+            <span className="sub small">{authorLine(m.author)}</span>
           </div>
         </div>
 
@@ -383,7 +431,8 @@ export function MarketScreen() {
           <section className="card mk-section" aria-label="Ждём итог">
             <span className="mk-section-title">Приём прогнозов закрыт</span>
             <p className="mk-text sub">
-              Ждём итог от создателя — он укажет его в боте с фото-доказательством до {formatDayMonth(m.resolves_at)}.
+              Ждём итог от создателя: бот спросит его {formatDayMonth(m.resolves_at)}. Если автор промолчит, итог смогут
+              предложить участники.
             </p>
           </section>
         )}
@@ -560,6 +609,35 @@ export function MarketScreen() {
 
       {trade.sheet}
       {sell.sheet}
+      <BottomSheet open={bellOpen} onClose={() => setBellOpen(false)} label="Уведомления о рынке">
+        <div className="mk-confirm">
+          <div className="mk-section-title">Уведомления о рынке</div>
+          <div role="radiogroup" aria-label="Уровень уведомлений" className="mk-levels">
+            {NOTIFY_LEVELS.map((o) => {
+              const on = m.notify_level === o.level;
+              return (
+                <button
+                  key={o.level}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  className={`mk-level ${on ? 'is-on' : ''}`}
+                  onClick={() => pickLevel(o.level)}
+                >
+                  <span className="mk-level-radio" aria-hidden="true">
+                    <span />
+                  </span>
+                  <span className="mk-level-text">
+                    <span className="mk-level-label">{o.label}</span>
+                    <span className="sub small">{o.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mk-text sub small">Вопросы о том, чем закончился рынок, и споры приходят всегда.</p>
+        </div>
+      </BottomSheet>
       <BottomSheet open={reportOpen} onClose={() => setReportOpen(false)} label="Жалоба на рынок">
         <div className="mk-confirm">
           <div className="mk-section-title">Пожаловаться на рынок?</div>
@@ -596,12 +674,23 @@ function StarIcon({ on }: { on: boolean }) {
   );
 }
 
-function PhotoIcon({ size }: { size: number }) {
+/** Bell of the market: filled for «Всё», plain for «Только итог», crossed out for «Ничего». */
+function BellIcon({ level }: { level: NotifyLevel }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3.5" y="5" width="17" height="14" rx="2" />
-      <circle cx="9" cy="10" r="1.6" />
-      <path d="M5 17l4.5-4.5 3 3 2.5-2.5 4 4" />
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill={level === 'all' ? 'currentColor' : 'none'}
+      stroke={level === 'none' ? 'var(--sub)' : 'currentColor'}
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" />
+      <path d="M10 20.5a2 2 0 0 0 4 0" fill="none" />
+      {level === 'none' && <path d="M4 4l16 16" />}
     </svg>
   );
 }
@@ -627,15 +716,9 @@ function Figure({ label, value, extra }: { label: string; value: string; extra?:
   );
 }
 
+/** The photo of the result, only when there is one: a result without a photo is a normal result (phase 3d). */
 function Evidence({ url, compact = false }: { url: string | null; compact?: boolean }) {
-  if (!url) {
-    return compact ? null : (
-      <div className="mk-evidence is-empty">
-        <PhotoIcon size={32} />
-        Фото-доказательство от автора
-      </div>
-    );
-  }
+  if (!url) return null;
   return (
     <a
       className={`mk-evidence ${compact ? 'is-compact' : ''}`}
@@ -661,6 +744,7 @@ function ReviewSection({
   onDispute: () => void;
 }) {
   const r = market.resolution!;
+  const rv = resolutionView(r);
   const left = timeLeft(r.dispute_until);
   const proposed = r.proposed_outcome;
   const subs = market.submarkets && market.submarkets.length > 0 ? market.submarkets : null;
@@ -686,7 +770,7 @@ function ReviewSection({
   return (
     <section className="card mk-section" aria-label="Итог на проверке">
       <div className="mk-row is-baseline">
-        <span className="sub small">Итог от автора</span>
+        <span className="sub small">{rv.source}</span>
         <span className="sub small mk-strong">
           {disputed ? 'Спор у модератора' : left ? `Окно спора: ${left}` : 'Окно спора закрыто'}
         </span>
@@ -706,7 +790,7 @@ function ReviewSection({
       ) : (
         <span className={`mk-outcome ${tone}`}>{proposed === 'cancel' ? 'Отменить рынок' : outcomeLabel(proposed)}</span>
       )}
-      <Evidence url={r.evidence_url} />
+      <Evidence url={rv.evidence} />
       {r.note && <p className="mk-text">{r.note}</p>}
       <p className="mk-text sub small">
         {disputed
@@ -746,7 +830,7 @@ function ResolvedSection({ market }: { market: MarketDetail }) {
     result = settledResult(market.my_position, outcome);
     totalSpent = Number(market.my_position.spent);
   }
-  const evidence = market.resolution?.evidence_url ?? null;
+  const rv = resolutionView(market.resolution);
   return (
     <section className="card mk-section mk-resolved" aria-label="Итог">
       <div className="mk-resolved-text">
@@ -768,8 +852,9 @@ function ResolvedSection({ market }: { market: MarketDetail }) {
             <span className={result.profit >= 0 ? 'is-up' : 'is-down'}>({formatSigned(Math.round(result.profit), 0)})</span>
           </span>
         )}
+        {rv.byParticipant && <span className="sub small mk-by-participant">{rv.source}</span>}
       </div>
-      <Evidence url={evidence} compact />
+      <Evidence url={rv.evidence} compact />
     </section>
   );
 }

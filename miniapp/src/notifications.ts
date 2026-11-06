@@ -1,5 +1,5 @@
 // Pure helpers of «Уведомления» and their settings (docs/mockups/Notifications.dc.html, Profile.dc.html).
-import type { Notice, NoticeFilter, NotifyKind, NotifySettings } from './api';
+import type { Me, Notice, NoticeFilter, NotifyKind, NotifySettings } from './api';
 import { dayLabel } from './format';
 
 // ---- Inbox ----
@@ -102,4 +102,26 @@ export function notifyCountLabel(notify: Partial<NotifySettings> | null | undefi
 
 export function toggleNotify(notify: NotifySettings, key: NotifyKind): NotifySettings {
   return { ...notify, [key]: !notify[key] };
+}
+
+// ---- Quiet mode (spec E6.3, phase 3d) ----
+
+export const QUIET_OPTION = {
+  label: 'Тихий режим',
+  hint: 'Бот присылает только итоги с выплатами и то, что нужно для разрешения; остальное — во «Входящих»',
+} as const;
+
+/** Whether the server knows quiet mode (an older one sends no `notify_quiet`). */
+export function hasQuietMode(me: Pick<Me, 'notify_quiet'> | null | undefined): boolean {
+  return typeof me?.notify_quiet === 'boolean';
+}
+
+/** `me` with quiet mode switched; the same object when the server does not know it. */
+export function withQuiet<T extends Pick<Me, 'notify_quiet'>>(me: T, quiet: boolean): T {
+  return hasQuietMode(me) ? { ...me, notify_quiet: quiet } : me;
+}
+
+/** Value next to «Уведомления» in the profile: «Тихий режим» when it is on, otherwise «4 из 5». */
+export function notifySummary(me: Pick<Me, 'notify' | 'notify_quiet'>): string {
+  return me.notify_quiet === true ? QUIET_OPTION.label : notifyCountLabel(me.notify);
 }

@@ -1,6 +1,6 @@
 // Pure helpers for the market card and «Мои» (docs/mockups/Market.dc.html, Mine.dc.html).
-import type { HistoryPeriod, MarketStatus, Position, Side, TopMove } from './api';
-import { dayLabel, formatDayMonth, formatTime, pluralize } from './format';
+import type { HistoryPeriod, MarketDetail, MarketStatus, NotifyLevel, Position, Resolution, Side, TopMove } from './api';
+import { dayLabel, formatDayMonth, formatTime, plural, pluralize } from './format';
 
 // ---- Chart ----
 
@@ -356,4 +356,67 @@ export function datesLine(closesAt: string, resolvesAt: string, now: Date = new 
 export function sharesLabel(shares: string | number): string {
   const n = Math.floor(num(shares));
   return pluralize(n, 'акция', 'акции', 'акций');
+}
+
+// ---- Bell: notification level of the market (spec E6.3, phase 3d) ----
+
+export const NOTIFY_LEVELS: { level: NotifyLevel; label: string; hint: string }[] = [
+  { level: 'all', label: 'Всё', hint: 'Сдвиги вероятности, 24 часа до конца приёма и итог' },
+  { level: 'result', label: 'Только итог', hint: 'Бот напишет, только когда рынок разрешится' },
+  { level: 'none', label: 'Ничего', hint: 'Бот не пишет, события — только во «Входящих» приложения' },
+];
+
+export function isNotifyLevel(value: unknown): value is NotifyLevel {
+  return value === 'all' || value === 'result' || value === 'none';
+}
+
+/** «Всё» / «Только итог» / «Ничего». */
+export function notifyLevelLabel(level: NotifyLevel): string {
+  return NOTIFY_LEVELS.find((o) => o.level === level)?.label ?? '';
+}
+
+/** Market after the star answer `{starred, notify_level}`: the star sets «Всё», removing it the default level. */
+export function afterStar<T extends Pick<MarketDetail, 'starred' | 'notify_level'>>(
+  market: T,
+  res: { starred: boolean; notify_level?: unknown },
+): T {
+  return {
+    ...market,
+    starred: res.starred,
+    ...(isNotifyLevel(res.notify_level) ? { notify_level: res.notify_level } : {}),
+  };
+}
+
+// ---- Result: who proposed it, the photo (spec E4, phase 3d) ----
+
+export interface ResolutionView {
+  /** «Итог от автора» / «Итог предложил участник». */
+  source: string;
+  byParticipant: boolean;
+  /** The photo only when there is one: a result without a photo is a normal result. */
+  evidence: string | null;
+}
+
+export function resolutionView(resolution: Pick<Resolution, 'evidence_url' | 'by_participant'> | null | undefined): ResolutionView {
+  const byParticipant = resolution?.by_participant === true;
+  const url = resolution?.evidence_url;
+  return {
+    source: byParticipant ? 'Итог предложил участник' : 'Итог от автора',
+    byParticipant,
+    evidence: typeof url === 'string' && url !== '' ? url : null,
+  };
+}
+
+/** «Автор · разрешил 5 рынков · 0 проигранных споров · 2 рынка разрешили участники». */
+export function authorLine(author: Pick<MarketDetail['author'], 'resolved' | 'disputes_lost' | 'resolved_by_participants'>): string {
+  const parts = [
+    'Автор',
+    `разрешил ${pluralize(author.resolved, 'рынок', 'рынка', 'рынков')}`,
+    `${author.disputes_lost} ${plural(author.disputes_lost, 'проигранный спор', 'проигранных спора', 'проигранных споров')}`,
+  ];
+  const byParticipants = author.resolved_by_participants;
+  if (typeof byParticipants === 'number' && byParticipants > 0) {
+    parts.push(`${pluralize(byParticipants, 'рынок', 'рынка', 'рынков')} разрешили участники`);
+  }
+  return parts.join(' · ');
 }

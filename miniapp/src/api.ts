@@ -43,6 +43,25 @@ export interface Me {
   unread_notifications?: number;
   /** AI rules helper (phase 3a); missing on an older server, which means it is off. */
   assist?: AssistState;
+  /** Quiet mode (phase 3d): the bot sends only results with payouts and resolution steps; missing on an older server. */
+  notify_quiet?: boolean;
+}
+
+/**
+ * Notification level of one market (phase 3d): all — moves, «24 часа до конца» and the result;
+ * result — only the result; none — the event goes only to the app's inbox.
+ */
+export type NotifyLevel = 'all' | 'result' | 'none';
+
+export interface Resolution {
+  proposed_outcome: Side | 'cancel' | null;
+  /** null — the result came without a photo, which is a normal result (phase 3d). */
+  evidence_url: string | null;
+  note: string;
+  dispute_until: string | null;
+  can_dispute: boolean;
+  /** The result was proposed by a participant, not the author (phase 3d); missing on an older server. */
+  by_participant?: boolean;
 }
 
 export interface SubmarketCard extends MarketCard {
@@ -53,13 +72,7 @@ export interface SubmarketCard extends MarketCard {
   my_position?: Position | null;
   trades?: { side: Side; amount: Money; prob_after: number; at: string; sell: boolean }[];
   top_moves?: TopMove[];
-  resolution?: {
-    proposed_outcome: Side | 'cancel' | null;
-    evidence_url: string | null;
-    note: string;
-    dispute_until: string | null;
-    can_dispute: boolean;
-  } | null;
+  resolution?: Resolution | null;
 }
 
 export interface MarketCard {
@@ -132,7 +145,14 @@ export interface MarketDetail extends MarketCard {
   criteria: string;
   resolves_at: string;
   created_at: string;
-  author: { display_name: string; photo_url: string | null; resolved: number; disputes_lost: number };
+  author: {
+    display_name: string;
+    photo_url: string | null;
+    resolved: number;
+    disputes_lost: number;
+    /** Markets of the author resolved by participants (phase 3d); missing on an older server. */
+    resolved_by_participants?: number;
+  };
   is_creator: boolean;
   can_trade: boolean;
   /** Why trading is not possible, in Russian; null when it is. */
@@ -143,13 +163,9 @@ export interface MarketDetail extends MarketCard {
   trades: { side: Side; amount: Money; prob_after: number; at: string; sell: boolean }[];
   /** Up to 3 sharpest single-trade price moves, anonymous (phase 2; may be missing). */
   top_moves?: TopMove[];
-  resolution: {
-    proposed_outcome: Side | 'cancel' | null;
-    evidence_url: string | null;
-    note: string;
-    dispute_until: string | null;
-    can_dispute: boolean;
-  } | null;
+  resolution: Resolution | null;
+  /** The bell of the market card (phase 3d); missing on an older server. */
+  notify_level?: NotifyLevel;
 }
 
 export interface TopMove {
@@ -201,7 +217,15 @@ export interface Category {
   label: string;
 }
 
-export type EventName = 'share' | 'onboarding_done' | 'onboarding_skip' | 'open_bot' | 'feed_impression' | 'market_open';
+export type EventName =
+  | 'share'
+  | 'onboarding_done'
+  | 'onboarding_skip'
+  | 'open_bot'
+  | 'feed_impression'
+  | 'market_open'
+  /** Left «О чём спорим?» for the wizard (phase 3d): props.reason — "manual" | "unavailable". */
+  | 'oneline_wizard';
 
 export type NoticeGroup = 'mine' | 'pay' | 'markets';
 export type NoticeFilter = 'all' | NoticeGroup;
@@ -341,6 +365,8 @@ export interface AssistResult {
   closes_at: string;
   resolves_at: string;
   left: number;
+  /** For «кто из…» (phase 3d): 2–10 answer options; null or missing — a ДА/НЕТ market. */
+  options?: string[] | null;
 }
 
 /** Forbidden topic: nothing is filled in. */
@@ -373,8 +399,28 @@ export interface MarketTemplate {
   blanks: TemplateBlank[];
 }
 
-/** How the creator treated the helper's suggestion (analytics only). */
-export type AssistOutcome = 'accepted' | 'edited' | 'undone';
+/**
+ * How the creator treated the helper's suggestion (analytics only): accepted / edited / undone in
+ * the wizard; oneline / oneline_edited — created from «О чём спорим?» as is or after editing (phase 3d).
+ */
+export type AssistOutcome = 'accepted' | 'edited' | 'undone' | 'oneline' | 'oneline_edited';
+
+/** Market from a chat message (spec E9.4), opened by startapp=draft_<code> (phase 3d). */
+export interface MarketDraftView {
+  code: string;
+  chat: ChatRef;
+  title: string;
+  criteria: string;
+  category: string | null;
+  closes_at: string | null;
+  resolves_at: string | null;
+  /** [] — a ДА/НЕТ market. */
+  options: string[];
+  /** false — the helper did not help: only the title (the message text) is filled. */
+  assisted: boolean;
+  /** The market of this draft is created already (by the button in the chat or earlier in the app). */
+  market_id: number | null;
+}
 
 export interface CreateMarketData {
   title: string;
@@ -389,6 +435,10 @@ export interface CreateMarketData {
   chat?: string;
   /** Option names for multiple-choice markets. */
   options?: string[];
+  /** Only with `chat`: the bot announces the market in the chat (phase 3d, spec E8.4). */
+  announce?: boolean;
+  /** Code of the chat draft the market is made from (phase 3d, spec E9.4). */
+  draft?: string;
 }
 
 // ---- Transport ----
@@ -461,6 +511,7 @@ export const api = {
     onboarded?: boolean;
     interests?: string[];
     notify?: Partial<NotifySettings>;
+    notify_quiet?: boolean;
   }) => request<Me>('PATCH', '/me', patch),
 
   notifications: (filter: NoticeFilter = 'all') =>
@@ -494,7 +545,13 @@ export const api = {
 
   sell: (id: number, side: Side, shares: string) => request<TradeResult>('POST', `/markets/${id}/sell`, { side, shares }),
 
-  star: (id: number, starred: boolean) => request<{ starred: boolean }>('POST', `/markets/${id}/star`, { starred }),
+  /** The star sets the level to «all»; removing it drops the explicit choice (phase 3d). */
+  star: (id: number, starred: boolean) =>
+    request<{ starred: boolean; notify_level?: NotifyLevel }>('POST', `/markets/${id}/star`, { starred }),
+
+  /** The bell of the market card (phase 3d); for an option of a multiple-choice market it applies to the whole market. */
+  setNotifyLevel: (id: number, level: NotifyLevel) =>
+    request<{ level: NotifyLevel }>('POST', `/markets/${id}/notify`, { level }),
   dismissMarket: (id: number, dismissed = true) => request<{ dismissed: boolean }>('POST', `/markets/${id}/dismiss`, { dismissed }),
   resetHiddenMarkets: () => request<{ restored: number }>('POST', '/feed/reset-hidden'),
 
@@ -513,13 +570,20 @@ export const api = {
 
   publicationDrafts: () => request<{ items: { id: number; title: string; state: string; label: string; at: string }[] }>('GET', '/publication-drafts'),
 
-  /** AI rules helper; 429 — the daily limit is used up, 503 — off or the model did not answer. */
-  assist: (title: string, category?: string, chat?: string) =>
+  /**
+   * AI rules helper; 429 — the daily limit is used up, 503 — off or the model did not answer.
+   * `mode: "oneline"` — the «О чём спорим?» screen (phase 3d).
+   */
+  assist: (title: string, category?: string, chat?: string, mode?: 'oneline') =>
     request<AssistResult | AssistWarning>('POST', '/assist', {
       title,
       ...(category ? { category } : {}),
       ...(chat ? { chat } : {}),
+      ...(mode ? { mode } : {}),
     }),
+
+  /** Draft of a market from a chat message; 404 — someone else's, expired or not a member of the chat. */
+  chatDraft: (code: string) => request<MarketDraftView>('GET', `/drafts/${encodeURIComponent(code)}`),
 
   templates: () => request<MarketTemplate[]>('GET', '/templates'),
 
