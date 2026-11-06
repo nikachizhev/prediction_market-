@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from . import moderation, moderation_bot as bot
 from .models import Dispute, DisputeDelivery, Question
-from .services import MarketError
+from .services import MarketError, by_participant, evidence_deadline, has_evidence
 
 LABELS = {'yes': 'ДА', 'no': 'НЕТ', 'cancel': 'ОТМЕНА'}
 
@@ -45,29 +45,40 @@ def show_card(chat_id, question, page=0, *, message_id=None, result=''):
         proposed_str = ', '.join(f'{s.option_label or s.title}: {LABELS.get(s.proposed_outcome, "—")}' for s in subs)
     else:
         proposed_str = LABELS.get(question.proposed_outcome, "Не указан")
+    if by_participant(question):
+        proposer = question.proposed_by
+        who = f'участник {proposer.pseudonym or proposer.name} (автор рынка не указал итог)'
+    else:
+        who = 'автор рынка'
+    proof = 'Доказательство: прислано' if has_evidence(question) else 'Доказательство не прислано'
+    deadline = evidence_deadline(question)
+    if deadline and not has_evidence(question):
+        proof += f' (ждём до {timezone.localtime(deadline):%d.%m %H:%M})' if deadline > timezone.now() else ' (срок вышел)'
     text = (f'⚖️ СПОР ОБ ИСХОДЕ\n\nРынок #{question.pk}: {question.title[:250]}\n'
             f'Критерий: {question.resolution_criteria[:600] or "Не указан"}\n'
-            f'Исход автора: {proposed_str}\n'
-            f'Комментарий автора: {question.evidence_note[:500] or "Нет"}\n'
+            f'Итог указал: {who}\n'
+            f'Указанный итог: {proposed_str}\n'
+            f'Комментарий: {question.evidence_note[:500] or "Нет"}\n'
+            f'{proof}\n'
             f'Обращений: {total}. Страница {page+1}.')
     for dispute in disputes[page*3:(page+1)*3]:
         status = 'Ожидает решения' if dispute.upheld is None else ('Признан' if dispute.upheld else 'Отклонён')
         text += f'\n\n#{dispute.pk} · {dispute.trader.pseudonym or dispute.trader.name}\nЗалог: {dispute.stake}. {status}.\n{dispute.reason or "Причина не указана"}'
     rows = []
     if question.evidence or question.evidence_file_id:
-        rows.append([{'text': '🖼 Получить доказательство автора', 'callback_data': f'ds:proof:{question.pk}'}])
+        rows.append([{'text': '🖼 Получить доказательство', 'callback_data': f'ds:proof:{question.pk}'}])
     rows.append([{'text': '🔎 Полная карточка и доказательство', 'url': f'{settings.SITE_URL}/admin/market/question/{question.pk}/change/'}])
     latest = disputes.filter(upheld__isnull=True).order_by('-pk').first()
     if latest and question.resolution_state == Question.Resolution.DISPUTED:
         if subs:
             if question.proposed_outcome != 'cancel':
-                rows.append([{'text': 'Подтвердить исход автора',
+                rows.append([{'text': 'Подтвердить указанный итог',
                               'callback_data': f'ds:ask:yes:{question.pk}:{latest.pk}'}])
             rows.append([{'text': 'Аннулировать по правилам спора',
                           'callback_data': f'ds:ask:cancel:{question.pk}:{latest.pk}'}])
         else:
             for decision, label in LABELS.items():
-                caption = f'Подтвердить исход автора: {label}' if decision == question.proposed_outcome else f'Изменить исход на {label}'
+                caption = f'Подтвердить указанный итог: {label}' if decision == question.proposed_outcome else f'Изменить исход на {label}'
                 if decision == 'cancel':
                     caption = 'Аннулировать по правилам спора'
                 rows.append([{'text': caption, 'callback_data': f'ds:ask:{decision}:{question.pk}:{latest.pk}'}])
@@ -111,10 +122,19 @@ def handle_callback(chat_id, data, *, message_id=None):
             raise MarketError('Споры изменились или уже рассмотрены. Откройте рынок заново.')
         if stage == 'ask':
             changed = decision == 'cancel' or decision != question.proposed_outcome
-            effect = ('Споры признаются: залоги возвращаются, автор теряет стоимость создания.' if changed else
-                      'Споры отклоняются: залоги не возвращаются, исход автора подтверждается.')
-            effect += ('\nРынок аннулируется: полностью возвращаются вложения с комиссиями за вычетом выручки от продаж. Недостающие виртуальные монеты добавит платформа. Уже полученная прибыль сохраняется.' if decision == 'cancel' else
-                       '\nПобедившие акции оплачиваются по правилам рынка, проигравшие — 0.')
+            participant = by_participant(question)
+            if participant:
+                effect = ('Споры признаются: залоги возвращаются, участник теряет залог за итог, автор рынка не наказывается.' if changed else
+                          'Споры отклоняются: залоги не возвращаются, итог участника подтверждается, ему возвращается залог и доля комиссии.')
+            else:
+                effect = ('Споры признаются: залоги возвращаются, автор теряет стоимость создания.' if changed else
+                          'Споры отклоняются: залоги не возвращаются, исход автора подтверждается.')
+            if decision == 'cancel' and participant:
+                effect += '\nРынок отменяется: вложения возвращаются, автору рынка — неиспользованная стоимость создания.'
+            elif decision == 'cancel':
+                effect += '\nРынок аннулируется: полностью возвращаются вложения с комиссиями за вычетом выручки от продаж. Недостающие виртуальные монеты добавит платформа. Уже полученная прибыль сохраняется.'
+            else:
+                effect += '\nПобедившие акции оплачиваются по правилам рынка, проигравшие — 0.'
             bot.render(chat_id, f'⚠️ ОКОНЧАТЕЛЬНОЕ РЕШЕНИЕ\n\n#{question.pk}: {question.title[:250]}\nИтог: {LABELS[decision]}\n\n{effect}\n\nВыплаты выполнятся сразу. Повторное решение невозможно.',
                        [[{'text': f'Подтвердить: {LABELS[decision]}', 'callback_data': data.replace('ds:ask:', 'ds:do:', 1)}],
                         [{'text': '← Назад без решения', 'callback_data': f'ds:open:{qid}'}]], message_id=message_id)

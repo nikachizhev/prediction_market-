@@ -241,11 +241,17 @@ def position(pos: Position | None, question: Question) -> dict | None:
 
 def author(trader: Trader | None) -> dict:
     if trader is None:
-        return {"display_name": "Команда", "photo_url": None, "resolved": 0, "disputes_lost": 0}
-    resolved = trader.created_questions.filter(parent__isnull=True, status=Question.Status.RESOLVED).count()
+        return {"display_name": "Команда", "photo_url": None, "resolved": 0, "disputes_lost": 0,
+                "resolved_by_participants": 0}
+    markets = trader.created_questions.filter(parent__isnull=True)
+    resolved = markets.filter(status=Question.Status.RESOLVED)
+    # Finished with a participant's outcome that stood (no dispute against it was upheld).
+    by_participants = (resolved.filter(proposed_by__isnull=False).exclude(proposed_by=trader)
+                       .exclude(disputes__upheld=True).distinct().count())
     return {"display_name": trader.display_name, "photo_url": trader.photo_url or None,
-            "resolved": resolved,
-            "disputes_lost": trader.created_questions.filter(parent__isnull=True, creator_at_fault=True).count()}
+            "resolved": resolved.count(),
+            "disputes_lost": markets.filter(creator_at_fault=True).count(),
+            "resolved_by_participants": by_participants}
 
 
 def resolution(question: Question, trader: Trader) -> dict | None:

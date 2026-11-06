@@ -246,7 +246,7 @@ def test_create_market_tells_the_creator_in_the_bot(anya, bot_send):
     assert code == 200 and data["bot_notified"] is True
     chat_id, text = bot_send.call_args.args
     assert chat_id == 1001
-    assert "«Сдам сессию без троек?»" in text and "16 ноября напишу тебе здесь" in text and "фото или скриншот" in text
+    assert "«Сдам сессию без троек?»" in text and "16 ноября напишу тебе здесь" in text and "фото по желанию" in text
     button = bot_send.call_args.kwargs["reply_markup"]["inline_keyboard"][0][0]
     assert button["text"] == "Открыть рынок" and button["web_app"]["url"].endswith(f"/app/market/{data['market']['id']}")
     # The repeat of a lost response does not write again.

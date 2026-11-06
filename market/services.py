@@ -332,11 +332,14 @@ def _lock_family_positions(questions: list[Question], creator_id: int | None,
 
 
 def _settle_creator(question: Question, traders: dict[int, Trader], *, refund_subsidy: bool = True,
-                    submarkets: list[Question] | None = None) -> None:
-    """Return the unused subsidy and pay the creator's share of fees; the rest burns."""
+                    submarkets: list[Question] | None = None, fee_to_id: int | None = None,
+                    burn_fee: bool = False) -> None:
+    """Return the unused subsidy and pay the creator's share of fees; the rest burns.
+
+    `fee_to_id` — a participant who stated the outcome gets that share instead of the creator (phase 3d);
+    `burn_fee` — nobody earned it (a participant's outcome was overturned), so it burns too.
+    """
     creator = traders.get(question.creator_id) if question.creator_id else None
-    if creator is None:
-        return
     from django.db.models import Sum
     from django.db.models.functions import Coalesce
     zero = Decimal(0)
@@ -350,16 +353,23 @@ def _settle_creator(question: Question, traders: dict[int, Trader], *, refund_su
     # What the market maker holds: the subsidy plus net stakes (fees excluded) minus payouts.
     maker = total_subsidy + trades["cost"] - trades["fee"] - paid
     subsidy_back = _floor_cent(min(max(maker, zero), total_subsidy))
-    if subsidy_back > 0 and refund_subsidy:
+    if creator is not None and subsidy_back > 0 and refund_subsidy:
         _credit(creator, subsidy_back, LedgerEntry.Kind.SUBSIDY_RETURN, question)
+    if burn_fee:
+        return
     total_fee_pool = question.fee_pool + sum((s.fee_pool for s in subs), zero)
     creator_fee = _floor_cent(total_fee_pool * Decimal(settings.CREATOR_FEE_SHARE))
-    if creator_fee > 0:
+    if creator_fee <= 0:
+        return
+    if fee_to_id is not None and fee_to_id != question.creator_id:
+        _credit(traders[fee_to_id], creator_fee, LedgerEntry.Kind.PROPOSER_FEE, question)
+    elif creator is not None:
         _credit(creator, creator_fee, LedgerEntry.Kind.CREATOR_FEE, question)
 
 
 def _resolve_family(root: Question, subs: list[Question], outcomes: dict[int, str],
-                    *, refund_subsidy: bool = True) -> Question:
+                    *, refund_subsidy: bool = True, fee_to_id: int | None = None,
+                    burn_fee: bool = False) -> Question:
     """Resolve all option submarkets of a multiple-choice market and settle the creator once on `root`."""
     if root.status in (Question.Status.RESOLVED, Question.Status.ANNULLED):
         raise MarketError("Вопрос уже разрешён или аннулирован.")
@@ -367,7 +377,8 @@ def _resolve_family(root: Question, subs: list[Question], outcomes: dict[int, st
     for sub in unsettled:
         if outcomes.get(sub.pk) not in ("yes", "no"):
             raise MarketError("Укажите ДА или НЕТ для каждого варианта.")
-    positions, traders = _lock_family_positions([root, *unsettled], root.creator_id)
+    positions, traders = _lock_family_positions([root, *unsettled], root.creator_id,
+                                                 {fee_to_id} if fee_to_id else ())
     by_sub: dict[int, list[Position]] = {}
     for pos in positions:
         by_sub.setdefault(pos.question_id, []).append(pos)
@@ -384,7 +395,8 @@ def _resolve_family(root: Question, subs: list[Question], outcomes: dict[int, st
         sub.resolved_at = now
         sub.outcome = out
         sub.save(update_fields=["status", "outcome", "resolved_at"])
-    _settle_creator(root, traders, refund_subsidy=refund_subsidy, submarkets=unsettled)
+    _settle_creator(root, traders, refund_subsidy=refund_subsidy, submarkets=unsettled,
+                    fee_to_id=fee_to_id, burn_fee=burn_fee)
     root.status = Question.Status.RESOLVED
     root.resolved_at = now
     root.outcome = None
@@ -395,7 +407,8 @@ def _resolve_family(root: Question, subs: list[Question], outcomes: dict[int, st
 
 
 @transaction.atomic
-def resolve(question: Question, outcome: str, *, refund_subsidy: bool = True) -> Question:
+def resolve(question: Question, outcome: str, *, refund_subsidy: bool = True,
+            fee_to_id: int | None = None, burn_fee: bool = False) -> Question:
     """Pay 1 coin per winning share (rounded down to 0.01 per holder); a creator at fault loses the subsidy."""
     if outcome not in ("yes", "no"):
         raise MarketError("Исход должен быть «yes» или «no».")
@@ -404,14 +417,14 @@ def resolve(question: Question, outcome: str, *, refund_subsidy: bool = True) ->
         raise MarketError("Используйте форму результата для этого типа вопроса.")
     if question.status in (Question.Status.RESOLVED, Question.Status.ANNULLED):
         raise MarketError("Вопрос уже разрешён или аннулирован.")
-    positions, traders = _lock_positions(question)
+    positions, traders = _lock_positions(question, {fee_to_id} if fee_to_id else ())
     for pos in positions:
         shares = pos.yes_shares if outcome == "yes" else pos.no_shares
         amount = _floor_cent(shares)
         if amount > 0:
             _credit(pos.trader, amount, LedgerEntry.Kind.PAYOUT, question)
             Payout.objects.create(trader=pos.trader, question=question, amount=amount, kind=Payout.Kind.PAYOUT)
-    _settle_creator(question, traders, refund_subsidy=refund_subsidy)
+    _settle_creator(question, traders, refund_subsidy=refund_subsidy, fee_to_id=fee_to_id, burn_fee=burn_fee)
     question.status = Question.Status.RESOLVED
     question.resolved_at = timezone.now()
     question.outcome = outcome
@@ -498,8 +511,9 @@ def cancel_moderated(question: Question) -> Question:
                 .values('question_id', 'trader_id').annotate(amount=Sum('cost')))
     disputes = list(Dispute.objects.select_for_update().filter(
         question_id__in=[question.pk, *(s.pk for s in subs)], upheld__isnull=True).order_by('trader_id', 'pk'))
+    bond_holder = {question.proposed_by_id} if question.proposal_bond > 0 and question.proposed_by_id else set()
     _, traders = _lock_family_positions(
-        family, question.creator_id, {r['trader_id'] for r in rows} | {d.trader_id for d in disputes})
+        family, question.creator_id, {r['trader_id'] for r in rows} | {d.trader_id for d in disputes} | bond_holder)
     wanted = [(r['question_id'], r['trader_id'], r['amount']) for r in rows if r['amount'] > 0]
     total = sum((amount for _, _, amount in wanted), Decimal(0))
     total_subsidy = question.subsidy + sum((s.subsidy for s in unsettled_subs), Decimal(0))
@@ -513,6 +527,10 @@ def cancel_moderated(question: Question) -> Question:
         _credit(traders[dispute.trader_id], dispute.stake, LedgerEntry.Kind.DISPUTE_REFUND, question)
         dispute.upheld = True
         dispute.save(update_fields=['upheld'])
+    if bond_holder:
+        # A complaint cancelled the market while a participant's outcome waited: nobody overturned it.
+        _credit(traders[question.proposed_by_id], question.proposal_bond,
+                LedgerEntry.Kind.PROPOSAL_BOND_REFUND, question)
     now = timezone.now()
     hidden_at = question.hidden_at or now
     for sub in subs:
@@ -830,7 +848,7 @@ def confirm_purchase(trader, question, token):
     return trade
 
 
-# --- resolution by the creator and disputes (spec E4) ---------------------------------
+# --- resolution by the creator or a participant, disputes (spec E4) ----------------------------
 
 def _participant(trader: Trader, question: Question) -> bool:
     from django.db.models import Q
@@ -838,47 +856,72 @@ def _participant(trader: Trader, question: Question) -> bool:
     return Trade.objects.filter(trader=trader).filter(Q(question_id=root_id) | Q(question__parent_id=root_id)).exists()
 
 
-@transaction.atomic
-def propose_resolution(trader: Trader, question: Question, outcome: str, *, evidence=None,
-                       evidence_file_id: str = "", note: str = "",
-                       submarket_outcomes: dict[int | str, str] | None = None) -> Question:
-    """The creator states the outcome with proof; a 24-hour dispute window opens."""
+def outcome_author_id(question: Question) -> int | None:
+    """Who stated the outcome: `proposed_by`, or the creator for outcomes stated before phase 3d."""
+    return question.proposed_by_id or question.creator_id
+
+
+def by_participant(question: Question) -> bool:
+    """The outcome was stated by a participant because the creator stayed silent (phase 3d)."""
+    return bool(question.proposed_by_id) and question.proposed_by_id != question.creator_id
+
+
+def has_evidence(question: Question) -> bool:
+    return bool(question.evidence or question.evidence_file_id or question.evidence_note)
+
+
+def evidence_deadline(question: Question):
+    """Until when the outcome's author may send proof for a disputed outcome; None — nothing was asked."""
     from datetime import timedelta
+    if question.evidence_requested_at is None:
+        return None
+    return question.evidence_requested_at + timedelta(hours=settings.EVIDENCE_HOURS)
+
+
+def participant_proposal_from(question: Question):
+    """From when participants may state the outcome; None — the market has no outcome date."""
+    from datetime import timedelta
+    if question.resolves_at is None:
+        return None
+    return question.resolves_at + timedelta(hours=settings.PARTICIPANT_PROPOSAL_HOURS)
+
+
+def _lock_root(question: Question) -> tuple[Question, list[Question]]:
     root_id = question.parent_id or question.pk
-    question = Question.objects.select_for_update().get(pk=root_id)
-    subs = list(question.submarkets.select_for_update().order_by("id"))
-    if question.creator_id != trader.pk:
-        raise MarketError("Итог указывает только создатель рынка.")
-    if question.status not in (Question.Status.OPEN, Question.Status.CLOSED) or question.resolution_state:
-        raise MarketError("Итог этого рынка уже указан.")
-    if question.accepting_entries:
-        raise MarketError("Приём прогнозов ещё идёт — итог можно указать после его окончания.")
-    outcomes_map: dict[int, str] = {}
-    if subs and outcome != "cancel":
-        if not submarket_outcomes:
-            raise MarketError("Укажите ДА или НЕТ для каждого варианта или отмените рынок.")
-        try:
-            outcomes_map = {int(k): str(v) for k, v in submarket_outcomes.items()}
-        except (TypeError, ValueError):
-            raise MarketError("Укажите ДА или НЕТ для каждого варианта или отмените рынок.") from None
-        if set(outcomes_map) != {s.pk for s in subs} or any(v not in ("yes", "no") for v in outcomes_map.values()):
-            raise MarketError("Укажите ДА или НЕТ для каждого варианта или отмените рынок.")
-        outcome = "yes"
-    elif outcome not in ("yes", "no", "cancel"):
-        raise MarketError("Выберите ДА, НЕТ или отмену рынка.")
-    if outcome != "cancel" and not (evidence or evidence_file_id):
-        raise MarketError("Пришлите фото или скриншот — доказательство итога.")
+    root = Question.objects.select_for_update().get(pk=root_id)
+    return root, list(root.submarkets.select_for_update().order_by("id"))
+
+
+def _outcomes_map(subs: list[Question], submarket_outcomes, error: str) -> dict[int, str]:
+    if not submarket_outcomes:
+        raise MarketError(error)
+    try:
+        outcomes = {int(k): str(v) for k, v in submarket_outcomes.items()}
+    except (AttributeError, TypeError, ValueError):
+        raise MarketError(error) from None
+    if set(outcomes) != {s.pk for s in subs} or any(v not in ("yes", "no") for v in outcomes.values()):
+        raise MarketError(error)
+    return outcomes
+
+
+def _state_outcome(question: Question, subs: list[Question], author: Trader, outcome: str,
+                   outcomes_map: dict[int, str], *, bond: Decimal = Decimal(0), evidence=None,
+                   evidence_file_id: str = "", note: str = "") -> None:
+    """Record the stated outcome on the market and its options; a 24-hour dispute window opens."""
+    from datetime import timedelta
     now = timezone.now()
     until = now + timedelta(hours=settings.DISPUTE_WINDOW_HOURS)
     question.status = Question.Status.CLOSED
     question.resolution_state = Question.Resolution.PENDING
     question.proposed_outcome = outcome
     question.proposed_at = now
+    question.proposed_by = author
+    question.proposal_bond = bond
     question.dispute_until = until
     question.evidence_file_id = evidence_file_id
     question.evidence_note = (note or "")[:500]
-    fields = ["status", "resolution_state", "proposed_outcome", "proposed_at", "dispute_until",
-              "evidence_file_id", "evidence_note"]
+    fields = ["status", "resolution_state", "proposed_outcome", "proposed_at", "proposed_by", "proposal_bond",
+              "dispute_until", "evidence_file_id", "evidence_note"]
     if evidence is not None:
         question.evidence = evidence
         fields.append("evidence")
@@ -892,23 +935,97 @@ def propose_resolution(trader: Trader, question: Question, outcome: str, *, evid
         sub.proposed_at = now
         sub.dispute_until = until
         sub.save(update_fields=["status", "resolution_state", "proposed_outcome", "proposed_at", "dispute_until"])
+
+
+@transaction.atomic
+def propose_resolution(trader: Trader, question: Question, outcome: str, *, evidence=None,
+                       evidence_file_id: str = "", note: str = "",
+                       submarket_outcomes: dict[int | str, str] | None = None) -> Question:
+    """The creator states the outcome in one tap, a photo is optional; a 24-hour dispute window opens."""
+    question, subs = _lock_root(question)
+    if question.creator_id != trader.pk:
+        raise MarketError("Итог указывает только создатель рынка.")
+    if question.status not in (Question.Status.OPEN, Question.Status.CLOSED) or question.resolution_state:
+        raise MarketError("Итог этого рынка уже указан.")
+    if question.accepting_entries:
+        raise MarketError("Приём прогнозов ещё идёт — итог можно указать после его окончания.")
+    outcomes_map: dict[int, str] = {}
+    if subs and outcome != "cancel":
+        outcomes_map = _outcomes_map(subs, submarket_outcomes,
+                                     "Укажите ДА или НЕТ для каждого варианта или отмените рынок.")
+        outcome = "yes"
+    elif outcome not in ("yes", "no", "cancel"):
+        raise MarketError("Выберите ДА, НЕТ или отмену рынка.")
+    _state_outcome(question, subs, trader, outcome, outcomes_map, evidence=evidence,
+                   evidence_file_id=evidence_file_id, note=note)
+    return question
+
+
+@transaction.atomic
+def propose_by_participant(trader: Trader, question: Question, outcome: str, *,
+                           submarket_outcomes: dict[int | str, str] | None = None) -> Question:
+    """A participant states the outcome the creator didn't give, for a bond; the first one wins (phase 3d).
+
+    The bond comes back when the outcome stands and burns if a dispute against it is upheld.
+    """
+    question, subs = _lock_root(question)
+    trader = Trader.objects.select_for_update().get(pk=trader.pk)
+    check_access(trader, question)  # someone who left a closed chat no longer speaks for its markets
+    if question.creator_id == trader.pk:
+        raise MarketError("Создатель указывает итог сам, без залога.")
+    if not _participant(trader, question):
+        raise MarketError("Предложить итог может только участник рынка.")
+    if question.resolution_state or question.status not in (Question.Status.OPEN, Question.Status.CLOSED):
+        if question.proposed_by_id == trader.pk:
+            raise MarketError("Ты уже предложил итог этого рынка.")
+        if by_participant(question):
+            raise MarketError("Итог уже предложил другой участник. Не согласен — оспорь его.")
+        if question.proposed_by_id:
+            raise MarketError("Автор уже указал итог. Не согласен — оспорь его.")
+        raise MarketError("Итог этого рынка уже указан.")
+    if question.accepting_entries:
+        raise MarketError("Приём прогнозов ещё идёт — итог можно указать после его окончания.")
+    since = participant_proposal_from(question)
+    if since is None or timezone.now() < since:
+        raise MarketError(f"Участники могут предложить итог через {settings.PARTICIPANT_PROPOSAL_HOURS} ч "
+                          "после даты итога, если автор его не укажет.")
+    outcomes_map: dict[int, str] = {}
+    if subs:
+        if outcome == "cancel":
+            raise MarketError("Укажите ДА или НЕТ для каждого варианта.")
+        outcomes_map = _outcomes_map(subs, submarket_outcomes, "Укажите ДА или НЕТ для каждого варианта.")
+        outcome = "yes"
+    elif outcome not in ("yes", "no"):
+        raise MarketError("Выберите ДА или НЕТ.")
+    bond = Decimal(settings.PROPOSAL_BOND)
+    if trader.balance < bond:
+        raise MarketError(f"Предложить итог стоит {settings.PROPOSAL_BOND} монет — на балансе не хватает.")
+    trader.balance -= bond
+    trader.save(update_fields=["balance"])
+    _record(trader, LedgerEntry.Kind.PROPOSAL_BOND, -bond, question)
+    _state_outcome(question, subs, trader, outcome, outcomes_map, bond=bond)
     return question
 
 
 @transaction.atomic
 def open_dispute(trader: Trader, question: Question, reason: str = ""):
-    """A participant challenges the stated outcome; the stake comes back if the dispute is upheld."""
+    """A participant challenges the stated outcome; the stake comes back if the dispute is upheld.
+
+    The creator may challenge a participant's outcome without being a participant (phase 3d).
+    The first dispute asks the outcome's author for proof unless it is already there.
+    """
     from .models import Dispute
-    root_id = question.parent_id or question.pk
-    question = Question.objects.select_for_update().get(pk=root_id)
-    subs = list(question.submarkets.select_for_update().order_by("id"))
+    question, subs = _lock_root(question)
     trader = Trader.objects.select_for_update().get(pk=trader.pk)
     if question.resolution_state not in (Question.Resolution.PENDING, Question.Resolution.DISPUTED):
         raise MarketError("Оспорить можно только итог в окне спора.")
     if question.dispute_until is None or question.dispute_until <= timezone.now():
         raise MarketError("Окно спора закрыто.")
-    if not _participant(trader, question):
+    creator_vs_participant = trader.pk == question.creator_id and by_participant(question)
+    if not creator_vs_participant and (trader.pk == question.creator_id or not _participant(trader, question)):
         raise MarketError("Оспорить итог может только участник рынка.")
+    if trader.pk == outcome_author_id(question):
+        raise MarketError("Свой итог оспорить нельзя.")
     if Dispute.objects.filter(question=question, trader=trader).exists():
         raise MarketError("Вы уже оспорили этот итог.")
     stake = Decimal(settings.DISPUTE_COST)
@@ -919,24 +1036,73 @@ def open_dispute(trader: Trader, question: Question, reason: str = ""):
     _record(trader, LedgerEntry.Kind.DISPUTE, -stake, question)
     dispute = Dispute.objects.create(question=question, trader=trader, stake=stake, reason=(reason or "")[:500])
     question.resolution_state = Question.Resolution.DISPUTED
-    question.save(update_fields=["resolution_state"])
+    fields = ["resolution_state"]
+    ask_proof = question.evidence_requested_at is None and not has_evidence(question)
+    if ask_proof:
+        question.evidence_requested_at = timezone.now()
+        fields.append("evidence_requested_at")
+    question.save(update_fields=fields)
     for sub in subs:
         sub.resolution_state = Question.Resolution.DISPUTED
         sub.save(update_fields=["resolution_state"])
-    _after_commit("dispute_opened", question.pk)
+    if not creator_vs_participant:  # the creator doesn't need to hear about their own dispute
+        _after_commit("dispute_opened", question.pk)
+    if ask_proof:
+        # Only a row in the durable bot queue: nothing here talks to Telegram.
+        from .bot_resolution import request_evidence
+        request_evidence(question)
     return dispute
 
 
-def _apply(question: Question, decision: str, *, creator_at_fault: bool,
+@transaction.atomic
+def attach_evidence(trader: Trader, question: Question, *, evidence=None, evidence_file_id: str = "",
+                    note: str = "") -> Question:
+    """The outcome's author sends proof — a photo, a file or a link — for a disputed outcome (phase 3d)."""
+    question, _ = _lock_root(question)
+    if outcome_author_id(question) != trader.pk:
+        raise MarketError("Доказательство присылает тот, кто указал итог.")
+    if question.resolution_state != Question.Resolution.DISPUTED:
+        raise MarketError("Доказательство нужно, только когда итог оспорили.")
+    deadline = evidence_deadline(question)
+    if deadline is not None and timezone.now() >= deadline:
+        raise MarketError("Время на доказательство вышло — спор решат без него.")
+    note = (note or "").strip()[:500]
+    if evidence is None and not evidence_file_id and not note:
+        raise MarketError("Пришлите фото, скриншот или ссылку.")
+    fields = []
+    if evidence is not None:
+        question.evidence = evidence
+        fields.append("evidence")
+    if evidence_file_id or evidence is not None:
+        question.evidence_file_id = evidence_file_id
+        fields.append("evidence_file_id")
+    if note:
+        question.evidence_note = note
+        fields.append("evidence_note")
+    question.save(update_fields=fields)
+    return question
+
+
+def _apply(question: Question, decision: str, *, creator_at_fault: bool, outcome_stands: bool,
            submarket_outcomes: dict[int, str] | None = None) -> Question:
+    """Settle the market. A participant whose outcome stands gets the bond back and the creator's share
+    of fees; an overturned one loses the bond, and that share burns."""
     subs = list(question.submarkets.select_for_update().order_by("id"))
+    participant_id = question.proposed_by_id if by_participant(question) else None
+    fee_to_id = participant_id if outcome_stands else None
+    burn_fee = participant_id is not None and not outcome_stands
     if decision == "cancel":
         question = annul(question, refund_subsidy=not creator_at_fault)
     elif subs:
         outcomes = submarket_outcomes or {s.pk: s.proposed_outcome for s in subs}
-        question = _resolve_family(question, subs, outcomes, refund_subsidy=not creator_at_fault)
+        question = _resolve_family(question, subs, outcomes, refund_subsidy=not creator_at_fault,
+                                   fee_to_id=fee_to_id, burn_fee=burn_fee)
     else:
-        question = resolve(question, decision, refund_subsidy=not creator_at_fault)
+        question = resolve(question, decision, refund_subsidy=not creator_at_fault,
+                           fee_to_id=fee_to_id, burn_fee=burn_fee)
+    if fee_to_id is not None and question.proposal_bond > 0:
+        proposer = Trader.objects.select_for_update().get(pk=fee_to_id)
+        _credit(proposer, question.proposal_bond, LedgerEntry.Kind.PROPOSAL_BOND_REFUND, question)
     for sub in subs:
         sub.resolution_state = Question.Resolution.FINAL
         sub.creator_at_fault = creator_at_fault
@@ -949,44 +1115,44 @@ def _apply(question: Question, decision: str, *, creator_at_fault: bool,
 
 @transaction.atomic
 def finalize_resolution(question: Question) -> Question:
-    """No dispute within the window: the creator's outcome stands."""
+    """No dispute within the window: the stated outcome stands."""
     root_id = question.parent_id or question.pk
     question = Question.objects.select_for_update().get(pk=root_id)
     if question.resolution_state != Question.Resolution.PENDING:
         raise MarketError("Рынок не ждёт окончания окна спора.")
     if question.dispute_until > timezone.now():
         raise MarketError("Окно спора ещё открыто.")
-    return _apply(question, question.proposed_outcome, creator_at_fault=False)
+    return _apply(question, question.proposed_outcome, creator_at_fault=False, outcome_stands=True)
 
 
 @transaction.atomic
 def moderator_decide(question: Question, decision: str, *,
                      submarket_outcomes: dict[int | str, str] | None = None) -> Question:
-    """Final word on a dispute. Upheld disputes get their stake back; a wrong creator loses the subsidy."""
+    """Final word on a dispute. Upheld disputes get their stake back; a wrong creator loses the subsidy,
+    a wrong participant loses the bond (the creator is not punished for a participant's mistake)."""
     from .models import Dispute
     if decision not in ("yes", "no", "cancel"):
         raise MarketError("Решение: ДА, НЕТ или отмена.")
-    root_id = question.parent_id or question.pk
-    question = Question.objects.select_for_update().get(pk=root_id)
-    subs = list(question.submarkets.select_for_update().order_by("id"))
+    question, subs = _lock_root(question)
     if question.resolution_state != Question.Resolution.DISPUTED:
         raise MarketError("По этому рынку нет открытого спора.")
-    if decision == "cancel":
+    participant = by_participant(question)
+    if decision == "cancel" and not participant:
         question = cancel_moderated(question)
         _after_commit("moderator_decided", question.pk, decision, True)
         return question
     outcomes_map: dict[int, str] | None = None
-    if subs:
+    if decision == "cancel":
+        upheld = True  # a participant never proposes a cancellation
+    elif subs:
         if submarket_outcomes is not None:
-            outcomes_map = {int(k): str(v) for k, v in submarket_outcomes.items()}
-            if set(outcomes_map) != {s.pk for s in subs} or any(v not in ("yes", "no") for v in outcomes_map.values()):
-                raise MarketError("Укажите ДА или НЕТ для каждого варианта.")
+            outcomes_map = _outcomes_map(subs, submarket_outcomes, "Укажите ДА или НЕТ для каждого варианта.")
             upheld = question.proposed_outcome == "cancel" or any(outcomes_map[s.pk] != s.proposed_outcome for s in subs)
         elif decision == question.proposed_outcome and question.proposed_outcome != "cancel":
             outcomes_map = {s.pk: s.proposed_outcome for s in subs}
             upheld = False
         else:
-            raise MarketError("Для рынка с вариантами подтвердите исход автора или отмените рынок.")
+            raise MarketError("Для рынка с вариантами подтвердите указанный итог или отмените рынок.")
     else:
         upheld = decision != question.proposed_outcome
     disputes = list(Dispute.objects.select_for_update().filter(question=question, upheld__isnull=True).order_by("trader_id"))
@@ -996,14 +1162,18 @@ def moderator_decide(question: Question, decision: str, *,
         if upheld:
             _credit(Trader.objects.select_for_update().get(pk=dispute.trader_id), dispute.stake,
                     LedgerEntry.Kind.DISPUTE_REFUND, question)
-    question = _apply(question, decision, creator_at_fault=upheld, submarket_outcomes=outcomes_map)
-    _after_commit("moderator_decided", question.pk, decision, upheld)
+    question = _apply(question, decision, creator_at_fault=upheld and not participant, outcome_stands=not upheld,
+                      submarket_outcomes=outcomes_map)
+    if participant:
+        _after_commit("participant_outcome_decided", question.pk, decision, upheld, module="bot_resolution")
+    else:
+        _after_commit("moderator_decided", question.pk, decision, upheld)
     return question
 
 
 @transaction.atomic
 def cancel_unresolved(question: Question) -> Question:
-    """The creator stayed silent past the deadline: everyone, the creator included, gets their coins back."""
+    """Nobody stated the outcome past the deadline: everyone, the creator included, gets their coins back."""
     root_id = question.parent_id or question.pk
     question = Question.objects.select_for_update().get(pk=root_id)
     if question.resolution_state or question.status not in (Question.Status.OPEN, Question.Status.CLOSED):
@@ -1017,11 +1187,11 @@ def cancel_unresolved(question: Question) -> Question:
 
 # --- notifications and referral rewards (spec E6.3, E5) ----------------------------------------
 
-def _after_commit(event: str, *args) -> None:
+def _after_commit(event: str, *args, module: str = "bot_notifications") -> None:
     """Notify once the money is committed; a notification failure never rolls it back."""
     def run():
-        from . import bot_notifications
-        getattr(bot_notifications, event)(*args)
+        import importlib
+        getattr(importlib.import_module(f"{__package__}.{module}"), event)(*args)
     transaction.on_commit(run, robust=True)
 
 

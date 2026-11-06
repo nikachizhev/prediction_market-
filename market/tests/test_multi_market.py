@@ -171,7 +171,7 @@ def test_timeout_cancellation_sends_single_combined_refund_message(bot, django_c
 
 
 def test_variant_b_bot_dialog_and_final_settlement(bot, django_capture_on_commit_callbacks):
-    """Creator picks ДА/НЕТ per option in one bot card, uploads 1 photo, confirms once; 1 notice & 1 payout sent."""
+    """Creator attaches 1 photo, picks ДА/НЕТ per option in one bot card, confirms once; 1 notice & 1 payout sent."""
     creator = make_trader("Автор", CREATOR_TG, balance=1000)
     anya = make_trader("Аня", ANYA_TG, balance=1000)
     boris = make_trader("Борис", BORIS_TG, balance=1000)
@@ -193,7 +193,7 @@ def test_variant_b_bot_dialog_and_final_settlement(bot, django_capture_on_commit
     assert f"resopt:{root.pk}:{sub1.pk}:yes" in callbacks
     assert f"resnext:{root.pk}" not in callbacks
 
-    # Creator toggles options one by one; "Продолжить →" appears only after all 3 are picked.
+    # Creator toggles options one by one; «Подтвердить итоги» appears only after all 3 are picked.
     handle_update(tg_press(CREATOR_TG, f"resopt:{root.pk}:{sub1.pk}:yes", message_id=1))
     handle_update(tg_press(CREATOR_TG, f"resopt:{root.pk}:{sub2.pk}:no", message_id=1))
     mid_edit = bot.sent("editMessageText", CREATOR_TG)[-1]
@@ -205,17 +205,18 @@ def test_variant_b_bot_dialog_and_final_settlement(bot, django_capture_on_commit
     last_callbacks = [b["callback_data"] for row in last_edit["reply_markup"]["inline_keyboard"] for b in row]
     assert f"resnext:{root.pk}" in last_callbacks
 
-    # Proceed to photo upload -> 1 photo -> preview -> confirm.
-    handle_update(tg_press(CREATOR_TG, f"resnext:{root.pk}", message_id=1))
+    # An optional photo doesn't lose the picks; then one press publishes everything.
+    handle_update(tg_press(CREATOR_TG, f"resphoto:{root.pk}", message_id=1))
     assert "Пришли фото или скриншот" in bot.sent("sendMessage", CREATOR_TG)[-1]["text"]
 
     handle_update(tg_photo(CREATOR_TG))
-    preview = bot.sent("sendPhoto", CREATOR_TG)[-1]
-    assert "до 20:00: <b>ДА</b>" in preview["caption"]
-    assert "до 21:00: <b>НЕТ</b>" in preview["caption"]
-    assert "до 22:00: <b>ДА</b>" in preview["caption"]
+    asked = bot.sent("sendMessage", CREATOR_TG)[-1]
+    assert "Фото приложено" in asked["text"] and "2. " in asked["text"] and "— НЕТ" in asked["text"]
+    assert f"resnext:{root.pk}" in [b["callback_data"] for row in asked["reply_markup"]["inline_keyboard"] for b in row]
 
-    handle_update(tg_press(CREATOR_TG, f"resok:{root.pk}", message_id=10))
+    handle_update(tg_press(CREATOR_TG, f"resnext:{root.pk}", message_id=10))
+    report = bot.sent("sendMessage", CREATOR_TG)[-1]["text"]
+    assert "до 20:00: <b>ДА</b>" in report and "до 21:00: <b>НЕТ</b>" in report and "до 22:00: <b>ДА</b>" in report
     assert not ResolutionDraft.objects.exists()
 
     root.refresh_from_db()

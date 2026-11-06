@@ -28,13 +28,13 @@ def prepare_cancel(market):
 
 def test_confirmation_queues_recipients_and_acknowledges_first(bot, people, market):
     prepare_cancel(market)
-    handle_update(press(CREATOR, f'resok:{market.pk}'))
+    handle_update(press(CREATOR, f'res:{market.pk}:cancel'))
     assert bot.calls[0][0] == 'answerCallbackQuery'
     assert not bot.sent(chat_id=ANYA) and not bot.sent(chat_id=BORIS)
     from market.models import BotJob
     assert BotJob.objects.filter(kind='message').count() == 2
     assert set(BotJob.objects.values_list('trader_id', flat=True)) == {people[1].pk, people[2].pk}
-    handle_update(press(CREATOR, f'resok:{market.pk}'))
+    handle_update(press(CREATOR, f'res:{market.pk}:cancel'))
     assert BotJob.objects.count() == 2
 
 
@@ -42,7 +42,7 @@ def test_outcome_rollback_does_not_leave_jobs(bot, people, market):
     prepare_cancel(market)
     with pytest.raises(RuntimeError):
         with transaction.atomic():
-            handle_update(press(CREATOR, f'resok:{market.pk}'))
+            handle_update(press(CREATOR, f'res:{market.pk}:cancel'))
             raise RuntimeError('rollback')
     from market.models import BotJob
     assert BotJob.objects.count() == 0
@@ -239,7 +239,7 @@ def test_creator_delivery_failure_does_not_lose_participant_jobs(bot, people, ma
             raise TelegramError('creator unavailable')
         return bot(method, **data)
     with patch('market.telegram.api', side_effect=send), pytest.raises(TelegramError):
-        handle_update(press(CREATOR, f'resok:{market.pk}'))
+        handle_update(press(CREATOR, f'res:{market.pk}:cancel'))
     market.refresh_from_db()
     assert market.resolution_state == 'pending'
     assert BotJob.objects.count() == 2
@@ -250,7 +250,7 @@ def test_queue_write_failure_rolls_back_resolution_and_keeps_draft(bot, people, 
     prepare_cancel(market)
     with patch('market.bot_jobs.enqueue_message', side_effect=RuntimeError('storage unavailable')):
         with pytest.raises(RuntimeError):
-            handle_update(press(CREATOR, f'resok:{market.pk}'))
+            handle_update(press(CREATOR, f'res:{market.pk}:cancel'))
     market.refresh_from_db()
     assert market.resolution_state == ''
     assert ResolutionDraft.objects.filter(question=market).exists()

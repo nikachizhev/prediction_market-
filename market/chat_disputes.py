@@ -46,18 +46,24 @@ def _plural(n: int, one: str, few: str, many: str) -> str:
     return many
 
 
-def verdict(decision: str, proposed: str, *, multi: bool = False) -> str:
+def _author(question: Question) -> str:
+    """Whose outcome it is, in the genitive: the creator's or a participant's (phase 3d)."""
+    return "участника" if services.by_participant(question) else "создателя"
+
+
+def verdict(decision: str, proposed: str, *, multi: bool = False, author: str = "создателя") -> str:
     if decision == proposed:
-        return "итог создателя верный" if multi else f"итог создателя верный ({LABELS[decision]})"
+        return f"итог {author} верный" if multi else f"итог {author} верный ({LABELS[decision]})"
     if decision == "cancel":
         return "итог неверный, рынок отменён"
     return f"итог неверный, правильный — {LABELS[decision]}"
 
 
 def card(review: ChatDisputeReview, *, photo: bool = False) -> str:
-    """What an admin sees: the market, its rules, the creator's outcome and proof, the disputers' comments."""
+    """What an admin sees: the market, its rules, the stated outcome and proof, the disputers' comments."""
     question = review.question
     subs = list(question.submarkets.all().order_by("id"))
+    author = _author(question)
     lines = [f"<b>Спор в чате «{html.escape(review.group.name)}»</b>",
              "Итог рынка оспорили. Ты админ чата и не делал прогнозов в этом рынке — реши, кто прав.",
              "",
@@ -67,17 +73,20 @@ def card(review: ChatDisputeReview, *, photo: bool = False) -> str:
     if question.proposed_outcome == "cancel":
         lines.append("Создатель отменяет рынок.")
     elif subs:
-        lines.append("Итоги создателя по вариантам:")
+        lines.append(f"Итоги {author} по вариантам:")
         for s in subs:
             lines.append(f"• {html.escape(s.option_label or s.title)}: <b>{LABELS.get(s.proposed_outcome, '—')}</b>")
     else:
-        lines.append(f"Итог создателя: <b>{LABELS.get(question.proposed_outcome, '—')}</b>")
+        lines.append(f"Итог {author}: <b>{LABELS.get(question.proposed_outcome, '—')}</b>")
+    if services.by_participant(question):
+        # Text outside the spec.
+        lines.append("Итог предложил участник рынка: создатель его не указал.")
     if question.evidence_note:
-        lines.append(f"Пояснение создателя: {html.escape(question.evidence_note)}")
+        lines.append(f"Пояснение {author}: {html.escape(question.evidence_note)}")
     if photo:
-        lines.append("Доказательство создателя — выше.")
-    elif not question.evidence_file_id:
-        lines.append("Доказательства создатель не приложил.")
+        lines.append(f"Доказательство {author} — выше.")
+    elif not services.has_evidence(question):
+        lines.append("Доказательство не прислано.")
     disputes = list(Dispute.objects.filter(question=question).order_by("created_at", "pk"))
     n = len(disputes)
     lines.append("")
@@ -95,7 +104,8 @@ def card(review: ChatDisputeReview, *, photo: bool = False) -> str:
 
 
 def _decided_line(review: ChatDisputeReview, trader_id: int | None) -> str:
-    text = verdict(review.decision, review.question.proposed_outcome, multi=review.question.submarkets.exists())
+    text = verdict(review.decision, review.question.proposed_outcome, multi=review.question.submarkets.exists(),
+                   author=_author(review.question))
     if review.decided_by_id and review.decided_by_id == trader_id:
         return f"Ты решил: {text}. Решение окончательное."
     if review.decided_by is None:
@@ -152,8 +162,9 @@ def _quiet(method: str, **data) -> None:
 
 
 def _send_evidence(chat_id: int, question: Question) -> bool:
-    """The creator's photo; an image sent as a file is only accepted by sendDocument."""
-    caption = f"Доказательство создателя рынка «{html.escape(question.title)}»"[:CAPTION_LIMIT]
+    """The outcome author's photo; an image sent as a file is only accepted by sendDocument."""
+    who = "участника" if services.by_participant(question) else "создателя"
+    caption = f"Доказательство {who} рынка «{html.escape(question.title)}»"[:CAPTION_LIMIT]
     for method, field in (("sendPhoto", "photo"), ("sendDocument", "document")):
         try:
             telegram.api(method, chat_id=chat_id, caption=caption, parse_mode="HTML",
@@ -253,13 +264,45 @@ def _send_to_admins(review: ChatDisputeReview) -> list[dict]:
             log.info("chat dispute %s: admin %s is unreachable", review.pk, trader.pk)
             continue
         sent.append({"trader": trader.pk, "chat_id": chat_id, "message_id": message.get("message_id"),
-                     "photo": photo})
+                     "photo": photo, "proof": services.has_evidence(review.question)})
     return sent
 
 
+def _show_new_proof() -> int:
+    """The outcome's author sent proof after the cards went out: show it to the admins and update the cards.
+
+    A photo that Telegram refused stays unmarked, so the next tick tries again.
+    """
+    open_reviews = (ChatDisputeReview.objects.select_related("question", "group")
+                    .filter(decided_at__isnull=True, escalated_at__isnull=True,
+                            question__resolution_state=Question.Resolution.DISPUTED,
+                            question__evidence_requested_at__isnull=False))
+    shown = 0
+    for review in open_reviews:
+        question = review.question
+        if not services.has_evidence(question) or all(sent.get("proof") for sent in review.messages):
+            continue
+        messages = []
+        for sent in review.messages:
+            if not sent.get("proof"):
+                photo = bool(sent.get("photo"))
+                if question.evidence_file_id:
+                    photo = _send_evidence(sent["chat_id"], question) or photo
+                _quiet("editMessageText", chat_id=sent["chat_id"], message_id=sent["message_id"],
+                       text=card(review, photo=photo), parse_mode="HTML", reply_markup=_first_keyboard(review))
+                sent = {**sent, "photo": photo, "proof": photo or not question.evidence_file_id}
+            messages.append(sent)
+        ChatDisputeReview.objects.filter(pk=review.pk).update(messages=messages)
+        shown += 1
+    return shown
+
+
 def tick(now) -> dict:
-    """Worker step: send new chat disputes to admins, hand silent ones to the project team after 48 h."""
+    """Worker step: send new chat disputes and new proof to admins, hand silent disputes to the team after 48 h."""
     done = {"sent": 0, "escalated": 0}
+    proof = _show_new_proof()
+    if proof:
+        done["proof"] = proof
     disputed = Question.objects.filter(group__kind="chat", resolution_state=Question.Resolution.DISPUTED,
                                        chat_review__isnull=True)
     for question in disputed:
