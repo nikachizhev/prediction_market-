@@ -67,7 +67,10 @@ class QuestionAdmin(admin.ModelAdmin):
     list_display = ("title", "publication_state", "kind", "source_type", "status", "outcome", "deadline", "result_link")
     list_filter = ("publication_state", "resolution_state", "kind", "status", "category", "source_type")
     search_fields = ("title", "resolution_criteria")
-    readonly_fields = ("status", "outcome", "answer", "q_yes", "q_no", "pool_yes", "pool_no", "created_at", "resolved_at", "hidden_at", "moderation_hidden", "refund_compensation")
+    readonly_fields = ("status", "outcome", "answer", "q_yes", "q_no", "pool_yes", "pool_no", "created_at", "resolved_at", "hidden_at", "moderation_hidden", "refund_compensation",
+                       # Phase 3d: who stated the outcome and the bond are money state — only services change them.
+                       "proposed_by", "proposal_bond", "evidence_requested_at", "evidence_reminded_at",
+                       "participants_asked_at")
     actions = ["decide_yes", "decide_no", "decide_cancel", "unhide", "resolve_yes", "resolve_no", "close_selected", "annul_selected"]
 
     def get_readonly_fields(self, request, obj=None):
