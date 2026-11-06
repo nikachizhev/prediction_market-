@@ -1,13 +1,11 @@
-"""AI rules helper endpoint (spec E9.1, docs/api.md «Фаза 3a»)."""
+"""AI rules helper endpoint (spec E9.1, E9.5; docs/api.md «Фаза 3a», «Фаза 3d»)."""
 from __future__ import annotations
 
 import logging
 
 from django.conf import settings
-from django.db import transaction
 
 from .. import assist as helper
-from ..events import log_event
 from ..models import CATEGORIES, Event, Trader
 from . import serializers as s
 from .views import BadRequest, LimitReached, Unavailable, body, chat_for, endpoint
@@ -15,26 +13,25 @@ from .views import BadRequest, LimitReached, Unavailable, body, chat_for, endpoi
 log = logging.getLogger(__name__)
 
 OFFLINE = "Помощник сейчас не отвечает — заполни правила сам."
+MODES = ("oneline",)   # the «О чём спорим?» screen (spec E9.5); written to the event's props
 
 
-def reserve(trader: Trader, category: str | None) -> Event:
-    """Take one of today's requests before calling the model, so parallel requests cannot exceed the limit.
+def limit_text() -> str:
+    return f"Подсказки на сегодня закончились — их {settings.ASSIST_DAILY_LIMIT} в день."
 
-    The trader lock is held only for the count, never during the HTTP call; a `pending` event already counts.
-    """
+
+def reserve(trader: Trader, category: str | None, mode: str | None = None) -> Event:
+    """One of today's requests (`assist.reserve`); LimitReached (429) when none is left."""
     props = {"category": category} if category else {}
-    with transaction.atomic():
-        Trader.objects.select_for_update().get(pk=trader.pk)
-        over = helper.left(trader) <= 0
-        event = log_event(trader, helper.EVENT, {"result": "limit" if over else "pending", **props})
-    if over:
-        raise LimitReached(f"Подсказки на сегодня закончились — их {settings.ASSIST_DAILY_LIMIT} в день.")
+    if mode:
+        props["mode"] = mode
+    event, ok = helper.reserve(trader, props)
+    if not ok:
+        raise LimitReached(limit_text())
     return event
 
 
-def finish(event: Event, **props) -> None:
-    event.props = {**event.props, **props}
-    event.save(update_fields=["props"])
+finish = helper.finish
 
 
 @endpoint("POST")
@@ -47,6 +44,7 @@ def assist(request):
     category = data.get("category")
     if not isinstance(category, str) or category not in dict(CATEGORIES):
         category = None
+    mode = data.get("mode") if data.get("mode") in MODES else None
     trader = request.trader
     if data.get("chat") not in (None, ""):
         # A chat admin may switch the helper off for markets of their chat (spec E8.5).
@@ -55,7 +53,7 @@ def assist(request):
     if not helper.enabled():
         raise Unavailable(OFFLINE)
 
-    event = reserve(trader, category)
+    event = reserve(trader, category, mode)
     try:
         answer = helper.suggest(title, category)
     except helper.Failed as exc:
@@ -73,6 +71,7 @@ def assist(request):
 
     finish(event, result="ok", category=answer["category"], refined=answer["question"] is not None)
     log.info("AI helper: ok")
-    return {"question": answer["question"], "why": answer["why"], "criteria": answer["criteria"],
-            "category": answer["category"], "closes_at": s.iso(answer["closes_at"]),
-            "resolves_at": s.iso(answer["resolves_at"]), "left": helper.left(trader)}
+    return {"question": answer["question"], "why": answer["why"], "options": answer["options"],
+            "criteria": answer["criteria"], "category": answer["category"],
+            "closes_at": s.iso(answer["closes_at"]), "resolves_at": s.iso(answer["resolves_at"]),
+            "left": helper.left(trader)}

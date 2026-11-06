@@ -9,6 +9,7 @@ GROUP_COMMANDS = [
     {"command": "markets", "description": "Открытые рынки чата"},
     {"command": "top", "description": "Рейтинг чата"},
     {"command": "settings", "description": "Настройки бота (для админов)"},
+    {"command": "market", "description": "Рынок из сообщения (ответом на него)"},
 ]
 
 

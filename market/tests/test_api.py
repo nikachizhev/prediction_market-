@@ -323,6 +323,14 @@ def test_star_and_mine(anya, boris):
     assert {w["id"] for w in anya.get("mine")[1]["watched"]} == {m.pk}
 
 
+def test_trade_tracks_market_without_star(anya, boris):
+    m = market_by(1002)
+    _, result = anya.post(f"markets/{m.pk}/buy", {"side": "yes", "amount": 30, "request_key": str(uuid.uuid4())})
+    assert result["market"]["starred"] is False
+    assert result["market"]["notify_level"] == "result"
+    assert [w["id"] for w in anya.get("mine")[1]["watched"]] == [m.pk]
+
+
 def test_three_complaints_hide_market(client, boris):
     m = market_by(1002)
     for uid in (2001, 2002, 2002, 2003):

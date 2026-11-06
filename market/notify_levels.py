@@ -39,3 +39,8 @@ def set_level(trader: Trader, question: Question, value: str) -> str:
         raise ValueError(f"unknown notify level: {value!r}")
     MarketNotifyLevel.objects.update_or_create(trader=trader, question=_root(question), defaults={"level": value})
     return value
+
+
+def forget_level(trader: Trader, question: Question) -> None:
+    """Drop the explicit choice: the level is derived from the star and the position again."""
+    MarketNotifyLevel.objects.filter(trader=trader, question=_root(question)).delete()

@@ -1,8 +1,11 @@
 """Notifications (spec E6.3): in-app inbox for everything, bot messages through the `BotMessage` outbox.
 
 `enqueue` records a notification; the worker (`resolution.tick`) runs the detectors and `flush`,
-which sends due bot messages honouring the user's switches, quiet hours and the daily cap.
-Texts follow docs/mockups/Notifications.dc.html.
+which sends due bot messages honouring the user's switches, the market's notify level, the quiet
+mode, quiet hours and the daily cap. Texts follow docs/mockups/Notifications.dc.html.
+
+Phase 3d: a market notice carries `🔕 Не присылать про этот рынок` (callback `mute:<id>`), which sets
+the market's level to `none`; `Вернуть` (`mute:back:<id>:<previous>`) puts the previous choice back.
 """
 from __future__ import annotations
 
@@ -16,9 +19,10 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
-from . import telegram
+from . import notify_levels, telegram
 from .access import can_access
-from .models import NOTIFY_KINDS, BotMessage, MarketSubscription, Notification, Position, Question, Trade, Trader
+from .models import (NOTIFY_KINDS, BotMessage, MarketNotifyLevel, MarketSubscription, Notification, Position,
+                     Question, Trade, Trader)
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +31,22 @@ KINDS = [kind for kind, _ in NOTIFY_KINDS]
 # Sent even over the daily cap: the outcome of a market and the payout.
 MANDATORY_KINDS = ("results",)
 MAX_ATTEMPTS = 5
+
+# Market notices gated by the market's notify level (spec E6.3, phase 3d): kind -> levels that reach the bot.
+LEVEL_GATES = {"moves": ("all",), "closing": ("all",), "results": ("all", "result")}
+# Resolution steps (spec E4): the creator's outcome question, the participants' question, reminders,
+# disputes and the decision on them, the request for evidence. Neither the market level nor the quiet
+# mode mutes them. Today only `creator` (dispute opened, decision) goes through this outbox; `resolve` is
+# the inbox kind of «Чем закончилось?» and its reminders, which `bot_resolution` sends directly.
+# A resolution step queued here later must use one of these kinds.
+RESOLUTION_KINDS = ("creator", "resolve")
+# The quiet mode lets through only results with payouts and resolution steps; the rest stays in the inbox.
+QUIET_KINDS = ("results", *RESOLUTION_KINDS)
+# Notices that get the 🔕 button: the ones the market level can mute while the market is still running.
+MUTE_KINDS = ("moves", "closing")
+MUTE_PREFIX = "mute:"
+MUTE_LABEL = "🔕 Не присылать про этот рынок"
+MUTED_LINE = "Больше не пишу про этот рынок"
 
 # Filters of the «Уведомления» screen. Everything else (creator events, outcome asks, groups) is «Мои рынки».
 LEASE = timedelta(minutes=5)
@@ -49,6 +69,34 @@ def kind_enabled(trader: Trader, kind: str) -> bool:
 
 def notify_settings(trader: Trader) -> dict[str, bool]:
     return {kind: kind_enabled(trader, kind) for kind in KINDS}
+
+
+def quiet_mode(trader: Trader) -> bool:
+    return (trader.notify_prefs or {}).get("quiet") is True
+
+
+def bot_allowed(trader: Trader, kind: str, question: Question | None = None) -> bool:
+    """Whether a notice of this kind goes to the bot; the inbox gets it regardless."""
+    if not kind_enabled(trader, kind):
+        return False
+    if kind in RESOLUTION_KINDS:
+        return True
+    if quiet_mode(trader) and kind not in QUIET_KINDS:
+        return False
+    if question is not None and kind in LEVEL_GATES:
+        return notify_levels.level(trader, question) in LEVEL_GATES[kind]
+    return True
+
+
+def _mute_row(root_id: int) -> list[dict]:
+    return [{"text": MUTE_LABEL, "callback_data": f"{MUTE_PREFIX}{root_id}"}]
+
+
+def _with_mute_button(payload: dict, question: Question) -> dict:
+    markup = dict(payload.get("reply_markup") or {})
+    rows = [list(row) for row in markup.get("inline_keyboard") or []]
+    markup["inline_keyboard"] = [*rows, _mute_row(question.parent_id or question.pk)]
+    return {**payload, "reply_markup": markup}
 
 
 def market_button(question: Question) -> dict:
@@ -84,7 +132,7 @@ def _join(title: str, text: str) -> str:
 
 def enqueue(trader: Trader, kind: str, key: str, title: str, text: str, *, question: Question | None = None,
             payload: dict | None = None, bot_text: str | None = None, now: datetime | None = None):
-    """Inbox notice always; a bot message too if the user has Telegram and this kind is on. Idempotent by `key`."""
+    """Inbox notice always; a bot message too if the user has Telegram and `bot_allowed`. Idempotent by `key`."""
     notice, created = Notification.objects.get_or_create(key=key, defaults={
         "recipient": trader, "kind": kind, "title": title[:120], "text": text[:500], "question": question})
     if not created and notice.kind != kind:
@@ -92,9 +140,12 @@ def enqueue(trader: Trader, kind: str, key: str, title: str, text: str, *, quest
         notice.kind, notice.title, notice.text = kind, title[:120], text[:500]
         notice.save(update_fields=["kind", "title", "text"])
     message = None
-    if trader.telegram_chat_id and kind_enabled(trader, kind):
+    if trader.telegram_chat_id and bot_allowed(trader, kind, question):
+        payload = payload or {}
+        if question is not None and kind in MUTE_KINDS:
+            payload = _with_mute_button(payload, question)
         message, _ = BotMessage.objects.get_or_create(key=key, defaults={
-            "trader": trader, "kind": kind, "text": bot_text or _join(title, text), "payload": payload or {},
+            "trader": trader, "kind": kind, "text": bot_text or _join(title, text), "payload": payload,
             "question": question, "send_after": now or timezone.now()})
     return notice, message
 
@@ -151,7 +202,8 @@ def flush(now: datetime | None = None) -> dict:
         if not _claim(message, now):
             continue
         trader = message.trader
-        if (not trader.telegram_chat_id or not kind_enabled(trader, message.kind)
+        # Switches, the level and the quiet mode are checked again: they may have changed since queueing.
+        if (not trader.telegram_chat_id or not bot_allowed(trader, message.kind, message.question)
                 or (message.question and not can_access(trader, message.question))):
             _finish(message, BotMessage.Status.SKIPPED)
             done["skipped"] += 1
@@ -164,6 +216,8 @@ def flush(now: datetime | None = None) -> dict:
         try:
             telegram.send(trader.telegram_chat_id, message.text, **(message.payload or {}))
         except Exception:  # noqa: BLE001 - Telegram may be down; retried next tick
+            from .worker_metrics import record_telegram_failure
+            record_telegram_failure('notifications')
             log.warning("bot message %s to trader %s failed", message.pk, trader.pk, exc_info=True)
             message.attempts += 1
             if message.attempts >= MAX_ATTEMPTS:
@@ -194,6 +248,11 @@ def _open_markets(now: datetime):
         Q(deadline__isnull=True) | Q(deadline__gt=now))
 
 
+def _explicit_all(root: Question):
+    return MarketNotifyLevel.objects.filter(question=root, level=MarketNotifyLevel.Level.ALL).values_list(
+        "trader_id", flat=True)
+
+
 def detect_moves(now: datetime | None = None) -> int:
     """Tracked market moved NOTIFY_MOVE_POINTS+ p.p. in 24 h: one notice per user, market and Moscow day."""
     now = now or timezone.now()
@@ -213,12 +272,10 @@ def detect_moves(now: datetime | None = None) -> int:
             continue
         root = question.parent or question
         verb, arrow = ("выросла", "▲") if current > before else ("упала", "▼")
-        seen_traders: set[int] = set()
-        for sub in MarketSubscription.objects.filter(question__in=[question, root]).select_related("trader"):
-            trader = sub.trader
-            if trader.pk in seen_traders:
-                continue
-            seen_traders.add(trader.pk)
+        # Followers (the star) and whoever set the bell to «Всё» without one.
+        ids = set(MarketSubscription.objects.filter(question__in=[question, root]).values_list("trader_id", flat=True))
+        ids.update(_explicit_all(root))
+        for trader in Trader.objects.filter(pk__in=ids).order_by("pk"):
             key = f"moves:{root.pk}:{trader.pk}:{day}"
             if Notification.objects.filter(key=key).exists() or not can_access(trader, root):
                 continue
@@ -240,6 +297,7 @@ def detect_closing(now: datetime | None = None) -> int:
         ids = set(MarketSubscription.objects.filter(family_q).values_list("trader_id", flat=True))
         ids.update(Position.objects.filter(family_q).filter(Q(yes_shares__gt=0) | Q(no_shares__gt=0))
                    .values_list("trader_id", flat=True))
+        ids.update(_explicit_all(question))
         ids.discard(question.creator_id)
         hours = max(1, math.ceil((question.deadline - now).total_seconds() / 3600))
         title = f"Через {hours} {plural(hours, 'час', 'часа', 'часов')}"
@@ -304,3 +362,91 @@ def referral_granted(friend_id: int, referrer_id: int) -> None:
             f"вам обоим по +{reward} монет за приглашение.")
     enqueue(friend, "referral", f"referral:{friend.pk}:friend", f"Ты сделал {predictions} —",
             f"тебе и {referrer.display_name} по +{reward} монет за приглашение.")
+
+
+# --- 🔕 under a market notice (spec E6.3, phase 3d) ---------------------------------------------
+
+STALE_BUTTON = "Кнопка устарела."
+NOT_YOURS = "Эта кнопка не для тебя."
+RESTORE_LABEL = "Вернуть"
+# In `mute:back:<id>:<previous>`: there was no explicit choice, so `Вернуть` drops ours.
+NO_CHOICE = "default"
+
+
+def owns(data: str) -> bool:
+    return data.startswith(MUTE_PREFIX)
+
+
+def _answer(callback: dict, text: str | None = None) -> None:
+    data = {"callback_query_id": callback.get("id")}
+    if text:
+        data["text"] = text
+    try:
+        telegram.api("answerCallbackQuery", **data)
+    except telegram.TelegramError:
+        log.warning("answerCallbackQuery failed")
+
+
+def _parse(data: str) -> tuple[int, str | None] | None:
+    """`mute:<id>` -> (id, None); `mute:back:<id>:<previous>` -> (id, previous); anything else -> None."""
+    parts = data[len(MUTE_PREFIX):].split(":")
+    if len(parts) == 1 and parts[0].isdigit():
+        return int(parts[0]), None
+    if (len(parts) == 3 and parts[0] == "back" and parts[1].isdigit()
+            and parts[2] in (*notify_levels.LEVELS, NO_CHOICE)):
+        return int(parts[1]), parts[2]
+    return None
+
+
+def _rows_without_mute(markup: dict | None) -> list[list[dict]]:
+    rows = []
+    for row in (markup or {}).get("inline_keyboard") or []:
+        kept = [b for b in row if not str(b.get("callback_data") or "").startswith(MUTE_PREFIX)]
+        if kept:
+            rows.append(kept)
+    return rows
+
+
+def handle_callback(callback: dict) -> None:
+    """🔕 sets the market's level to `none` and says so under the notice; `Вернуть` restores the previous choice."""
+    message = callback.get("message") or {}
+    chat = message.get("chat") or {}
+    user_id = (callback.get("from") or {}).get("id")
+    if user_id is None or chat.get("type") != "private" or chat.get("id") != user_id:
+        _answer(callback, NOT_YOURS)
+        return
+    parsed = _parse(callback.get("data") or "")
+    trader = Trader.objects.filter(telegram_chat_id=user_id).first()
+    question = Question.objects.select_related("parent").filter(pk=parsed[0]).first() if parsed else None
+    question = question and (question.parent or question)
+    if trader is None or question is None or not can_access(trader, question):
+        _answer(callback, STALE_BUTTON)
+        return
+    _, previous = parsed
+    rows = _rows_without_mute(message.get("reply_markup"))
+    text = message.get("text") or ""
+    muted = f"\n\n{MUTED_LINE}"
+    if previous is None:
+        chosen = (MarketNotifyLevel.objects.filter(trader=trader, question=question)
+                  .values_list("level", flat=True).first())
+        notify_levels.set_level(trader, question, MarketNotifyLevel.Level.NONE)
+        text = text if text.endswith(muted) else text + muted
+        rows.append([{"text": RESTORE_LABEL,
+                      "callback_data": f"{MUTE_PREFIX}back:{question.pk}:{chosen or NO_CHOICE}"}])
+    else:
+        if previous == NO_CHOICE:
+            notify_levels.forget_level(trader, question)
+        else:
+            notify_levels.set_level(trader, question, previous)
+        text = text.removesuffix(muted)
+        rows.append(_mute_row(question.pk))
+    _answer(callback)
+    edit = {"chat_id": user_id, "message_id": message.get("message_id"), "reply_markup": {"inline_keyboard": rows}}
+    try:
+        if message.get("text"):
+            telegram.api("editMessageText", text=text, **edit)
+        else:
+            telegram.api("editMessageReplyMarkup", **edit)
+    except telegram.TelegramError:
+        # The level is already changed; an old message Telegram will not edit any more is harmless.
+        log.warning("mute: message %s not edited", message.get("message_id"))

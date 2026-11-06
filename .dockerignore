@@ -1,0 +1,13 @@
+.git
+.venv
+.env
+.env.*
+**/.env*
+**/node_modules
+**/__pycache__
+.pytest_cache
+.superpowers
+media
+staticfiles
+*.sqlite3
+miniapp/dist
