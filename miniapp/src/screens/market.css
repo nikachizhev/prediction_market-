@@ -329,19 +329,6 @@
   object-fit: cover;
 }
 
-.mk-evidence.is-empty {
-  height: 180px;
-  border: 1px dashed var(--line);
-  color: var(--sub);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
 .mk-evidence.is-compact {
   width: 112px;
   height: 84px;

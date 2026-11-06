@@ -28,7 +28,7 @@ export function lineUsesAssist(assist: AssistState | undefined): boolean {
   return !!assist?.enabled && assist.left > 0;
 }
 
-/** Why «Сделать рынок» ended in the wizard; null — it did not. */
+/** Why the creator ended up in the wizard: «Заполнить самому» or the helper did not make the market. */
 export type WizardReason = 'manual' | 'unavailable';
 
 /** Body of the `oneline_wizard` event. */
@@ -50,6 +50,15 @@ export function wizardFromLine(draft: CreateDraft, now: Date = new Date()): Crea
     chat: draft.chat,
     announce: draft.announce,
   };
+}
+
+/**
+ * Back to «О чём спорим?»: the text is the line, or what was typed in the wizard's question field. The place
+ * stays; the link to a chat draft does not, so what is made from here is a usual market of that chat.
+ */
+export function lineFromDraft(draft: CreateDraft, now: Date = new Date()): CreateDraft {
+  const typed = draft.flow === 'wizard' && draft.title.trim() !== '';
+  return { ...defaultDraft(now), line: typed ? draft.title : draft.line, chat: draft.chat, announce: draft.announce };
 }
 
 /** The helper's options for «кто из…»: trimmed, unique, at most 10, each up to 80 characters; null — a ДА/НЕТ market. */
@@ -100,23 +109,21 @@ export function onelineDraft(draft: CreateDraft, result: AssistResult, now: Date
 
 /** What «Сделать рынок» leads to. `ui` is the helper card the wizard shows; `warning` — the forbidden-topic text. */
 export type LineOutcome =
-  | { kind: 'quick'; draft: CreateDraft; left: number | null }
-  | { kind: 'wizard'; draft: CreateDraft; ui: AssistUi; warning: string | null; left: number | null };
-
-const leftOf = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : null);
+  | { kind: 'quick'; draft: CreateDraft }
+  | { kind: 'wizard'; draft: CreateDraft; ui: AssistUi; warning: string | null };
 
 /** The helper answered: the ready market, or the wizard with the forbidden-topic warning. */
 export function lineAnswer(draft: CreateDraft, res: AssistResult | AssistWarning, now: Date = new Date()): LineOutcome {
   if (isAssistWarning(res)) {
-    return { kind: 'wizard', draft: wizardFromLine(draft, now), ui: 'warn', warning: res.text, left: leftOf(res.left) };
+    return { kind: 'wizard', draft: wizardFromLine(draft, now), ui: 'warn', warning: res.text };
   }
-  return { kind: 'quick', draft: onelineDraft(draft, res, now), left: leftOf(res.left) };
+  return { kind: 'quick', draft: onelineDraft(draft, res, now) };
 }
 
 /** The helper failed: 429 — no suggestions left today; 503, no connection or anything else — it is not answering. */
 export function lineFailure(draft: CreateDraft, err: unknown, now: Date = new Date()): LineOutcome {
   const limit = err instanceof ApiError && err.status === 429;
-  return { kind: 'wizard', draft: wizardFromLine(draft, now), ui: limit ? 'limit' : 'off', warning: null, left: limit ? 0 : null };
+  return { kind: 'wizard', draft: wizardFromLine(draft, now), ui: limit ? 'limit' : 'off', warning: null };
 }
 
 /**
@@ -147,6 +154,17 @@ export function draftFromChatDraft(view: MarketDraftView, now: Date = new Date()
 export function chatDraftTarget(view: MarketDraftView, now: Date = new Date()): { market: number } | { draft: CreateDraft } {
   if (typeof view.market_id === 'number' && view.market_id > 0) return { market: view.market_id };
   return { draft: draftFromChatDraft(view, now) };
+}
+
+/**
+ * POST /api/markets refused a chat draft: `made` — its market exists already (by the button in the chat),
+ * `gone` — the draft expired while the preview was open. Null for any other error.
+ */
+export function draftCreateFailure(draft: Pick<CreateDraft, 'draftCode'>, err: unknown): 'made' | 'gone' | null {
+  if (!draft.draftCode || !(err instanceof ApiError)) return null;
+  if (err.status === 400 && /уже создан/i.test(err.message)) return 'made';
+  if (err.status === 404 && /черновик/i.test(err.message)) return 'gone';
+  return null;
 }
 
 /** Fields of the ready market a tap opens for editing: the same as the wizard's, so server errors land on them. */

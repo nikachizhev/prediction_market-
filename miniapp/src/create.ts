@@ -616,8 +616,16 @@ export function pickedChat(draft: Pick<CreateDraft, 'chat'>, chats: ChatSpace[] 
  */
 export function settleChat(draft: CreateDraft, chats: ChatSpace[]): CreateDraft {
   if (!draft.chat) return draft;
-  // A chat draft and «Объявить в чате» belong to that chat only.
-  return openChats(chats).some((c) => c.code === draft.chat) ? draft : { ...draft, chat: null, draftCode: null, announce: false };
+  if (openChats(chats).some((c) => c.code === draft.chat)) return draft;
+  // A chat draft is someone's message from a closed chat: its text never moves to the public feed.
+  if (draft.draftCode) return defaultDraft();
+  return { ...draft, chat: null, announce: false };
+}
+
+/** The chat list with the chat of an opened draft: GET /api/chats may have answered before that chat was known. */
+export function withChat(chats: ChatSpace[] | null, extra: ChatSpace | null): ChatSpace[] | null {
+  if (!extra) return chats;
+  return [...(chats ?? []).filter((c) => c.code !== extra.code), extra];
 }
 
 /** Price and depth of a new market at the picked place; null while the chat is not known yet. */

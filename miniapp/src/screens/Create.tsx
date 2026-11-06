@@ -3,7 +3,7 @@
 // docs/mockups/Create.dc.html (spec E3, three steps) with templates, the AI rules helper and similar
 // markets from docs/mockups/quick-create/Main.dc.html (spec E9.1–E9.3), «Кто увидит», the price by
 // place and «Объявить в чате» for closed chats (spec E8.3, E8.4, E5).
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   api,
@@ -17,8 +17,10 @@ import {
 } from '../api';
 import {
   chatDraftTarget,
+  draftCreateFailure,
   lineAnswer,
   lineFailure,
+  lineFromDraft,
   lineReady,
   lineUsesAssist,
   quickProblems,
@@ -42,6 +44,7 @@ import {
   assistCard,
   assistForChat,
   audienceOptions,
+  withChat,
   creationTerms,
   pickedChat,
   previewMetaSuffix,
@@ -100,6 +103,9 @@ const EXAMPLES_MULTIPLE: { title: string; options: string[] }[] = [
 ];
 const OWN_RULE = 'Ты не сможешь делать прогнозы на свой рынок';
 const DRAFT_MISSING = 'Черновик не найден: он живёт 24 часа и открывается только у того, кто вызвал /market. Можно создать рынок здесь.';
+const DRAFT_GONE = 'Черновик не найден: он живёт 24 часа. Рынок можно создать и без него — нажми ещё раз.';
+const DRAFT_NOT_PUBLISHED = 'Рынок по этому черновику ещё не опубликован. Статус — в разделе «Мои».';
+const CHAT_FROZEN = 'Бот больше не администратор в этом чате, поэтому новые рынки создать нельзя.';
 const LATER_RULES = ['У участников будет 24 часа, чтобы оспорить итог', 'Половина комиссии со всех сделок — твоя'];
 /** Template category open at first, as in the mockup. */
 const DEFAULT_TEMPLATE_CATEGORY = 'study';
@@ -133,6 +139,8 @@ export function CreateScreen() {
   });
   // startapp=draft_<code> opens /create?draft=<code>: the chat draft is loaded first.
   const [draftLoad, setDraftLoad] = useState<string | null>(() => params.get('draft'));
+  // The chat of the opened draft, known even if GET /api/chats answered before the membership appeared.
+  const [draftChat, setDraftChat] = useState<ChatSpace | null>(null);
   const [lineBusy, setLineBusy] = useState(false);
   const [editing, setEditing] = useState<QuickField | null>(null);
   const draftRef = useRef(draft);
@@ -242,10 +250,12 @@ export function CreateScreen() {
     }
   }, []);
 
+  const chatList = useMemo(() => withChat(chats, draftChat), [chats, draftChat]);
+
   // A chat that is no longer available (left, frozen) falls back to everyone.
   useEffect(() => {
-    if (chats && chatsFresh) commit(settleChat(draftRef.current, chats));
-  }, [chats, chatsFresh, commit]);
+    if (chatList && chatsFresh) commit(settleChat(draftRef.current, chatList));
+  }, [chatList, chatsFresh, commit]);
 
   /** A change made by the creator: removes the «ИИ» / «Шаблон» mark of the field. */
   const update = useCallback((patch: DraftEdit) => commit(editDraft(draftRef.current, patch)), [commit]);
@@ -274,12 +284,11 @@ export function CreateScreen() {
   const wizard = flow === 'wizard';
   const quick = flow === 'quick';
 
-  /** Back to «О чём спорим?» with its text; a chat draft is left. */
+  /** Back to «О чём спорим?» with its text. */
   const backToLine = useCallback(() => {
-    const current = draftRef.current;
     assistRequest.current += 1;
     setAssistUi('idle');
-    replaceDraft({ ...defaultDraft(), line: current.line, chat: current.draftCode ? null : current.chat, announce: current.announce });
+    replaceDraft(lineFromDraft(draftRef.current));
   }, [replaceDraft]);
 
   // Telegram's back button: steps 2 and 3 return to the previous step, step 1 and the ready market to «О чём спорим?».
@@ -297,30 +306,47 @@ export function CreateScreen() {
   useEffect(() => {
     if (!draftLoad) return;
     let cancelled = false;
-    api
-      .chatDraft(draftLoad)
-      .then((view) => {
+    const open = async () => {
+      const view = await api.chatDraft(draftLoad);
+      if (cancelled) return;
+      const target = chatDraftTarget(view);
+      if ('market' in target) {
+        if (draftRef.current.draftCode === draftLoad) clearDraft();
+        // Until premoderation approves it the market itself answers 404; its status is in «Мои».
+        const unpublished = await api
+          .publicationDrafts()
+          .then((res) => res.items.some((item) => item.id === target.market))
+          .catch(() => false);
         if (cancelled) return;
-        const target = chatDraftTarget(view);
-        if ('market' in target) {
-          navigate(`/market/${target.market}`, { replace: true });
-          return;
-        }
-        assistRequest.current += 1;
-        setAssistUi('idle');
-        replaceDraft(target.draft);
+        if (unpublished) toast(DRAFT_NOT_PUBLISHED);
+        navigate(unpublished ? '/mine' : `/market/${target.market}`, { replace: true });
+        return;
+      }
+      // The price and the helper depend on the chat. GET /api/drafts has just checked the membership.
+      const space = await api.chat(view.chat.code);
+      if (cancelled) return;
+      if (space.frozen) {
+        toast(CHAT_FROZEN, 'error');
+        replaceDraft(defaultDraft());
         setDraftLoad(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        if (err instanceof ApiError && err.status === 404) {
-          toast(DRAFT_MISSING, 'error');
-          replaceDraft(defaultDraft());
-        } else {
-          toast(err instanceof ApiError ? err.message : 'Что-то пошло не так. Попробуйте ещё раз.', 'error');
-        }
-        setDraftLoad(null);
-      });
+        return;
+      }
+      assistRequest.current += 1;
+      setAssistUi('idle');
+      setDraftChat(space);
+      replaceDraft(target.draft);
+      setDraftLoad(null);
+    };
+    open().catch((err: unknown) => {
+      if (cancelled) return;
+      if (err instanceof ApiError && err.status === 404) {
+        toast(DRAFT_MISSING, 'error');
+        replaceDraft(defaultDraft());
+      } else {
+        toast(err instanceof ApiError ? err.message : 'Что-то пошло не так. Попробуйте ещё раз.', 'error');
+      }
+      setDraftLoad(null);
+    });
     return () => {
       cancelled = true;
     };
@@ -353,9 +379,9 @@ export function CreateScreen() {
     };
   }, [similarQuery]);
 
-  const listed = !!draft.chat && !!chats?.some((c) => c.code === draft.chat);
-  const chat = pickedChat(draft, chatsFresh || listed ? chats : null);
-  const audience = audienceOptions(chats);
+  const listed = !!draft.chat && !!chatList?.some((c) => c.code === draft.chat);
+  const chat = pickedChat(draft, chatsFresh || listed ? chatList : null);
+  const audience = audienceOptions(chatList);
   const assist = assistForChat(me?.assist, chat);
   const card = assistCard(draft, assistUi, assist);
   const loading = wizard && step === 2 && card === 'loading';
@@ -450,7 +476,7 @@ export function CreateScreen() {
     if (!lineReady(current.line) || lineBusy) return;
     tg.HapticFeedback.impact('light');
     if (!lineUsesAssist(assist)) {
-      applyLine({ kind: 'wizard', draft: wizardFromLine(current), ui: assist?.enabled ? 'limit' : 'idle', warning: null, left: null });
+      applyLine({ kind: 'wizard', draft: wizardFromLine(current), ui: assist?.enabled ? 'limit' : 'idle', warning: null });
       return;
     }
     const request = ++assistRequest.current;
@@ -498,6 +524,17 @@ export function CreateScreen() {
       tg.HapticFeedback.notification('error');
       // A 4xx refusal created nothing; after a lost connection or a 5xx the retry keeps the key.
       if (err instanceof ApiError && err.status >= 400 && err.status < 500) attempt.current = null;
+      const refused = draftCreateFailure(draftRef.current, err);
+      if (refused === 'made') {
+        // The button in the chat was faster: the draft leads to its market.
+        setDraftLoad(draftRef.current.draftCode);
+        return;
+      }
+      if (refused === 'gone') {
+        commit({ ...draftRef.current, draftCode: null });
+        toast(DRAFT_GONE, 'error');
+        return;
+      }
       const message = err instanceof ApiError ? err.message : 'Что-то пошло не так. Попробуйте ещё раз.';
       const field = err instanceof ApiError && err.status === 400 ? errorField(message) : null;
       if (field) {

@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError, type AssistResult, type MarketDraftView } from './api';
-import { createPayload, defaultDraft, editDraft, localIso, readDraft, type CreateDraft } from './create';
+import { createPayload, defaultDraft, editDraft, localIso, readDraft, settleChat, withChat, type CreateDraft } from './create';
 import {
   chatDraftTarget,
   cleanAssistOptions,
+  draftCreateFailure,
   draftFromChatDraft,
   lineAnswer,
   lineFailure,
+  lineFromDraft,
   lineReady,
   lineUsesAssist,
   onelineDraft,
@@ -57,7 +59,6 @@ describe('the helper answered', () => {
   it('opens the ready market with every field filled', () => {
     const outcome = lineAnswer(line(LINE, { chat: 'k7Q2', announce: true }), result(), NOW);
     expect(outcome.kind).toBe('quick');
-    expect(outcome.left).toBe(18);
     const d = outcome.draft;
     expect(d.flow).toBe('quick');
     expect(d.title).toBe('Сдаст ли Петя матан до 20 декабря?');
@@ -80,6 +81,8 @@ describe('the helper answered', () => {
     const d = onelineDraft(line('кто из нас первым сдаст курсач'), result({ options: ['Аня', ' Петя ', 'аня', ''] }), NOW);
     expect(d.mode).toBe('multiple');
     expect(d.options).toEqual(['Аня', 'Петя']);
+    expect(createPayload(d)).toMatchObject({ options: ['Аня', 'Петя'], assist: 'oneline' });
+    expect(createPayload(editDraft(d, { mode: 'binary' }))).not.toHaveProperty('options');
   });
 
   it('ignores options that do not make a market', () => {
@@ -101,7 +104,6 @@ describe('the helper answered', () => {
     if (outcome.kind !== 'wizard') return;
     expect(outcome.ui).toBe('warn');
     expect(outcome.warning).toBe('Про здоровье людей нельзя.');
-    expect(outcome.left).toBe(17);
     expect(outcome.draft.flow).toBe('wizard');
     expect(outcome.draft.step).toBe(1);
     expect(outcome.draft.title).toBe(LINE);
@@ -111,16 +113,15 @@ describe('the helper answered', () => {
 
 describe('the helper failed', () => {
   it.each([
-    [new ApiError(503, 'Помощник недоступен.'), 'off', null],
-    [new ApiError(0, 'Нет соединения.'), 'off', null],
-    [new Error('boom'), 'off', null],
-    [new ApiError(429, 'Лимит.'), 'limit', 0],
-  ] as const)('%s → the wizard with the text in the question field', (err, ui, left) => {
+    [new ApiError(503, 'Помощник недоступен.'), 'off'],
+    [new ApiError(0, 'Нет соединения.'), 'off'],
+    [new Error('boom'), 'off'],
+    [new ApiError(429, 'Лимит.'), 'limit'],
+  ] as const)('%s → the wizard with the text in the question field', (err, ui) => {
     const outcome = lineFailure(line(`  ${LINE}  `, { chat: 'k7Q2' }), err, NOW);
     expect(outcome.kind).toBe('wizard');
     if (outcome.kind !== 'wizard') return;
     expect(outcome.ui).toBe(ui);
-    expect(outcome.left).toBe(left);
     expect(outcome.draft).toMatchObject({ flow: 'wizard', step: 1, title: LINE, chat: 'k7Q2', assist: null });
   });
 
@@ -230,5 +231,54 @@ describe('startapp=draft_<code>', () => {
   it('a draft without a chat sends no draft code', () => {
     const d = draftFromChatDraft(view(), NOW);
     expect(createPayload({ ...d, chat: null })).not.toHaveProperty('draft');
+  });
+});
+
+describe('a chat draft refused or left', () => {
+  const withDraft = { draftCode: 'Dk29x' };
+
+  it('leads to the market already made by the button in the chat', () => {
+    expect(draftCreateFailure(withDraft, new ApiError(400, 'Рынок по этому черновику уже создан.'))).toBe('made');
+  });
+
+  it('survives a draft that expired while the preview was open', () => {
+    expect(draftCreateFailure(withDraft, new ApiError(404, 'Черновик не найден.'))).toBe('gone');
+  });
+
+  it('leaves every other error to the usual handling', () => {
+    expect(draftCreateFailure(withDraft, new ApiError(404, 'Чат не найден.'))).toBeNull();
+    expect(draftCreateFailure(withDraft, new ApiError(400, 'Не хватает монет.'))).toBeNull();
+    expect(draftCreateFailure(withDraft, new Error('boom'))).toBeNull();
+    expect(draftCreateFailure({ draftCode: null }, new ApiError(400, 'Рынок по этому черновику уже создан.'))).toBeNull();
+  });
+
+  const chatSpace = { code: 'k7Q2', title: 'Группа ПИ-24', members: 28, frozen: false, markets: 0, volume: '0.00', my_rank: null, creation_cost: '70.00', b: 100, assist: true, link: '' };
+
+  it('never moves the text of a chat message to the public feed', () => {
+    const d = { ...defaultDraft(NOW), flow: 'quick' as const, title: 'Спорим, Петя не сдаст матан?', chat: 'k7Q2', draftCode: 'Dk29x' };
+    const settled = settleChat(d, []);
+    expect(settled.chat).toBeNull();
+    expect(settled.draftCode).toBeNull();
+    expect(settled.title).toBe('');
+  });
+
+  it('knows the chat of the draft even when the chat list came first', () => {
+    expect(withChat(null, chatSpace)).toEqual([chatSpace]);
+    expect(withChat([], chatSpace)).toEqual([chatSpace]);
+    expect(withChat([{ ...chatSpace, creation_cost: '40.00' }], chatSpace)).toEqual([chatSpace]);
+    expect(withChat([chatSpace], null)).toEqual([chatSpace]);
+    expect(withChat(null, null)).toBeNull();
+  });
+
+  it('back to «О чём спорим?» keeps the text and the chat, not the draft link', () => {
+    const quick = { ...defaultDraft(NOW), flow: 'quick' as const, line: LINE, title: 'Другой вопрос подлиннее', chat: 'k7Q2', draftCode: 'Dk29x', criteria: 'Правила' };
+    const back = lineFromDraft(quick, NOW);
+    expect(back).toMatchObject({ flow: 'line', line: LINE, chat: 'k7Q2', draftCode: null, title: '', criteria: '' });
+  });
+
+  it('back from the wizard keeps what was typed there', () => {
+    const wiz = { ...defaultDraft(NOW), flow: 'wizard' as const, line: LINE, title: 'Новый вопрос из мастера' };
+    expect(lineFromDraft(wiz, NOW).line).toBe('Новый вопрос из мастера');
+    expect(lineFromDraft({ ...wiz, title: '  ' }, NOW).line).toBe(LINE);
   });
 });
