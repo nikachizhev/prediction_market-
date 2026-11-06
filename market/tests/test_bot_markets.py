@@ -6,6 +6,8 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
+from market.tests.bot_job_helpers import drain_jobs
+
 import pytest
 from django.core.management import call_command
 from django.test import override_settings
@@ -188,6 +190,7 @@ def test_chart_caption_with_position_and_upload_then_file_id(bot, render, people
     shares = q.positions.get(trader=anya).yes_shares
 
     handle_update(press(ANYA, f"mk:{q.pk}"))
+    drain_jobs()
     method, files, data = bot.uploads[-1]
     assert method == "sendAnimation" and files["animation"][1] == b"mp4-bytes"
     lines = data["caption"].split("\n")
@@ -200,7 +203,8 @@ def test_chart_caption_with_position_and_upload_then_file_id(bot, render, people
     assert bot.sent("answerCallbackQuery")
 
     # Same hour: no render, no upload, the stored file_id goes out.
-    handle_update(press(ANYA, f"mk:{q.pk}"))
+    handle_update(press(ANYA, f"mk:{q.pk}", message_id=10))
+    drain_jobs()
     assert render.call_count == 1 and len(bot.uploads) == 1
     assert bot.sent("sendAnimation", ANYA)[-1]["animation"] == "uploaded-id"
 
@@ -241,6 +245,7 @@ def test_render_error_falls_back_to_text(bot, people):
     track(anya, q)
     with patch("market.charts.render_animation", side_effect=charts.ChartError("нет ffmpeg")):
         handle_update(press(ANYA, f"mk:{q.pk}"))
+        drain_jobs()
     reply = bot.sent("sendMessage", ANYA)[-1]
     assert reply["text"].startswith("Будет снег?\n50%")
     assert keyboard(reply)[0][0]["text"] == "Открыть в приложении"
@@ -388,7 +393,7 @@ def test_upload_sends_multipart_with_json_fields():
     from market import telegram
     response = MagicMock(ok=True)
     response.json.return_value = {"ok": True, "result": {"message_id": 3}}
-    with patch("market.telegram.requests.post", return_value=response) as post:
+    with patch("requests.Session.post", return_value=response) as post:
         result = telegram.upload("sendAnimation", {"animation": ("a.mp4", b"x", "video/mp4")},
                                  chat_id=5, caption="Тест", reply_markup={"inline_keyboard": []}, duration=3)
     assert result == {"message_id": 3}

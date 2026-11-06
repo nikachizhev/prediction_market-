@@ -43,6 +43,6 @@ fi
 sed "s/SITE_HOST/$HOST/" "$APP/deploy/Caddyfile" > /etc/caddy/Caddyfile
 cp "$APP"/deploy/systemd/pm-*.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable pm-db pm-web pm-bot pm-worker pm-premoderation caddy >/dev/null
+systemctl enable pm-db pm-web pm-bot pm-bot-jobs pm-worker pm-premoderation caddy >/dev/null
 systemctl reload-or-restart caddy
 echo "Server ready. Run: bash $APP/deploy/update.sh"

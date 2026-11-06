@@ -96,6 +96,7 @@ ngrok http --url=<ваш-домен>.ngrok-free.dev 8000
 .\.venv\Scripts\python.exe manage.py runserver
 .\.venv\Scripts\python.exe manage.py setup_bot
 .\.venv\Scripts\python.exe manage.py run_telegram_bot
+.\.venv\Scripts\python.exe manage.py run_bot_jobs
 .\.venv\Scripts\python.exe manage.py run_worker
 ```
 
@@ -422,3 +423,51 @@ manage.py            команды Django
 ## Архитектурный документ
 
 Описание модулей, модель данных, проверки доступа и диаграммы последовательностей: [docs/architecture.md](docs/architecture.md).
+
+## Локальный Prometheus + Grafana
+
+Изолированный стек с демоданными и готовым дашбордом: [запуск и определения метрик](docs/observability.md).
+
+```bash
+docker compose -f compose.observability.yaml up -d --build
+```
+
+Grafana: [бизнес](http://localhost:13000/d/prediction-market) · [техника](http://localhost:13000/d/prediction-market-technical). Вход: `admin` / `local-observability`.
+
+Развёртывание мониторинга на VPS с systemd: [серверная инструкция](docs/observability-server.md).
+
+
+## Задержки Telegram и очередь бота
+
+Основной транспорт Telegram использует IPv4: на VPS IPv6-подключения периодически
+зависают до TCP-таймаута. HTTPS по-прежнему проверяет сертификат и имя хоста.
+Соединения переиспользуются; connect timeout — до 3 с на IPv4-адрес (без времени DNS), read timeout — отдельно
+(40 с для обычных вызовов/long polling, 60 с для загрузки). Транспорт Telegram
+не использует proxy/netrc из окружения; другие HTTP-клиенты не меняются.
+
+`run_telegram_bot` принимает команды. Графики и уведомления участникам об указанном
+итоге записываются в `BotJob`; отдельный `run_bot_jobs` обрабатывает их без минутной
+паузы `run_worker` (проверка пустой очереди раз в секунду). Подтверждение кнопки
+в диалоге итога отправляется до выполнения операции. Сообщения об ошибках шага
+теперь приходят в чат; лишние краткие подтверждения успешных шагов убраны.
+
+После миграции `0033_botjob` нужны **оба** процесса: poller и `run_bot_jobs`.
+`deploy/update.sh` устанавливает, включает и перезапускает `pm-bot-jobs` при наличии
+основного токена. Это не второй poller, конфликтов `getUpdates` он не создаёт.
+Для локального запуска: `python manage.py run_bot_jobs`; для одного прохода:
+`python manage.py run_bot_jobs --once`. Без worker задачи сохраняются, но не отправляются.
+
+Каждый получатель имеет отдельную задачу; повтор подтверждения не создаёт дублей.
+Неуспешные задачи повторяются через 5/30 секунд, максимум три попытки. Аренда задачи
+на 15 минут восстанавливает работу после падения процесса; второй worker не забирает
+живую аренду. Проверяются текущая привязка Telegram и доступ к рынку перед отправкой.
+Пользовательские настройки обычных уведомлений, лимиты и тихие часы остаются в прежней
+очереди `BotMessage`, на явно запрошенные графики и доказательства итога не распространяются.
+Telegram не поддерживает идемпотентную отправку: при потере ответа после принятого
+сообщения либо падении между отправкой и записью результата возможен дубль.
+
+Диагностика: `journalctl -u pm-bot -u pm-bot-jobs -n 100 --no-pager`.
+Состояния очереди: `python manage.py shell -c "from market.models import BotJob; from django.db.models import Count; print(list(BotJob.objects.values('status').annotate(count=Count('id'))))"`.
+Задачи `failed` сохраняются для расследования; автоматические повторы исчерпаны.
+Перед откатом на код без очереди остановите poller и дождитесь завершения очереди;
+не откатывайте миграцию с неотправленными задачами.

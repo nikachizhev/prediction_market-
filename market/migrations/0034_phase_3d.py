@@ -29,7 +29,7 @@ def forwards(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('market', '0032_publicationdelivery'),
+        ('market', '0033_botjob'),
     ]
 
     operations = [

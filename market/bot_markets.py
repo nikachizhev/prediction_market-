@@ -234,7 +234,5 @@ def handle_callback(callback: dict) -> None:
         _quiet("answerCallbackQuery", **answer, text="Рынок не найден.")
         return
     _quiet("answerCallbackQuery", **answer)
-    try:
-        send_chart(user_id, trader, question)
-    except telegram.TelegramError:
-        log.warning("Chart message for market %s failed", question.pk)
+    from .bot_jobs import enqueue_chart
+    enqueue_chart(callback["id"], trader, question)

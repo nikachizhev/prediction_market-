@@ -5,6 +5,8 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
+from market.tests.bot_job_helpers import drain_jobs
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -70,7 +72,7 @@ def env(tmp_path):
 def bot():
     fake = FakeBot()
     download = MagicMock(ok=True, content=b"\xff\xd8proof-jpeg")
-    with patch("market.telegram.api", side_effect=fake), patch("market.telegram.requests.get", return_value=download):
+    with patch("market.telegram.api", side_effect=fake), patch("requests.Session.get", return_value=download):
         yield fake
 
 
@@ -221,6 +223,8 @@ def test_variant_b_bot_dialog_and_final_settlement(bot, django_capture_on_commit
         s.refresh_from_db()
     assert root.resolution_state == Question.Resolution.PENDING
     assert (sub1.proposed_outcome, sub2.proposed_outcome, sub3.proposed_outcome) == ("yes", "no", "yes")
+
+    drain_jobs()
 
     # Anya and Boris each receive ONE dispute-window photo message with button disp:<root.pk>.
     for tg_id in (ANYA_TG, BORIS_TG):

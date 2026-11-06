@@ -23,6 +23,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "market.http_metrics.MetricsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -166,3 +167,10 @@ PREMODERATION_MODEL = os.environ.get("PREMODERATION_MODEL", LLM_MODEL)
 PREMODERATION_API_KEY = os.environ.get("PREMODERATION_API_KEY", LLM_API_KEY)
 PREMODERATION_URL = os.environ.get("PREMODERATION_URL", LLM_BASE_URL)
 PREMODERATION_LINK_HOSTS = {"github.com", "api.github.com", "docs.python.org"}
+
+# Opt-in internal monitoring; never expose without a bearer token.
+METRICS_ENABLED = os.environ.get("METRICS_ENABLED", "0") == "1"
+METRICS_TOKEN = os.environ.get("METRICS_TOKEN", "")
+WORKER_METRICS_PORT = int(os.environ.get("WORKER_METRICS_PORT", "0"))
+WORKER_METRICS_HOST = os.environ.get("WORKER_METRICS_HOST", "127.0.0.1")
+OBSERVABILITY_DEMO = False
