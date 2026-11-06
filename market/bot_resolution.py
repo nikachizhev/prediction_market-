@@ -5,7 +5,6 @@ Resolution questions go straight to Telegram: they don't depend on notify levels
 """
 from __future__ import annotations
 
-import logging
 from decimal import Decimal
 
 from django.conf import settings
@@ -14,8 +13,6 @@ from django.utils import timezone
 
 from . import services, telegram
 from .models import LedgerEntry, Payout, Position, Question, Trader
-
-log = logging.getLogger(__name__)
 
 # Telegram "🎉" message effect, allowed in private chats.
 CONFETTI_EFFECT_ID = "5046509860389126442"
@@ -211,16 +208,14 @@ def participants(question: Question):
 
 
 def ask_participants(question: Question) -> int:
-    """24 hours of silence: «Автор не указал итог. Знаешь, чем закончилось?» to every participant."""
-    sent = 0
+    """24 hours of silence: «Автор не указал итог. Знаешь, чем закончилось?» queued for every participant."""
+    from .bot_jobs import enqueue_message
     text, markup = participant_prompt(question), participant_keyboard(question)
-    for trader in participants(question):
-        try:
-            telegram.send(trader.telegram_chat_id, text, reply_markup=markup)
-            sent += 1
-        except telegram.TelegramError:
-            log.warning("could not ask trader %s about market %s", trader.pk, question.pk)
-    return sent
+    people = list(participants(question))
+    for trader in people:
+        enqueue_message(f"ask-participants:{question.pk}:{trader.pk}", trader, question, "sendMessage",
+                        {"text": text, "reply_markup": markup})
+    return len(people)
 
 
 # --- proof for a disputed outcome (phase 3d) -----------------------------------------------------
@@ -237,20 +232,19 @@ def _market_markup(question: Question) -> dict:
     return {"inline_keyboard": [[app_button("Открыть рынок", f"market/{question.pk}")]]}
 
 
-def request_evidence(question_id: int) -> None:
-    """Right after the first dispute: ask whoever stated the outcome for a photo, a screenshot or a link."""
-    question = Question.objects.select_related("proposed_by", "creator", "group").get(pk=question_id)
+def request_evidence(question: Question) -> None:
+    """The first dispute: queue a request to whoever stated the outcome, in the dispute's own transaction."""
+    from .bot_jobs import enqueue_message
     author = _outcome_author(question)
-    if (author is None or not author.telegram_chat_id or services.has_evidence(question)
-            or question.resolution_state != Question.Resolution.DISPUTED):
+    if author is None or not author.telegram_chat_id:
         return
     who = "админы чата" if is_chat_market(question) else "модератор"
     # Text outside the spec (the spec gives the meaning: a photo, a screenshot or a link within 24 hours).
-    telegram.send(author.telegram_chat_id,
-                  f"Итог рынка «{question.title}» оспорили. Пришли доказательство — фото, скриншот или ссылку "
-                  f"сообщением сюда. На это {settings.EVIDENCE_HOURS} часа. Без доказательства спор всё равно "
-                  f"решат {who}, но это будет доводом против итога.",
-                  reply_markup=_market_markup(question))
+    text = (f"Итог рынка «{question.title}» оспорили. Пришли доказательство — фото, скриншот или ссылку "
+            f"сообщением сюда. На это {settings.EVIDENCE_HOURS} часа. Без доказательства спор всё равно "
+            f"решат {who}, но это будет доводом против итога.")
+    enqueue_message(f"evidence-request:{question.pk}:{question.proposed_at.isoformat()}", author, question,
+                    "sendMessage", {"text": text, "reply_markup": _market_markup(question)})
 
 
 def remind_evidence(question: Question) -> None:

@@ -10,6 +10,7 @@ from datetime import timedelta
 from decimal import ROUND_FLOOR, Decimal
 
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 
 from . import charts, telegram
@@ -39,12 +40,18 @@ def _quiet(method: str, **data) -> dict | None:
 
 
 def tracked_markets(trader: Trader) -> list[Question]:
-    """Markets the trader follows (a trade or the star subscribes), newest subscription first."""
+    """Markets the trader follows (spec E6.1): starred ones newest first, then those with a position."""
     order: list[int] = []
     seen: set[int] = set()
     for qid, pid in (MarketSubscription.objects.filter(trader=trader)
                      .order_by("-created_at", "-id")
                      .values_list("question_id", "question__parent_id")):
+        rid = pid or qid
+        if rid not in seen:
+            seen.add(rid)
+            order.append(rid)
+    for qid, pid in (Position.objects.filter(trader=trader).filter(Q(yes_shares__gt=0) | Q(no_shares__gt=0))
+                     .order_by("-id").values_list("question_id", "question__parent_id")):
         rid = pid or qid
         if rid not in seen:
             seen.add(rid)
@@ -227,7 +234,5 @@ def handle_callback(callback: dict) -> None:
         _quiet("answerCallbackQuery", **answer, text="Рынок не найден.")
         return
     _quiet("answerCallbackQuery", **answer)
-    try:
-        send_chart(user_id, trader, question)
-    except telegram.TelegramError:
-        log.warning("Chart message for market %s failed", question.pk)
+    from .bot_jobs import enqueue_chart
+    enqueue_chart(callback["id"], trader, question)

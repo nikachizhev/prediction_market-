@@ -5,6 +5,8 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
+from market.tests.bot_job_helpers import drain_jobs
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -70,7 +72,7 @@ def env(tmp_path):
 def bot():
     fake = FakeBot()
     download = MagicMock(ok=True, content=b"\xff\xd8proof-jpeg")
-    with patch("market.telegram.api", side_effect=fake), patch("market.telegram.requests.get", return_value=download):
+    with patch("market.telegram.api", side_effect=fake), patch("requests.Session.get", return_value=download):
         yield fake
 
 
@@ -222,6 +224,8 @@ def test_variant_b_bot_dialog_and_final_settlement(bot, django_capture_on_commit
     assert root.resolution_state == Question.Resolution.PENDING
     assert (sub1.proposed_outcome, sub2.proposed_outcome, sub3.proposed_outcome) == ("yes", "no", "yes")
 
+    drain_jobs()
+
     # Anya and Boris each receive ONE dispute-window photo message with button disp:<root.pk>.
     for tg_id in (ANYA_TG, BORIS_TG):
         photos = bot.sent("sendPhoto", tg_id)
@@ -338,9 +342,8 @@ def test_unified_lists_subscriptions_mine_profile_chats_and_referrals(client, bo
         {"side": "no", "amount": "30.00", "request_key": str(uuid.uuid4())},
     )[0] == 200
 
-    # Auto-subscription attaches to parent, not child submarkets.
-    assert MarketSubscription.objects.filter(trader=anya, question=root).exists()
-    assert not MarketSubscription.objects.filter(trader=anya, question__in=subs).exists()
+    # A trade tracks the market without starring it (spec E6.1, E6.3 phase 3d).
+    assert not MarketSubscription.objects.filter(trader=anya).exists()
 
     # Selectors, bot_markets, inline share search return only root.
     assert [q.pk for q in selectors.market_list(trader=anya)] == [root.pk]
@@ -389,6 +392,7 @@ def test_unified_lists_subscriptions_mine_profile_chats_and_referrals(client, bo
         code=chats.new_code(),
         bot_active=True,
         member_count=15,
+        post_settings={"mode": "all"},  # «Всё»: every new market and result is posted (spec E8.4)
     )
     GroupMembership.objects.create(group=grp, trader=creator, status="active", checked_at=timezone.now())
     GroupMembership.objects.create(group=grp, trader=anya, status="active", checked_at=timezone.now())
@@ -413,7 +417,9 @@ def test_unified_lists_subscriptions_mine_profile_chats_and_referrals(client, bo
         deadline=now + timedelta(hours=12),
     )
     assert bot_notifications.detect_closing(now) == 2  # 1 for `root` + 1 for `chat_root`
-    assert BotMessage.objects.filter(trader=anya, kind="closing", question=chat_root).count() == 1
+    # Anya only holds a position here: level «Только итог», so «24 часа до конца» stays in the inbox (phase 3d).
+    assert Notification.objects.filter(recipient=anya, kind="closing", question=chat_root).count() == 1
+    assert not BotMessage.objects.filter(trader=anya, kind="closing", question=chat_root).exists()
     assert BotMessage.objects.filter(trader=anya, kind="closing", question__parent__isnull=False).count() == 0
 
     # Resolving the chat multi-market queues ONE results ChatPost summarizing per-option outcomes.

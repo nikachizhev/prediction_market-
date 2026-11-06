@@ -14,7 +14,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from . import telegram
-from .models import Group, GroupMembership, Trader
+from .models import CHAT_POST_MODE_DEFAULT, CHAT_POST_MODES, Group, GroupMembership, Trader
 from .telegram import TelegramError
 
 MEMBER_STATUSES = {"creator", "administrator", "member"}
@@ -54,8 +54,18 @@ def link(group: Group) -> str:
     return f"https://t.me/{settings.TELEGRAM_BOT_USERNAME}/{settings.TELEGRAM_APP_NAME}?startapp=chat_{group.code}"
 
 
+def post_mode(group: Group) -> str:
+    """Bot message mode of the chat (spec E8.4): «quiet», «important» (default) or «all»."""
+    mode = (group.post_settings or {}).get("mode")
+    return mode if mode in {m for m, _ in CHAT_POST_MODES} else CHAT_POST_MODE_DEFAULT
+
+
 def post_enabled(group: Group, kind: str) -> bool:
-    return bool(group.post_settings.get(kind, True))
+    """May the bot post this kind of outbox message here at all? «Тишина» — only answers to commands.
+
+    Which markets and results go out in «Важное» and «Всё» is decided by `bot_chats.fill`.
+    """
+    return post_mode(group) != "quiet"
 
 
 def chats_of(trader: Trader):

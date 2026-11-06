@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .models import TelegramLink, Trader, Question
+from .telegram_transport import session
 
 
 class TelegramError(Exception):
@@ -21,9 +22,9 @@ def api(method, *, http_timeout=40, **data):
     if not settings.TELEGRAM_BOT_TOKEN:
         raise TelegramError("Токен Telegram-бота не настроен.")
     try:
-        response = requests.post(
+        response = session().post(
             f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/{method}",
-            json=data, timeout=http_timeout,
+            json=data, timeout=(min(3, http_timeout), http_timeout),
         )
         result = response.json()
         if not response.ok or not result.get("ok"):
@@ -43,9 +44,9 @@ def upload(method, files, **data):
     form = {key: json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list, bool)) else str(value)
             for key, value in data.items() if value is not None}
     try:
-        response = requests.post(
+        response = session().post(
             f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/{method}",
-            data=form, files=files, timeout=60,
+            data=form, files=files, timeout=(3, 60),
         )
         result = response.json()
         if not response.ok or not result.get("ok"):
@@ -72,8 +73,8 @@ def download_file(file_id: str) -> tuple[bytes, str]:
     if not path or (info.get("file_size") or 0) > MAX_DOWNLOAD_BYTES:
         raise TelegramError("Файл недоступен или слишком большой.")
     try:
-        response = requests.get(
-            f"https://api.telegram.org/file/bot{settings.TELEGRAM_BOT_TOKEN}/{path}", timeout=40,
+        response = session().get(
+            f"https://api.telegram.org/file/bot{settings.TELEGRAM_BOT_TOKEN}/{path}", timeout=(3, 40),
         )
     except requests.RequestException:
         raise TelegramError("Не удалось скачать файл из Telegram.") from None
@@ -118,11 +119,13 @@ def handle_update(update):
     if "callback_query" in update:
         callback = update["callback_query"]
         data = callback.get("data") or ""
-        from . import bot_chats, bot_draft, bot_markets, chat_disputes
+        from . import bot_chats, bot_draft, bot_markets, bot_notifications, chat_disputes
         if bot_markets.owns(data):
             bot_markets.handle_callback(callback)
         elif bot_draft.owns(data):
             bot_draft.handle_callback(callback)
+        elif bot_notifications.owns(data):
+            bot_notifications.handle_callback(callback)
         elif bot_chats.owns(data):
             bot_chats.handle_callback(callback)
         elif chat_disputes.owns(data):

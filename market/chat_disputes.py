@@ -264,13 +264,45 @@ def _send_to_admins(review: ChatDisputeReview) -> list[dict]:
             log.info("chat dispute %s: admin %s is unreachable", review.pk, trader.pk)
             continue
         sent.append({"trader": trader.pk, "chat_id": chat_id, "message_id": message.get("message_id"),
-                     "photo": photo})
+                     "photo": photo, "proof": services.has_evidence(review.question)})
     return sent
 
 
+def _show_new_proof() -> int:
+    """The outcome's author sent proof after the cards went out: show it to the admins and update the cards.
+
+    A photo that Telegram refused stays unmarked, so the next tick tries again.
+    """
+    open_reviews = (ChatDisputeReview.objects.select_related("question", "group")
+                    .filter(decided_at__isnull=True, escalated_at__isnull=True,
+                            question__resolution_state=Question.Resolution.DISPUTED,
+                            question__evidence_requested_at__isnull=False))
+    shown = 0
+    for review in open_reviews:
+        question = review.question
+        if not services.has_evidence(question) or all(sent.get("proof") for sent in review.messages):
+            continue
+        messages = []
+        for sent in review.messages:
+            if not sent.get("proof"):
+                photo = bool(sent.get("photo"))
+                if question.evidence_file_id:
+                    photo = _send_evidence(sent["chat_id"], question) or photo
+                _quiet("editMessageText", chat_id=sent["chat_id"], message_id=sent["message_id"],
+                       text=card(review, photo=photo), parse_mode="HTML", reply_markup=_first_keyboard(review))
+                sent = {**sent, "photo": photo, "proof": photo or not question.evidence_file_id}
+            messages.append(sent)
+        ChatDisputeReview.objects.filter(pk=review.pk).update(messages=messages)
+        shown += 1
+    return shown
+
+
 def tick(now) -> dict:
-    """Worker step: send new chat disputes to admins, hand silent ones to the project team after 48 h."""
+    """Worker step: send new chat disputes and new proof to admins, hand silent disputes to the team after 48 h."""
     done = {"sent": 0, "escalated": 0}
+    proof = _show_new_proof()
+    if proof:
+        done["proof"] = proof
     disputed = Question.objects.filter(group__kind="chat", resolution_state=Question.Resolution.DISPUTED,
                                        chat_review__isnull=True)
     for question in disputed:
@@ -293,26 +325,6 @@ def tick(now) -> dict:
             done["escalated"] += 1
             _edit_all(review, lambda _trader: TIMEOUT_LINE)
     return done
-
-
-def evidence_added(question: Question) -> int:
-    """The outcome's author sent proof after the cards went out: show it to the admins and update the cards."""
-    with transaction.atomic():
-        review = (ChatDisputeReview.objects.select_for_update(of=("self",)).select_related("question", "group")
-                  .filter(question_id=question.pk, decided_at__isnull=True, escalated_at__isnull=True).first())
-        if review is None or not review.messages:
-            return 0
-        messages = []
-        for sent in review.messages:
-            photo = bool(sent.get("photo"))
-            if review.question.evidence_file_id:
-                photo = _send_evidence(sent["chat_id"], review.question) or photo
-            _quiet("editMessageText", chat_id=sent["chat_id"], message_id=sent["message_id"],
-                   text=card(review, photo=photo), parse_mode="HTML", reply_markup=_first_keyboard(review))
-            messages.append({**sent, "photo": photo})
-        review.messages = messages
-        review.save(update_fields=["messages"])
-    return len(messages)
 
 
 # --- buttons ---------------------------------------------------------------------------------------

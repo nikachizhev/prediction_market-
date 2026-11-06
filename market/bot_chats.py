@@ -13,12 +13,13 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, IntegerField, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from . import chats, rating, telegram
 from .bot_notifications import MSK, _day_bounds, _quiet_until, coins, plural
-from .models import CHAT_POST_KINDS, ChatPost, Group, GroupMembership, Question, Trade, Trader
+from .models import CHAT_POST_MODES, ChatPost, Group, GroupMembership, MarketDraft, Question, Trade, Trader
 from .share import market_link
 from .telegram import TelegramError
 
@@ -52,6 +53,14 @@ ALERT_ADMINS_ONLY = "Настройки меняют только админы �
 SAVED = "Сохранено"
 STALE = "Эти настройки устарели. Набери /settings ещё раз."
 NO_SUCH = "Такой настройки нет."
+# What each bot message mode does (spec E8.4), shown in /settings.
+MODE_HINTS = {
+    "quiet": "только ответы на команды",
+    "important": "объявленные рынки, их итоги и топ-3 недели",
+    "all": "каждый новый рынок, каждый итог и топ-3 недели",
+}
+ANNOUNCED_HINT = ("Рынок объявляется, если создатель отметил «Объявить в чате», если он создан из сообщения "
+                  "в чате или когда в нём сделали прогноз {people} чата.")
 PRICE_HINT = ("Ставка размером с цену создания сдвигает вероятность с 50% до 75%: "
               "чем дешевле рынок, тем легче он двигается.")
 
@@ -73,6 +82,25 @@ def _market_markup(question: Question) -> dict:
 def _participants(question: Question) -> int:
     return (Trade.objects.filter(Q(question=question) | Q(question__parent=question))
             .values("trader").distinct().count())
+
+
+def _member_trade():
+    """For an outer `Trade` query: the trader is an active member of the trade's chat."""
+    return GroupMembership.objects.filter(group_id=OuterRef("question__group_id"), trader_id=OuterRef("trader_id"),
+                                          status="active")
+
+
+def _chat_participants(question: Question) -> int:
+    """Different chat members (active membership) who bet on the market or any of its options."""
+    return (Trade.objects.filter(Q(question=question) | Q(question__parent=question)).filter(Exists(_member_trade()))
+            .values("trader").distinct().count())
+
+
+def _crowd():
+    """Subquery for an outer `Question`: `_chat_participants` of that market."""
+    return (Trade.objects.annotate(root_id=Coalesce("question__parent_id", "question_id"))
+            .filter(root_id=OuterRef("pk")).filter(Exists(_member_trade()))
+            .order_by().values("root_id").annotate(c=Count("trader_id", distinct=True)).values("c"))
 
 
 def _people(n: int) -> str:
@@ -292,8 +320,6 @@ def _command(message: dict) -> None:
 
 
 def open_markets(group: Group, now: datetime | None = None):
-    from django.db.models import IntegerField, OuterRef, Subquery
-    from django.db.models.functions import Coalesce
     now = now or timezone.now()
     family_people = (Trade.objects.annotate(root_id=Coalesce("question__parent_id", "question_id"))
                      .filter(root_id=OuterRef("pk")).order_by().values("root_id")
@@ -352,10 +378,14 @@ def settings_text(group: Group) -> str:
         how = "своя цена чата"
     else:
         how = f"по размеру чата ({_people(group.member_count)})"
+    mode = chats.post_mode(group)
+    label = dict(CHAT_POST_MODES)[mode]
     return (f"Настройки бота в чате «{group.name}».\n\n"
+            f"Сообщения бота: «{label}» — {MODE_HINTS[mode]}.\n"
+            f"{ANNOUNCED_HINT.format(people=_people(settings.CHAT_ANNOUNCE_PARTICIPANTS))}\n\n"
             f"Цена создания рынка: {cost} {plural(cost, 'монета', 'монеты', 'монет')} — {how}.\n"
             f"{PRICE_HINT}\n\n"
-            "Кнопками ниже включай и выключай сообщения бота и ИИ-помощника и выбирай цену.")
+            "Кнопками ниже выбирай режим сообщений и цену, включай и выключай ИИ-помощника.")
 
 
 def settings_keyboard(group: Group) -> dict:
@@ -364,7 +394,9 @@ def settings_keyboard(group: Group) -> dict:
     def switch(label: str, on: bool, data: str) -> list[dict]:
         return [{"text": f"{label}: {'вкл' if on else 'выкл'}", "callback_data": data}]
 
-    rows = [switch(label, chats.post_enabled(group, kind), f"{base}:post:{kind}") for kind, label in CHAT_POST_KINDS]
+    current = chats.post_mode(group)
+    rows = [[{"text": f"✓ {label}" if mode == current else label, "callback_data": f"{base}:mode:{mode}"}
+             for mode, label in CHAT_POST_MODES]]
     rows.append(switch("ИИ-помощник", group.assist_enabled, f"{base}:assist"))
     prices = [{"text": f"✓ {c}" if group.creation_cost == c else str(c), "callback_data": f"{base}:cost:{c}"}
               for c in _cost_choices()]
@@ -383,11 +415,11 @@ def _answer(callback: dict, text: str = "", alert: bool = False) -> None:
 
 def _change(group_id: int, action: str, value: str) -> Group | None:
     """Apply one settings button; None when the button is unknown or the price is out of bounds."""
-    kinds = {kind for kind, _ in CHAT_POST_KINDS}
+    modes = {mode for mode, _ in CHAT_POST_MODES}
     with transaction.atomic():
         group = Group.objects.select_for_update().get(pk=group_id)
-        if action == "post" and value in kinds:
-            group.post_settings = {**group.post_settings, value: not chats.post_enabled(group, value)}
+        if action == "mode" and value in modes:
+            group.post_settings = {**(group.post_settings or {}), "mode": value}
             group.save(update_fields=["post_settings"])
         elif action == "assist":
             group.assist_enabled = not group.assist_enabled
@@ -417,7 +449,8 @@ def _settings_press(callback: dict) -> None:
     group = None
     if len(parts) >= 3 and parts[1].isdigit():
         group = Group.objects.filter(kind="chat", pk=int(parts[1])).first()
-    if group is None or (message.get("chat") or {}).get("id") != group.telegram_chat_id:
+    # parts[2] == "post": a per-kind switch from a /settings message sent before the modes (phase 3d).
+    if group is None or (message.get("chat") or {}).get("id") != group.telegram_chat_id or parts[2] == "post":
         _answer(callback, STALE)
         return
     if not chats.is_admin(group, (callback.get("from") or {}).get("id") or 0):
@@ -437,16 +470,25 @@ def _settings_press(callback: dict) -> None:
 
 # --- outbox -------------------------------------------------------------------------------------
 
-def new_market_text(question: Question) -> str:
-    n = _participants(question)
-    tail = f" · {_people(n)}" if n else ""
+def _market_text(head: str, question: Question, tail: str = "") -> str:
     subs = list(question.submarkets.all().order_by("id"))
     if subs:
         opts = "\n".join(f"• {s.option_label or s.title} — {_percent(s)}%" for s in subs[:5])
         if len(subs) > 5:
             opts += f"\n• и ещё {len(subs) - 5}"
-        return f"Новый рынок в чате:\n«{question.title}»{tail}\n{opts}"
-    return f"Новый рынок в чате:\n«{question.title}»\nВероятность ДА: {_percent(question)}%{tail}"
+        return f"{head}\n«{question.title}»{tail}\n{opts}"
+    return f"{head}\n«{question.title}»\nВероятность ДА: {_percent(question)}%{tail}"
+
+
+def new_market_text(question: Question) -> str:
+    n = _participants(question)
+    return _market_text("Новый рынок в чате:", question, f" · {_people(n)}" if n else "")
+
+
+def crowd_text(question: Question) -> str:
+    """An unannounced market that CHAT_ANNOUNCE_PARTICIPANTS chat members bet on (spec E8.4)."""
+    n = max(_chat_participants(question), settings.CHAT_ANNOUNCE_PARTICIPANTS)
+    return _market_text(f"В рынке уже {_people(n)}:", question)
 
 
 def result_text(question: Question) -> str:
@@ -478,35 +520,99 @@ def _post(group: Group, kind: str, key: str, text: str, now: datetime, *, questi
     return created and status == ChatPost.Status.QUEUED
 
 
+def _draft(question: Question) -> MarketDraft | None:
+    try:
+        return question.chat_draft
+    except MarketDraft.DoesNotExist:
+        return None
+
+
+def _asked(question: Question) -> bool:
+    """The creator asked for an announcement: «Объявить в чате» or a market made from a chat message (E9.4)."""
+    return question.announce or _draft(question) is not None
+
+
+def _was_announced(question: Question) -> bool:
+    # Before phase 3d `announced_at` did not exist: a `new_market` post was the announcement.
+    return question.announced_at is not None or question.chat_posts.filter(kind="new_market").exists()
+
+
+def _thread(group: Group, draft: MarketDraft | None) -> dict:
+    """Into the topic the market came from; outside forums there are no topics to post into."""
+    if draft is not None and draft.thread_id and group.is_forum:
+        return {"message_thread_id": draft.thread_id}
+    return {}
+
+
+def _announce_payload(group: Group, question: Question) -> dict:
+    payload = {"reply_markup": _market_markup(question)}
+    draft = _draft(question)
+    if draft is not None and draft.source_message_id:
+        # A market made from a chat message is announced as a reply to it, even if the message is gone.
+        payload["reply_parameters"] = {"message_id": draft.source_message_id, "allow_sending_without_reply": True}
+    payload.update(_thread(group, draft))
+    return payload
+
+
 def fill(now: datetime) -> int:
-    """Queue new markets, results and the weekly top-3 for active chats. Idempotent by `ChatPost.key`."""
-    queued = 0
-    groups = {g.pk: g for g in Group.objects.filter(kind="chat", bot_active=True, telegram_chat_id__isnull=False)}
+    """Queue new markets, results and the weekly top-3 for active chats. Idempotent by `ChatPost.key`.
+
+    By the chat's mode (spec E8.4): «Тишина» — nothing; «Важное» — announced markets (asked by the creator
+    or bet on by CHAT_ANNOUNCE_PARTICIPANTS chat members), their results and the weekly top-3;
+    «Всё» — the same plus every new market and every result.
+    """
+    groups = {g.pk: g for g in Group.objects.filter(kind="chat", bot_active=True, telegram_chat_id__isnull=False)
+              if chats.post_mode(g) != "quiet"}
     if not groups:
         return 0
-    fresh = (Question.objects.filter(group_id__in=groups, parent__isnull=True, created_at__gte=now - timedelta(days=1),
-                                     publication_state="approved", status=Question.Status.OPEN, hidden_at__isnull=True)
-             .exclude(chat_posts__kind="new_market"))
-    for q in fresh:
+    return _fill_new_markets(groups, now) + _fill_results(groups, now) + _fill_weekly_top(groups.values(), now)
+
+
+def _fill_new_markets(groups: dict[int, Group], now: datetime) -> int:
+    queued = 0
+    new_since = now - timedelta(days=1)
+    need = settings.CHAT_ANNOUNCE_PARTICIPANTS
+    # Only approved markets (premoderation): an asked one waiting for review is announced once approved.
+    candidates = (Question.objects.filter(group_id__in=groups, parent__isnull=True, announced_at__isnull=True,
+                                          publication_state="approved", status=Question.Status.OPEN,
+                                          hidden_at__isnull=True)
+                  .filter(Q(deadline__isnull=True) | Q(deadline__gt=now))
+                  .exclude(chat_posts__kind="new_market")
+                  .annotate(crowd=Coalesce(Subquery(_crowd(), output_field=IntegerField()), 0))
+                  .filter(Q(announce=True) | Q(chat_draft__isnull=False) | Q(crowd__gte=need)
+                          | Q(created_at__gte=new_since))
+                  .select_related("chat_draft").order_by("created_at", "id"))
+    for q in candidates:
         group = groups[q.group_id]
-        if chats.post_enabled(group, "new_market"):
-            queued += _post(group, "new_market", f"new:{q.pk}", new_market_text(q), now, question=q,
-                            payload={"reply_markup": _market_markup(q)})
+        if _asked(q) or (chats.post_mode(group) == "all" and q.created_at >= new_since):
+            key, text = f"new:{q.pk}", new_market_text(q)
+        elif q.crowd >= need:
+            key, text = f"crowd:{q.pk}", crowd_text(q)
+        else:
+            continue
+        with transaction.atomic():
+            if _post(group, "new_market", key, text, now, question=q, payload=_announce_payload(group, q)):
+                Question.objects.filter(pk=q.pk, announced_at__isnull=True).update(announced_at=now)
+                queued += 1
+    return queued
+
+
+def _fill_results(groups: dict[int, Group], now: datetime) -> int:
+    queued = 0
     finished = (Question.objects.filter(group_id__in=groups, parent__isnull=True,
                                         resolution_state=Question.Resolution.FINAL, publication_state="approved",
                                         resolved_at__gte=now - timedelta(days=7), moderation_hidden=False)
-                .exclude(chat_posts__kind="results"))
+                .exclude(chat_posts__kind="results").select_related("chat_draft"))
     for q in finished:
         group = groups[q.group_id]
-        if not chats.post_enabled(group, "results"):
-            continue
-        payload = {"reply_markup": _market_markup(q)}
+        if chats.post_mode(group) != "all" and not _was_announced(q):
+            continue  # «Важное»: results only for markets the chat heard about
+        payload = {"reply_markup": _market_markup(q), **_thread(group, _draft(q))}
         method = "sendMessage"
         if q.evidence_file_id and q.status == Question.Status.RESOLVED:
             method, payload["photo"] = "sendPhoto", q.evidence_file_id
         queued += _post(group, "results", f"result:{q.pk}", result_text(q), now, question=q, method=method,
                         payload=payload)
-    queued += _fill_weekly_top(groups.values(), now)
     return queued
 
 
@@ -518,7 +624,7 @@ def _fill_weekly_top(groups, now: datetime) -> int:
     queued = 0
     for group in groups:
         key = f"top:{group.pk}:{year}-W{week:02d}"
-        if not chats.post_enabled(group, "weekly_top") or ChatPost.objects.filter(key=key).exists():
+        if ChatPost.objects.filter(key=key).exists():
             continue
         rows = _ranked(rating.leaderboard(None, group=group, period="week"), WEEKLY_TOP)
         if not rows:
@@ -558,11 +664,27 @@ def _finish(post: ChatPost, status: str, now: datetime | None = None) -> None:
 def _send(post: ChatPost) -> None:
     payload = dict(post.payload or {})
     chat_id = post.group.telegram_chat_id
-    # In a chat with topics the outbox goes to the general topic: no message_thread_id.
+    # In a chat with topics the outbox goes to the general topic, unless the market came from a message
+    # in a topic: then `message_thread_id` is in the payload.
     if post.method == "sendPhoto":
         telegram.api("sendPhoto", chat_id=chat_id, caption=post.text, **payload)
     else:
         telegram.api("sendMessage", chat_id=chat_id, text=post.text, **payload)
+
+
+def _still_wanted(group: Group, post: ChatPost) -> bool:
+    """The mode may have changed since the post was queued (posts wait through the quiet hours)."""
+    if not chats.post_enabled(group, post.kind):
+        return False
+    question = post.question
+    if chats.post_mode(group) == "all" or question is None:
+        return True
+    if post.kind == "results":
+        return _was_announced(question)
+    if post.kind == "new_market" and post.key.startswith("new:"):
+        # Queued in «Всё» as just a new market; in «Важное» only an asked one goes out.
+        return _asked(question)
+    return True
 
 
 def flush(now: datetime) -> dict:
@@ -577,7 +699,7 @@ def flush(now: datetime) -> dict:
         if not _claim(post, now):
             continue
         group, question = post.group, post.question
-        if not group.bot_active or not group.telegram_chat_id or not chats.post_enabled(group, post.kind):
+        if not group.bot_active or not group.telegram_chat_id or not _still_wanted(group, post):
             _finish(post, ChatPost.Status.SKIPPED)
             done["skipped"] += 1
             continue
@@ -586,7 +708,8 @@ def flush(now: datetime) -> dict:
                 _finish(post, ChatPost.Status.SKIPPED)
                 done["skipped"] += 1
                 continue
-            post.text = new_market_text(question)  # the probability and people as of sending
+            # The probability and people as of sending.
+            post.text = crowd_text(question) if post.key.startswith("crowd:") else new_market_text(question)
         if sent_today(group.pk, now) >= settings.CHAT_DAILY_POSTS:
             if post.kind == "results":
                 # A result is worth waiting for; a new market and the weekly top are dropped.

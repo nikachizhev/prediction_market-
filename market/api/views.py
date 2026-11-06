@@ -190,6 +190,12 @@ def me(request):
         if "notify" in data:
             trader.notify_prefs = {**(trader.notify_prefs or {}), **notify_of(data["notify"])}
             fields.append("notify_prefs")
+        if "notify_quiet" in data:
+            if not isinstance(data["notify_quiet"], bool):
+                raise BadRequest("Тихий режим можно только включить или выключить.")
+            trader.notify_prefs = {**(trader.notify_prefs or {}), "quiet": data["notify_quiet"]}
+            if "notify_prefs" not in fields:
+                fields.append("notify_prefs")
         if data.get("onboarded") and not trader.onboarded_at:
             trader.onboarded_at = timezone.now()
             fields.append("onboarded_at")
@@ -275,22 +281,57 @@ def reset_dismissals(request):
     return {"restored": deleted}
 
 
+# `assist` in POST /api/markets (docs/api.md «Фаза 3a», «Фаза 3d»): the wizard's card and the one-line screen.
+ASSIST_VALUES = ("accepted", "edited", "undone", "oneline", "oneline_edited")
+
+
+def _same_key(stored, sent) -> bool:
+    """Is `sent` the request key the draft's market was created with (a replay of that request)?"""
+    import uuid
+    try:
+        return stored is not None and uuid.UUID(str(sent)) == stored
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
 def create_market(request):
     data = body(request)
+    # «Объявить в чате» (spec E8.4): only with a chat, ignored for the public feed.
+    announce = data.get("announce")
+    if announce is not None and not isinstance(announce, bool):
+        raise BadRequest("Укажите announce: true или false.")
     group = None
     if data.get("chat") not in (None, ""):
         group = chat_for(request.trader, data["chat"])
         # The price by chat size is taken now and fixed in the market (spec E5).
         chats.refresh_member_count(group)
+    draft = None
+    if data.get("draft") not in (None, ""):
+        # A draft from /market in a chat (spec E9.4): only one's own, live, of the same chat; else 404.
+        from ..models import MarketDraft
+        from .draft_views import find_draft, not_found
+        draft = find_draft(request.trader, data["draft"])
+        if draft is None or group is None or draft.group_id != group.pk:
+            return not_found()
     closes_at = parse_datetime(str(data.get("closes_at") or ""))
     resolves_at = parse_datetime(str(data.get("resolves_at") or ""))
     for value in (closes_at, resolves_at):
         if value is not None and timezone.is_naive(value):
             raise BadRequest("Укажите дату с часовым поясом.")
-    question = services.create_market(
-        request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
-        category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
-        request_key=data.get("request_key") or None, group=group, options=data.get("options"))
+    with transaction.atomic():
+        if draft is not None:
+            # The lock keeps the chat's `Создать` button and this request from making two markets of one draft.
+            draft = MarketDraft.objects.select_for_update().get(pk=draft.pk)
+            if draft.question_id and not _same_key(draft.question.request_key, data.get("request_key")):
+                raise BadRequest("Рынок по этому черновику уже создан.")
+        question = services.create_market(
+            request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
+            category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
+            request_key=data.get("request_key") or None, group=group, options=data.get("options"),
+            announce=(bool(announce) and group is not None) or draft is not None)
+        if draft is not None and not draft.question_id:
+            draft.question = question
+            draft.save(update_fields=["question"])
     if question.publication_state != "approved":
         request.trader.refresh_from_db()
         return {"market": None, "publication": question.publication_state, "draft_id": question.pk,
@@ -305,9 +346,13 @@ def create_market(request):
         if group is not None:
             # Only the fact: no chat ID or link code in analytics.
             props["chat"] = True
+            props["announce"] = question.announce
         # Analytics only (docs/api.md «Фаза 3a»): unknown values are dropped, the market is created anyway.
-        if data.get("assist") in ("accepted", "edited", "undone"):
+        if data.get("assist") in ASSIST_VALUES:
             props["assist"] = data["assist"]
+        if draft is not None:
+            props["draft"] = True
+            props["announce"] = True
         template = data.get("template")
         if isinstance(template, str) and re.fullmatch(r"[a-z0-9_-]{1,40}", template):
             props["template"] = template
@@ -359,10 +404,8 @@ def quote(request, pk):
 def trade_result(request, question, trade):
     from ..events import log_event
     log_event(request.trader, "trade", {"market": question.pk, "side": trade.side, "sell": trade.cost < 0})
-    # Following a market you hold a position in is automatic (spec E6.1).
-    root = question.parent or question
-    MarketSubscription.objects.get_or_create(trader=request.trader, question=root,
-                                             defaults={"last_probability": root.prob})
+    # A position makes the market tracked by itself (spec E6.1) — no star: starred → «Всё»,
+    # a position alone → «Только итог» (spec E6.3, phase 3d).
     request.trader.refresh_from_db()
     question.refresh_from_db()
     return {"balance": s.money(request.trader.balance), "market": s.detail(question, request.trader),
@@ -396,16 +439,33 @@ def sell(request, pk):
 
 @endpoint("POST")
 def star(request, pk):
+    """The star follows the market and sets its bell to «Всё»; taking it off drops the explicit level (phase 3d)."""
+    from .. import notify_levels
+    from ..notify_levels import forget_level
+    from ..models import MarketNotifyLevel
     question = get_market(request.trader, pk)
     root = question.parent or question
     starred = bool(body(request).get("starred"))
     if starred:
         MarketSubscription.objects.get_or_create(trader=request.trader, question=root,
                                                  defaults={"last_probability": root.prob})
+        notify_levels.set_level(request.trader, root, MarketNotifyLevel.Level.ALL)
     else:
         MarketSubscription.objects.filter(trader=request.trader).filter(
             Q(question=root) | Q(question__parent=root)).delete()
-    return {"starred": starred}
+        forget_level(request.trader, root)
+    return {"starred": starred, "notify_level": notify_levels.level(request.trader, root)}
+
+
+@endpoint("POST")
+def notify_level(request, pk):
+    """The bell on the market card (spec E6.3, phase 3d); an option's level is the whole market's."""
+    from .. import notify_levels
+    question = get_market(request.trader, pk)
+    value = body(request).get("level")
+    if not isinstance(value, str) or value not in notify_levels.LEVELS:
+        raise BadRequest("Неизвестный уровень уведомлений.")
+    return {"level": notify_levels.set_level(request.trader, question, value)}
 
 
 @endpoint("POST")
@@ -465,6 +525,12 @@ def mine(request):
                      .order_by("-created_at", "-id")
                      .values_list("question_id", "question__parent_id")):
         rid = pid or qid
+        if rid not in seen_watched:
+            seen_watched.add(rid)
+            watched_ids.append(rid)
+    # A position makes the market tracked by itself, without a star (spec E6.1).
+    for pos in positions:
+        rid = pos.question.parent_id or pos.question_id
         if rid not in seen_watched:
             seen_watched.add(rid)
             watched_ids.append(rid)
@@ -568,9 +634,15 @@ def events(request):
     from ..events import CLIENT_EVENTS, log_event
     data = body(request)
     name = str(data.get("name") or "")
+    props = data.get("props") if isinstance(data.get("props"), dict) else {}
+    if name == "oneline_wizard":
+        # «О чём спорим?» → the three-step wizard (spec E9.5): «Заполнить самому» or the helper did not answer.
+        if props.get("reason") not in ("manual", "unavailable"):
+            raise BadRequest("Неизвестная причина.")
+        log_event(request.trader, name, {"reason": props["reason"]})
+        return {"ok": True}
     if name not in CLIENT_EVENTS:
         raise BadRequest("Неизвестное событие.")
-    props = data.get("props") if isinstance(data.get("props"), dict) else {}
     if name in ("feed_impression", "market_open"):
         market_id = props.get("market")
         if isinstance(market_id, bool) or not isinstance(market_id, int):

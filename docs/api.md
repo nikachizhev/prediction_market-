@@ -237,7 +237,7 @@ interface ChatSpace {
 
 ## Фаза 3d (контракт, 04.11.2026)
 
-Меньше рутины (спека E4, E6.3, E8.4, E9.4, E9.5). Старые поля не меняются. Основа — ветка `e3d-base` (миграция 0033).
+Меньше рутины (спека E4, E6.3, E8.4, E9.4, E9.5). Старые поля не меняются. Основа — ветка `e3d-base` (миграция 0034).
 
 ```ts
 type NotifyLevel = "all" | "result" | "none";
@@ -290,7 +290,7 @@ interface MarketDraftView {                        // рынок из сообщ
 - Callback-данные: `draft:…` — `market/bot_draft.py` (`Создать за <цена>` в чате). `/market` в чате `bot_chats._command` передаёт в `bot_draft.handle_command(message, group)`. Маршрутизация — `market/telegram.py`.
 - Кнопка `🔕 Не присылать про этот рынок` под уведомлением о рынке — callback `bot_notifications` (свой префикс), ставит `none`.
 - Уровень рынка — `market/notify_levels.py`: `level`, `default_level`, `set_level` (всегда на корень мультирынка).
-- Режим чата — `Group.post_settings["mode"]`: `quiet` / `important` (по умолчанию) / `all`, см. `CHAT_POST_MODES`. Миграция 0033 перевела старые переключатели: всё выключено → `quiet`, иначе `important`.
+- Режим чата — `Group.post_settings["mode"]`: `quiet` / `important` (по умолчанию) / `all`, см. `CHAT_POST_MODES`. Миграция 0034 перевела старые переключатели: всё выключено → `quiet`, иначе `important`.
 - Объявление в чате: `Question.announce` (галочка, из сообщения) и `Question.announced_at` (когда бот поставил объявление в очередь; итог пишем только по объявленным). Ответ на исходное сообщение — `question.chat_draft.source_message_id` → `reply_parameters` в `ChatPost.payload`.
 - Итог участника: `Question.proposed_by` (кто указал итог), `Question.proposal_bond`; запрос доказательства при споре — `evidence_requested_at`, `evidence_reminded_at`; вопрос участникам — `participants_asked_at`. Проводки: `proposal_bond`, `proposal_refund`, `proposer_fee`.
 - Параметры — `config/settings.py`: `PARTICIPANT_PROPOSAL_HOURS`, `PROPOSAL_BOND`, `EVIDENCE_HOURS`, `CHAT_ANNOUNCE_PARTICIPANTS`, `CHAT_DRAFT_HOURS`.

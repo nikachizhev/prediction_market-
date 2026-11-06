@@ -1046,7 +1046,9 @@ def open_dispute(trader: Trader, question: Question, reason: str = ""):
         sub.save(update_fields=["resolution_state"])
     _after_commit("dispute_opened", question.pk)
     if ask_proof:
-        _after_commit("request_evidence", question.pk, module="bot_resolution")
+        # Only a row in the durable bot queue: nothing here talks to Telegram.
+        from .bot_resolution import request_evidence
+        request_evidence(question)
     return dispute
 
 

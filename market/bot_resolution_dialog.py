@@ -121,12 +121,6 @@ def _multi_summary_html(subs: list[Question], picked: dict[int, str]) -> str:
     )
 
 
-def _send_evidence(chat_id, file_id: str, is_document: bool, caption: str, markup: dict) -> None:
-    kind, field = ("sendDocument", "document") if is_document else ("sendPhoto", "photo")
-    telegram.api(kind, chat_id=chat_id, caption=caption[:CAPTION_LIMIT], parse_mode="HTML",
-                 reply_markup=markup, **{field: file_id})
-
-
 def _image(message: dict) -> tuple[str, bool]:
     """The file_id of a photo, or of an image sent as a file; ("", False) when there is none."""
     if message.get("photo"):
@@ -223,13 +217,15 @@ def handle_callback(callback: dict) -> None:
     if chat.get("type") != "private" or user_id is None or chat.get("id") != user_id:
         _quiet("answerCallbackQuery", **answer)
         return
+    _quiet("answerCallbackQuery", **answer)
     action, _, rest = data.partition(":")
     handler = HANDLERS.get(action)
     note = None
     if handler:
         question_id, _, arg = rest.partition(":")
         note = handler(user_id, message, _question(question_id), arg)
-    _quiet("answerCallbackQuery", **answer, **({"text": note} if note else {}))
+    if note:
+        telegram.send(user_id, note)
 
 
 # --- creator ---------------------------------------------------------------------------------------
@@ -249,7 +245,7 @@ def _on_outcome(user_id, message, question, outcome) -> str | None:
     trader = _trader(user_id)
     if (question is not None and trader is not None and question.resolution_state
             and question.proposed_by_id == trader.pk and question.proposed_outcome == outcome):
-        return "Итог уже указан."  # a repeated tap on the same button
+        return None  # a repeated tap on the same button: the first one already answered
     trader = _creator_check(user_id, message, question)
     if trader is None or outcome not in OUTCOMES:
         return None
@@ -292,7 +288,7 @@ def _on_option(user_id, message, question, arg) -> str | None:
     if message.get("message_id"):
         _quiet("editMessageText", chat_id=user_id, message_id=message["message_id"],
                text=_creator_prompt(question, picked), reply_markup=outcome_keyboard(question, picked))
-    return f"{(by_id[sub_id].option_label or by_id[sub_id].title)[:40]}: {LABELS[choice]}"
+    return None
 
 
 def _on_next(user_id, message, question, _arg) -> str | None:
@@ -324,7 +320,19 @@ def _on_photo(user_id, message, question, _arg) -> str | None:
     draft.save()
     # Text outside the spec.
     telegram.send(user_id, "Пришли фото или скриншот — его увидят все участники. Потом нажми, чем закончилось.")
-    return "Пришли фото"
+    return None
+
+
+def _on_old_button(user_id, message, question, _arg) -> str | None:
+    """«Подтвердить» and «Изменить» from messages sent before phase 3d: show today's buttons instead."""
+    trader = _creator_check(user_id, message, question)
+    if trader is None:
+        return None
+    _drop_buttons(message)
+    draft = _draft(user_id, question)
+    picked = (_decode_multi(_subs(question), draft.outcome) if draft else None) or {}
+    telegram.send(user_id, _creator_prompt(question, picked), reply_markup=outcome_keyboard(question, picked))
+    return None
 
 
 def _draft(user_id, question) -> ResolutionDraft | None:
@@ -350,6 +358,7 @@ def _publish(user_id, trader: Trader, question: Question, outcome: str,
             error = str(exc)
         else:
             error = None
+            notify_participants(question, is_document=is_document)
             if draft is not None:
                 transaction.on_commit(lambda d=draft: d.evidence and d.evidence.delete(save=False))
                 draft.delete()
@@ -357,8 +366,7 @@ def _publish(user_id, trader: Trader, question: Question, outcome: str,
         telegram.send(user_id, error)
         return None
     _report_to_creator(user_id, question, photo=bool(file_id))
-    notify_participants(question, is_document=is_document)
-    return "Итог указан"
+    return None
 
 
 def _report_to_creator(user_id, question: Question, *, photo: bool = False) -> None:
@@ -382,8 +390,9 @@ def _report_to_creator(user_id, question: Question, *, photo: bool = False) -> N
 
 
 def notify_participants(question: Question, *, is_document: bool = False) -> int:
-    """The stated outcome (with its proof, if any) and a «Оспорить» button for everyone who may dispute it:
-    the participants, and the creator when a participant stated it."""
+    """Queue the stated outcome (with its proof, if any) and a «Оспорить» button in the same transaction,
+    for everyone who may dispute it: the participants, and the creator when a participant stated it."""
+    from .bot_jobs import enqueue_message
     title = html.escape(question.title[:200])
     subs = _subs(question)
     by_participant = services.by_participant(question)
@@ -411,17 +420,18 @@ def notify_participants(question: Question, *, is_document: bool = False) -> int
     people = list(participants(question).exclude(pk=question.proposed_by_id))
     if by_participant and question.creator and question.creator.telegram_chat_id:
         people.append(question.creator)
-    sent = 0
     for trader in people:
-        try:
-            if question.evidence_file_id:
-                _send_evidence(trader.telegram_chat_id, question.evidence_file_id, is_document, text, markup)
-            else:
-                telegram.send(trader.telegram_chat_id, text, parse_mode="HTML", reply_markup=markup)
-            sent += 1
-        except telegram.TelegramError:
-            log.warning("could not notify trader %s about market %s", trader.pk, question.pk)
-    return sent
+        payload = {"parse_mode": "HTML", "reply_markup": markup}
+        if question.evidence_file_id:
+            method = "sendDocument" if is_document else "sendPhoto"
+            payload.update({"document" if is_document else "photo": question.evidence_file_id,
+                            "caption": text[:CAPTION_LIMIT]})
+        else:
+            method = "sendMessage"
+            payload["text"] = text
+        enqueue_message(f"outcome:{question.pk}:{question.proposed_at.isoformat()}:{trader.pk}",
+                        trader, question, method, payload)
+    return len(people)
 
 
 # --- participants state the outcome (phase 3d) -----------------------------------------------------
@@ -514,7 +524,9 @@ def _on_participant_confirm(user_id, message, question, arg) -> str | None:
         return None
     outcome, picked = parsed
     try:
-        question = services.propose_by_participant(trader, question, outcome, submarket_outcomes=picked)
+        with transaction.atomic():
+            question = services.propose_by_participant(trader, question, outcome, submarket_outcomes=picked)
+            notify_participants(question)
     except services.MarketError as exc:
         telegram.send(user_id, str(exc))
         return None
@@ -525,8 +537,7 @@ def _on_participant_confirm(user_id, message, question, arg) -> str | None:
                            f"<b>+{_fee_share(question)}</b>.",
                   parse_mode="HTML",
                   reply_markup={"inline_keyboard": [[app_button("Посмотреть рынок", f"market/{question.pk}")]]})
-    notify_participants(question)
-    return "Итог предложен"
+    return None
 
 
 def _on_participant_decline(user_id, message, question, _arg) -> str | None:
@@ -548,9 +559,11 @@ def _awaiting_evidence(trader: Trader) -> Question | None:
 
 def _evidence(message: dict, trader: Trader, question: Question) -> bool:
     chat_id = message["chat"]["id"]
-    file_id, is_document = _image(message)
+    file_id, _ = _image(message)
     text = message.get("text") or ""
     if not file_id and not LINK.search(text):
+        if services.has_evidence(question):
+            return False  # the proof is here already; this message is about something else
         # Text outside the spec.
         telegram.send(chat_id, f"Пришли фото, скриншот или ссылку — доказательство итога рынка «{question.title}».")
         return True
@@ -565,16 +578,9 @@ def _evidence(message: dict, trader: Trader, question: Question) -> bool:
     except services.MarketError as exc:
         telegram.send(chat_id, str(exc))
         return True
-    chat_market = is_chat_market(question)
-    # Text outside the spec.
+    # Text outside the spec. The worker shows new proof to chat admins (chat_disputes.tick).
     telegram.send(chat_id, "Доказательство получено — "
-                  + ("его увидят админы чата." if chat_market else "его увидит модератор."))
-    if chat_market:
-        from . import chat_disputes
-        try:
-            chat_disputes.evidence_added(question)
-        except Exception:  # noqa: BLE001 - the proof is saved; the admins see it on the card anyway
-            log.exception("could not show new proof to chat admins for market %s", question.pk)
+                  + ("его увидят админы чата." if is_chat_market(question) else "его увидит модератор."))
     return True
 
 
@@ -603,7 +609,7 @@ def _on_dispute_confirm(user_id, message, question, _arg) -> str | None:
         return None
     who = "проверят админы чата" if is_chat_market(question) else "проверит модератор"
     telegram.send(user_id, f"Спор открыт, списано {settings.DISPUTE_COST} монет. Итог {who}.")
-    return "Спор открыт"
+    return None
 
 
 def _on_dispute_decline(user_id, message, question, _arg) -> str | None:
@@ -616,6 +622,9 @@ HANDLERS = {
     "resopt": _on_option,
     "resnext": _on_next,
     "resphoto": _on_photo,
+    "resok": _on_old_button,
+    "resedit": _on_old_button,
+    "resnone": _on_old_button,
     "pres": _on_participant_outcome,
     "presopt": _on_participant_option,
     "presok": _on_participant_confirm,
