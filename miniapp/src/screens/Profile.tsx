@@ -27,7 +27,7 @@ import { useToast } from '../components/Toast';
 import { formatDayMonth, formatMoney, formatSigned, formatSince, pluralize } from '../format';
 import { shareInvite } from '../invite';
 import { periodWord, PERIODS } from '../market';
-import { NOTIFY_NOTE, NOTIFY_OPTIONS, notifyCountLabel, toggleNotify } from '../notifications';
+import { hasQuietMode, NOTIFY_NOTE, NOTIFY_OPTIONS, notifySummary, QUIET_OPTION, toggleNotify, withQuiet } from '../notifications';
 import {
   amountTone,
   balanceChart,
@@ -557,7 +557,7 @@ function SettingsNav() {
           }}
         >
           <span className="profile-setting-label">Уведомления</span>
-          <span className="sub profile-setting-value">{notifyCountLabel(me.notify)}</span>
+          <span className="sub profile-setting-value">{notifySummary(me)}</span>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--sub)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M9 5l7 7-7 7" />
           </svg>
@@ -570,13 +570,31 @@ function SettingsNav() {
   );
 }
 
-/** Five switches; optimistic PATCH /api/me, the one switch rolls back on error. */
+/** Quiet mode and five switches; optimistic PATCH /api/me, the one switch rolls back on error. */
 function NotifySettings() {
   const { me, setMe, patchMe } = useSession();
   const toast = useToast();
   const latest = useRef(0);
   if (!me?.notify) return null;
   const notify = me.notify;
+
+  const flipQuiet = () => {
+    const value = !me.notify_quiet;
+    tg.HapticFeedback.impact('light');
+    patchMe((prev) => withQuiet(prev, value));
+    latest.current += 1;
+    const request = latest.current;
+    api
+      .updateMe({ notify_quiet: value })
+      .then((res) => {
+        if (request === latest.current) setMe(res);
+      })
+      .catch((err: unknown) => {
+        patchMe((prev) => withQuiet(prev, !value));
+        tg.HapticFeedback.notification('error');
+        toast(err instanceof ApiError ? err.message : 'Не получилось. Попробуйте ещё раз.', 'error');
+      });
+  };
 
   const flip = (key: NotifyKind) => {
     const value = toggleNotify(notify, key)[key];
@@ -600,6 +618,24 @@ function NotifySettings() {
   return (
     <div className="profile-notify">
       <h2 className="profile-section-title">Уведомления в боте</h2>
+      {hasQuietMode(me) && (
+        <ul className="profile-notify-list profile-notify-quiet">
+          <li className="profile-notify-row">
+            <span className="profile-notify-text" id="notify-quiet">
+              <span className="profile-notify-label">{QUIET_OPTION.label}</span>
+              <span className="sub small">{QUIET_OPTION.hint}</span>
+            </span>
+            <button
+              type="button"
+              role="switch"
+              className="switch"
+              aria-checked={me.notify_quiet === true}
+              aria-labelledby="notify-quiet"
+              onClick={flipQuiet}
+            />
+          </li>
+        </ul>
+      )}
       <ul className="profile-notify-list">
         {NOTIFY_OPTIONS.map((o) => (
           <li key={o.key} className="profile-notify-row">

@@ -17,13 +17,6 @@ interface CreatedState {
   botNotified?: boolean | null;
 }
 
-const GOOD_PROOF = [
-  'Скриншот результата: ведомость, таблица, счёт матча',
-  'Фото объявления, расписания или новости, где видна дата',
-  'Ссылка на источник — в подписи к фото',
-];
-const BAD_PROOF = 'Не подойдёт фото, по которому не понять, о чём рынок и когда это было';
-
 export function CreatedScreen() {
   const { id } = useParams();
   const marketId = Number(id);
@@ -123,27 +116,16 @@ export function CreatedScreen() {
           <li>
             <span className="created-num" aria-hidden="true">2</span>
             <div className="created-step">
-              <span className="created-step-title">Нажми ДА или НЕТ и пришли фото или скриншот</span>
-              <p className="created-step-text sub">Можно добавить подпись или ссылку на источник.</p>
+              <span className="created-step-title">Нажми ДА или НЕТ — итог указан</span>
+              <p className="created-step-text sub">Одно нажатие. Фото можно приложить по желанию.</p>
               <div className="mini-chat" aria-hidden="true">
-                <div className="mini-bubble is-out">
-                  <div className="mini-paper">
-                    <b>Ведомость · зимняя сессия</b>
-                    <span className="mini-paper-rule" />
-                    <span className="mini-paper-row">
-                      <span>Матанализ</span>
-                      <b>5</b>
-                    </span>
-                    <span className="mini-paper-row">
-                      <span>Физика</span>
-                      <b>4</b>
-                    </span>
-                    <span className="mini-paper-row">
-                      <span>История</span>
-                      <b>5</b>
-                    </span>
-                  </div>
-                  <span className="mini-caption">Все экзамены сданы, троек нет</span>
+                <div className="mini-bubble mini-preview">
+                  <span>
+                    Итог: <b>ДА</b>
+                  </span>
+                </div>
+                <div className="mini-keys is-narrow">
+                  <span className="mini-key">Приложить фото</span>
                 </div>
               </div>
             </div>
@@ -151,51 +133,13 @@ export function CreatedScreen() {
           <li>
             <span className="created-num" aria-hidden="true">3</span>
             <div className="created-step">
-              <span className="created-step-title">Проверь и нажми «Подтвердить»</span>
+              <span className="created-step-title">24 часа на спор, потом выплаты придут сами</span>
               <p className="created-step-text sub">
-                Итог и фото увидят все участники. У них будет 24 часа на спор, потом выплаты придут сами.
+                Участники увидят итог и смогут его оспорить. Доказательство понадобится, только если итог оспорят.
               </p>
-              <div className="mini-chat" aria-hidden="true">
-                <div className="mini-bubble mini-preview">
-                  <span className="mini-thumb">
-                    <span />
-                    <span />
-                    <span />
-                  </span>
-                  <span>
-                    Итог: <b>ДА</b>
-                    <br />
-                    Все экзамены сданы, троек нет
-                  </span>
-                </div>
-                <div className="mini-keys is-narrow">
-                  <span className="mini-key is-on">Подтвердить</span>
-                  <span className="mini-key">Изменить</span>
-                </div>
-              </div>
             </div>
           </li>
         </ol>
-      </section>
-
-      <section className="card created-card" aria-label="Что подойдёт как доказательство">
-        <h2 className="created-title">Что подойдёт как доказательство</h2>
-        <ul className="created-proof">
-          {GOOD_PROOF.map((text) => (
-            <li key={text}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--yes)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M5 12.5l4.5 4.5L19 7.5" />
-              </svg>
-              <span>{text}</span>
-            </li>
-          ))}
-          <li>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--no)" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-              <path d="M7 7l10 10M17 7L7 17" />
-            </svg>
-            <span>{BAD_PROOF}</span>
-          </li>
-        </ul>
       </section>
 
       <div className="created-note sub">
@@ -204,8 +148,8 @@ export function CreatedScreen() {
           <path d="M12 11v5M12 8v.5" />
         </svg>
         <span>
-          Если не укажешь итог в течение 72 часов после {resolveDay ?? 'даты итога'}, рынок отменится и всем вернутся
-          монеты.
+          Если промолчишь сутки после {resolveDay ?? 'даты итога'}, итог смогут предложить участники. Никто не предложит
+          за 72 часа — рынок отменится и всем вернутся монеты.
         </span>
       </div>
 

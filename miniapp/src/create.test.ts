@@ -216,7 +216,7 @@ describe('draft storage', () => {
 describe('resolutionRule', () => {
   it('names the result date and what the bot will ask for', () => {
     expect(resolutionRule(draft({ resultDate: '2026-11-16' }), NOW)).toBe(
-      '16 ноября в 23:59 бот спросит, чем закончилось: нажмёшь ДА или НЕТ и пришлёшь фото или скриншот',
+      '16 ноября в 23:59 бот спросит, чем закончилось: ДА или НЕТ одним нажатием, фото — по желанию',
     );
   });
 
@@ -563,6 +563,11 @@ describe('stored drafts', () => {
       assist: null,
       suggestion: null,
       chat: null,
+      // Saved before «О чём спорим?»: it was a wizard draft.
+      flow: 'wizard',
+      line: '',
+      announce: false,
+      draftCode: null,
     });
   });
 
