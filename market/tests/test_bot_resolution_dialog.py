@@ -1,4 +1,4 @@
-"""Spec E4 in the bot: the creator states the outcome with a photo, participants can dispute it."""
+"""Spec E4 in the bot: the creator states the outcome in one tap, a photo is optional; participants can dispute."""
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -11,7 +11,7 @@ from django.test import override_settings
 from django.utils import timezone
 
 from market import services
-from market.models import Dispute, Group, GroupMembership, LedgerEntry, Question, ResolutionDraft, Trader
+from market.models import BotJob, Dispute, Group, GroupMembership, LedgerEntry, Question, ResolutionDraft, Trader
 from market.telegram import handle_update
 
 D = Decimal
@@ -92,19 +92,42 @@ def press(user, data, message_id=9):
                                "message": {"message_id": message_id, "chat": {"id": user, "type": "private"}}}}
 
 
-def test_creator_full_flow(bot, people, market):
+def test_one_tap_states_the_outcome_without_a_photo(bot, people, market):
     handle_update(text(CREATOR, f"/start resolve_{market.pk}"))
     ask = bot.sent("sendMessage", CREATOR)[-1]
     assert "Чем закончилось?" in ask["text"]
-    assert ask["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == f"res:{market.pk}:yes"
+    rows = ask["reply_markup"]["inline_keyboard"]
+    assert [[b["text"] for b in row] for row in rows] == [["ДА", "НЕТ"], ["Приложить фото"], ["Отменить рынок"]]
+    assert rows[0][0]["callback_data"] == f"res:{market.pk}:yes"
 
+    before = len(bot.calls)
     handle_update(press(CREATOR, f"res:{market.pk}:yes"))
-    assert bot.sent("answerCallbackQuery")
+    assert bot.calls[before][0] == "answerCallbackQuery"  # acknowledged first
     assert bot.sent("editMessageReplyMarkup", CREATOR)[-1]["message_id"] == 9
-    asked = bot.sent("sendMessage", CREATOR)[-1]
-    assert asked["text"] == ("Итог: <b>ДА</b>. Пришли фото или скриншот, который это подтверждает — "
-                             "его увидят все участники.") and asked["parse_mode"] == "HTML"
+    market.refresh_from_db()
+    assert market.resolution_state == Question.Resolution.PENDING and market.proposed_outcome == "yes"
+    assert market.proposed_by_id == people[0].pk and market.proposal_bond == 0
+    assert not market.evidence and not market.evidence_file_id
+    assert not ResolutionDraft.objects.exists()
+    done = bot.sent("sendMessage", CREATOR)[-1]
+    fee = int(market.fee_pool / 2)
+    assert done["text"] == (f"Готово. Итог <b>ДА</b> опубликован. У участников есть 24 часа, "
+                            f"чтобы оспорить его. Если спора не будет, выплаты придут автоматически, "
+                            f"а тебе — половина комиссии: <b>+{fee}</b>.")
+    assert done["reply_markup"]["inline_keyboard"][0][0]["web_app"]["url"] == f"https://example.test/app/market/{market.pk}"
 
+    assert not bot.sent(chat_id=ANYA)  # queued, not sent from the poller
+    drain_jobs()
+    for user in (ANYA, BORIS):
+        note = bot.sent("sendMessage", user)[-1]
+        assert "указал итог: <b>ДА</b>" in note["text"]
+        assert note["reply_markup"]["inline_keyboard"][0][0] == {"text": "Оспорить", "callback_data": f"disp:{market.pk}"}
+    assert not bot.sent("sendPhoto") and not bot.sent(chat_id=STRANGER)
+
+
+def test_photo_before_the_tap_goes_with_the_outcome(bot, people, market):
+    handle_update(press(CREATOR, f"resphoto:{market.pk}"))
+    assert "Пришли фото" in bot.texts(CREATOR)[-1]
     handle_update(text(CREATOR, "вот"))
     assert bot.texts(CREATOR)[-1] == "Нажми скрепку и выбери фото"
 
@@ -112,49 +135,42 @@ def test_creator_full_flow(bot, people, market):
     assert bot.sent("getFile")[-1]["file_id"] == "big"
     assert bot.get.call_args.args[0] == "https://api.telegram.org/file/botT/photos/file_7.jpg"
     assert bot.get.call_args.kwargs["timeout"]
-    preview = bot.sent("sendPhoto", CREATOR)[-1]
-    assert preview["photo"] == "big" and preview["caption"].startswith("Итог: <b>ДА</b>")
-    buttons = [b["text"] for b in preview["reply_markup"]["inline_keyboard"][0]]
-    assert buttons == ["Подтвердить", "Изменить"]
+    asked = bot.sent("sendMessage", CREATOR)[-1]
+    assert "Фото приложено" in asked["text"] and "Чем закончилось?" in asked["text"]
+    assert asked["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == f"res:{market.pk}:yes"
     market.refresh_from_db()
-    assert market.resolution_state == ""  # nothing published before confirmation
+    assert market.resolution_state == ""  # the photo alone states nothing
 
-    handle_update(press(CREATOR, f"resok:{market.pk}", 10))
+    handle_update(press(CREATOR, f"res:{market.pk}:yes", 10))
     market.refresh_from_db()
     assert market.resolution_state == Question.Resolution.PENDING and market.proposed_outcome == "yes"
     assert market.evidence_file_id == "big" and market.evidence_note == "Скрин с сайта"
     assert market.evidence.read() == b"\xff\xd8fake-jpeg"
     assert not ResolutionDraft.objects.exists()
-    done = bot.sent("sendMessage", CREATOR)[-1]
-    fee = int(market.fee_pool / 2)
-    assert done["text"] == (f"Готово. Итог <b>ДА</b> опубликован вместе с фото. У участников есть 24 часа, "
-                            f"чтобы оспорить его. Если спора не будет, выплаты придут автоматически, "
-                            f"а тебе — половина комиссии: <b>+{fee}</b>.")
-    assert done["reply_markup"]["inline_keyboard"][0][0]["web_app"]["url"] == f"https://example.test/app/market/{market.pk}"
-
+    assert "опубликован вместе с фото" in bot.texts(CREATOR)[-1]
     drain_jobs()
     for user in (ANYA, BORIS):
         note = bot.sent("sendPhoto", user)[-1]
         assert note["photo"] == "big" and "<b>ДА</b>" in note["caption"]
         assert note["reply_markup"]["inline_keyboard"][0][0] == {"text": "Оспорить", "callback_data": f"disp:{market.pk}"}
-    assert not bot.sent(chat_id=STRANGER)
-    assert len(bot.sent("sendPhoto", CREATOR)) == 1  # only the preview
+    assert not bot.sent("sendPhoto", CREATOR)
 
 
-def test_double_confirm_is_harmless(bot, people, market):
+def test_double_tap_is_harmless(bot, people, market):
     handle_update(press(CREATOR, f"res:{market.pk}:no"))
-    handle_update(photo(CREATOR))
-    handle_update(press(CREATOR, f"resok:{market.pk}", 10))
     calls = len(bot.calls)
-    handle_update(press(CREATOR, f"resok:{market.pk}", 10))
+    balances = list(Trader.objects.order_by("pk").values_list("balance", flat=True))
+    handle_update(press(CREATOR, f"res:{market.pk}:no"))
     market.refresh_from_db()
     assert market.resolution_state == "pending" and market.proposed_outcome == "no"
-    new = bot.calls[calls:]
-    assert not [d for m, d in new if m == "sendPhoto"]
-    assert bot.texts(CREATOR)[-1] == "Итог уже опубликован."
-    # After publishing, the outcome buttons explain why nothing happens.
+    assert not [d for m, d in bot.calls[calls:] if m != "answerCallbackQuery"]  # silent
+    assert BotJob.objects.count() == 2
+    assert list(Trader.objects.order_by("pk").values_list("balance", flat=True)) == balances
+    # Another button after publishing explains why nothing happens.
     handle_update(press(CREATOR, f"res:{market.pk}:yes"))
     assert bot.texts(CREATOR)[-1] == "Итог этого рынка уже указан."
+    market.refresh_from_db()
+    assert market.proposed_outcome == "no"
 
 
 def test_stranger_cannot_state_outcome(bot, people, market):
@@ -182,15 +198,8 @@ def test_too_early_and_unknown_market(bot, people):
     assert bot.texts(CREATOR)[-1] == "Рынок не найден."
 
 
-def test_cancel_without_photo(bot, people, market):
+def test_cancel_in_one_tap(bot, people, market):
     handle_update(press(CREATOR, f"res:{market.pk}:cancel"))
-    offer = bot.sent("sendMessage", CREATOR)[-1]
-    assert offer["reply_markup"]["inline_keyboard"][0][0] == {
-        "text": "Без доказательства", "callback_data": f"resnone:{market.pk}"}
-    handle_update(press(CREATOR, f"resnone:{market.pk}", 10))
-    preview = bot.sent("sendMessage", CREATOR)[-1]
-    assert "Подтвердить" in str(preview["reply_markup"])
-    handle_update(press(CREATOR, f"resok:{market.pk}", 11))
     market.refresh_from_db()
     assert market.resolution_state == "pending" and market.proposed_outcome == "cancel" and not market.evidence
     assert "Отмена рынка опубликована" in bot.texts(CREATOR)[-1]
@@ -198,33 +207,31 @@ def test_cancel_without_photo(bot, people, market):
     assert "оспорь" in bot.texts(ANYA)[-1] and not bot.sent("sendPhoto", ANYA)
 
 
-def test_change_outcome_from_preview(bot, people, market):
-    handle_update(press(CREATOR, f"res:{market.pk}:yes"))
-    handle_update(photo(CREATOR))
-    handle_update(press(CREATOR, f"resedit:{market.pk}", 10))
-    assert not ResolutionDraft.objects.exists()
+def test_buttons_from_before_phase_3d_show_the_new_ones(bot, people, market):
+    ResolutionDraft.objects.create(trader=people[0], question=market, outcome="yes", stage="preview")
+    handle_update(press(CREATOR, f"resok:{market.pk}"))
+    market.refresh_from_db()
+    assert market.resolution_state == ""
     assert "Чем закончилось?" in bot.texts(CREATOR)[-1]
     handle_update(press(CREATOR, f"res:{market.pk}:no", 11))
-    assert ResolutionDraft.objects.get().outcome == "no"
+    market.refresh_from_db()
+    assert market.proposed_outcome == "no"
 
 
 def test_image_document_is_accepted(bot, people, market):
-    handle_update(press(CREATOR, f"res:{market.pk}:yes"))
+    handle_update(press(CREATOR, f"resphoto:{market.pk}"))
     doc = text(CREATOR, "")
     del doc["message"]["text"]
     doc["message"]["document"] = {"file_id": "doc1", "mime_type": "image/png"}
     handle_update(doc)
-    assert bot.sent("sendDocument", CREATOR)[-1]["document"] == "doc1"
-    handle_update(press(CREATOR, f"resok:{market.pk}", 10))
+    handle_update(press(CREATOR, f"res:{market.pk}:yes", 10))
     drain_jobs()
-    assert bot.sent("sendDocument", ANYA)
+    assert bot.sent("sendDocument", ANYA)[-1]["document"] == "doc1"
 
 
 def test_dispute_by_participant(bot, people, market):
     _, anya, _, stranger = people
     handle_update(press(CREATOR, f"res:{market.pk}:yes"))
-    handle_update(photo(CREATOR))
-    handle_update(press(CREATOR, f"resok:{market.pk}", 10))
     balance = Trader.objects.get(pk=anya.pk).balance
 
     handle_update(press(ANYA, f"disp:{market.pk}", 20))
@@ -253,8 +260,6 @@ def test_dispute_on_chat_market_names_chat_admins(bot, people, market):
         GroupMembership.objects.create(group=chat, trader=trader, status="active", checked_at=timezone.now())
     Question.objects.filter(pk=market.pk).update(group=chat)
     handle_update(press(CREATOR, f"res:{market.pk}:yes"))
-    handle_update(photo(CREATOR))
-    handle_update(press(CREATOR, f"resok:{market.pk}", 10))
 
     handle_update(press(ANYA, f"disp:{market.pk}", 20))
     assert bot.texts(ANYA)[-1] == "Спор стоит 20 монет; вернём их, если админы чата признают спор. Оспорить?"
@@ -265,8 +270,6 @@ def test_dispute_on_chat_market_names_chat_admins(bot, people, market):
 
 def test_dispute_declined(bot, people, market):
     handle_update(press(CREATOR, f"res:{market.pk}:cancel"))
-    handle_update(press(CREATOR, f"resnone:{market.pk}", 10))
-    handle_update(press(CREATOR, f"resok:{market.pk}", 11))
     handle_update(press(ANYA, f"dispno:{market.pk}", 20))
     assert not Dispute.objects.exists()
     assert bot.sent("editMessageReplyMarkup", ANYA)

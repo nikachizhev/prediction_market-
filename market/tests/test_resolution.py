@@ -1,4 +1,4 @@
-"""Spec E4: creator states the outcome with proof, 24h dispute window, moderator, 72h timeout."""
+"""Spec E4: creator states the outcome (a photo is optional), 24h dispute window, moderator, 72h timeout."""
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
@@ -53,17 +53,21 @@ def propose(q, creator, outcome="yes", **kw):
     return services.propose_resolution(creator, q, outcome, evidence=photo(), note="Скрин", **kw)
 
 
-def test_only_creator_after_close_with_photo(people, market):
+def test_only_creator_after_close_and_photo_is_optional(people, market):
     creator, anya, _ = people
     with pytest.raises(MarketError, match="создатель"):
         propose(market, anya)
-    with pytest.raises(MarketError, match="фото"):
-        services.propose_resolution(creator, market, "yes")
-    q = propose(market, creator)
+    q = services.propose_resolution(creator, market, "yes")
     assert q.resolution_state == "pending" and q.status == Question.Status.CLOSED
-    assert q.dispute_until - q.proposed_at == timedelta(hours=24) and q.evidence.name.startswith("evidence/")
+    assert q.proposed_by_id == creator.pk and q.proposal_bond == 0 and not q.evidence
+    assert q.dispute_until - q.proposed_at == timedelta(hours=24)
     with pytest.raises(MarketError, match="уже указан"):
         propose(q, creator, "no")
+
+
+def test_creator_may_still_attach_a_photo(people, market):
+    q = propose(market, people[0])
+    assert q.evidence.name.startswith("evidence/") and q.evidence_note == "Скрин"
 
 
 def test_cannot_propose_while_betting(people):

@@ -243,7 +243,7 @@ def request_evidence(question: Question) -> None:
     text = (f"Итог рынка «{question.title}» оспорили. Пришли доказательство — фото, скриншот или ссылку "
             f"сообщением сюда. На это {settings.EVIDENCE_HOURS} часа. Без доказательства спор всё равно "
             f"решат {who}, но это будет доводом против итога.")
-    enqueue_message(f"evidence-request:{question.pk}:{question.proposed_at.isoformat()}", author, question,
+    enqueue_message(f"evidence-request:{question.pk}", author, question,
                     "sendMessage", {"text": text, "reply_markup": _market_markup(question)})
 
 

@@ -184,7 +184,7 @@ class QuestionAdmin(admin.ModelAdmin):
         """Manual resolution must not bypass a creator's outcome that is in the dispute flow."""
         def run(q):
             if q.resolution_state in (Question.Resolution.PENDING, Question.Resolution.DISPUTED):
-                raise services.MarketError("Итог указан создателем — используйте «Решение по спору».")
+                raise services.MarketError("Итог уже указан — используйте «Решение по спору».")
             return fn(q)
         return run
 
