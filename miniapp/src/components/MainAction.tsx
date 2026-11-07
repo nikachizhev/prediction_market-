@@ -17,6 +17,10 @@ interface MainActionProps {
  * The screen's main action: Telegram's native MainButton inside Telegram,
  * a regular full-width button in a plain browser.
  */
+// Telegram's main button is drawn by the client and needs plain colours: the same as `--accent`.
+const ACCENT = '#FF4A32';
+const ACCENT_INK = '#12060A';
+
 export function MainAction({ text, onClick, disabled = false, color, busy = false, variant = 'primary' }: MainActionProps) {
   const inTelegram = isTelegram();
   const handler = useRef(onClick);
@@ -39,9 +43,8 @@ export function MainAction({ text, onClick, disabled = false, color, busy = fals
 
   useEffect(() => {
     if (!inTelegram) return;
-    const theme = tg.themeParams;
-    const fill = color ?? theme.button_color;
-    const ink = color ? '#FFFFFF' : theme.button_text_color;
+    const fill = color ?? ACCENT;
+    const ink = color ? '#FFFFFF' : ACCENT_INK;
     // Telegram hideProgress may re-enable the button; apply validation afterwards.
     if (!busy) tg.MainButton.hideProgress();
     tg.MainButton.setParams({

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Значки как карты</title>
+<script src="./support.js"></script>
+<script src="./scene.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #07060d; color: #EDE4D3; font-family: 'IBM Plex Mono', monospace">
+  <canvas ref="{{setCanvas}}" aria-hidden="true" style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; image-rendering: pixelated"></canvas>
+  <div style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; box-sizing: border-box; padding: 18px 16px; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; justify-content: space-between; align-items: baseline">
+      <h1 style="margin: 0; font: 700 40px/1 'Cormorant Garamond', serif; text-shadow: 0 2px 18px #000">Колода</h1>
+      <span style="font-size: 13px; font-weight: 600; color: #FFD58A">3 из 7</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+      <sc-for list="{{cards}}" as="c" hint-placeholder-count="7">
+        <section style="height: 186px; box-sizing: border-box; padding: 8px 6px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; text-align: center; background: {{c.bg}}; border: 1px solid {{c.line}}; box-shadow: {{c.shadow}}">
+          <span style="font: 600 14px/1 'Cormorant Garamond', serif; color: {{c.num}}">{{c.roman}}</span>
+          <svg width="58" height="58" viewBox="0 0 24 24" fill="none" stroke="{{c.ink}}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{c.icon}}"></path></svg>
+          <span style="display: flex; flex-direction: column; gap: 3px; align-items: center">
+            <span style="font: 700 17px/1.05 'Cormorant Garamond', serif; color: {{c.title}}">{{c.name}}</span>
+            <span style="font-size: 11px; line-height: 1.25; color: {{c.sub}}">{{c.hint}}</span>
+          </span>
+        </section>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  setCanvas = (el) => {
+    if (el && !this.scene && window.PMScene) {
+      this.scene = window.PMScene.mount(el, { fogY: 280, embers: 0.5, cones: [{ x: 97, color: [190, 90, 230], a: 0.5, w: 110, len: 0.8 }] });
+    }
+  };
+  componentWillUnmount() {
+    if (this.scene) this.scene.stop();
+  }
+  renderVals() {
+    const icons = {
+      first: 'M12 3v18M5 7h14l-3 4 3 4H5',
+      prophet: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+      against: 'M5 19L19 5M19 5h-7M19 5v7',
+      judge: 'M12 3v18M7 21h10M4 7h16M7 7l-3 7h6zM17 7l-3 7h6z',
+      leader: 'M16 20v-2a4 4 0 0 0-8 0v2M12 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM21 20v-2a3 3 0 0 0-3-3M3 20v-2a3 3 0 0 1 3-3',
+      duel: 'M4 20L16 8M16 8V4h4v4h-4zM20 20L8 8M8 8V4H4v4h4z',
+      optimist: 'M12 3v2M12 19v2M5 12H3M21 12h-2M6.3 6.3L5 5M19 19l-1.3-1.3M17.7 6.3L19 5M5 19l1.3-1.3M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+    };
+    const got = (roman, key, name, hint, top, bottom, ink) => ({
+      roman, name, hint, icon: icons[key], ink, title: '#FFF4D6', sub: '#F2E4CF', num: '#FFE7B0',
+      bg: `linear-gradient(170deg, ${top}, ${bottom})`, line: '#FFD58A', shadow: `0 0 18px ${top}`,
+    });
+    const locked = (roman, key, name, progress) => ({
+      roman, name, hint: progress, icon: icons[key], ink: '#8E86A8', title: '#C9BFD8', sub: '#C9BFD8', num: '#8E86A8',
+      bg: 'rgba(12, 10, 24, 0.86)', line: 'rgba(190, 180, 230, 0.3)', shadow: 'none',
+    });
+    return {
+      setCanvas: this.setCanvas,
+      cards: [
+        got('I', 'first', 'Первая кровь', 'первый верный прогноз', '#8C1D24', '#2A0A12', '#FFB9A6'),
+        got('II', 'against', 'Против толпы', 'угадал при шансе ниже 20%', '#4A2A9C', '#140C35', '#D8C4FF'),
+        got('III', 'duel', 'Дуэлянт', 'выиграл 5 вызовов', '#A85A10', '#2B1404', '#FFD58A'),
+        locked('IV', 'prophet', 'Пророк', '3 из 5 верных подряд'),
+        locked('V', 'judge', 'Честный судья', '4 из 10 рынков'),
+        locked('VI', 'leader', 'Заводила', '6 из 10 участников'),
+        locked('VII', 'optimist', 'Оптимист', '1 из 5 мимо подряд'),
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

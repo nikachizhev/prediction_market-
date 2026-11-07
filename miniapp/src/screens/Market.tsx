@@ -9,6 +9,7 @@ import { ChatTag } from '../components/ChatTag';
 import { LiveLine } from '../components/LiveLine';
 import { useSell } from '../components/SellSheet';
 import { Skeleton } from '../components/Skeleton';
+import { ProbabilityOrb } from '../components/ProbabilityOrb';
 import { useToast } from '../components/Toast';
 import { useTradeSheet } from '../components/TradeSheet';
 import { formatCompact, formatDayMonth, formatEnds, formatMoney, formatPercent, formatSigned } from '../format';
@@ -499,6 +500,8 @@ export function MarketScreen() {
             />
           </>
         ) : (
+          <>
+          <ProbabilityOrb prob={m.prob} />
           <ChartSection
             prob={m.prob}
             change24h={m.change_24h}
@@ -510,6 +513,7 @@ export function MarketScreen() {
               setPeriod(p);
             }}
           />
+          </>
         )}
 
         <div className="mk-tiles">
@@ -995,7 +999,7 @@ function ChartSection({
   );
 }
 
-const MULTI_CHART_COLORS = ['#2563EB', '#F59E0B', '#EA580C'];
+const MULTI_CHART_COLORS = ['#FFB03B', '#8DB7FF', '#FF6A52'];
 
 function MultiChartSection({
   submarkets,

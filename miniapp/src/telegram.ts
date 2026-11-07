@@ -73,6 +73,8 @@ interface TgWebApp {
   HapticFeedback: TgHapticFeedback;
   ready(): void;
   expand(): void;
+  setHeaderColor?(color: string): void;
+  setBackgroundColor?(color: string): void;
   openTelegramLink(url: string): void;
   openLink(url: string): void;
   isVersionAtLeast(version: string): boolean;
@@ -124,6 +126,17 @@ export const tg = {
 
   expand(): void {
     webApp()?.expand();
+  },
+
+  /** Telegram's own header and background in our colour; ignored by clients that can't do it. */
+  paintChrome(color: string): void {
+    const app = webApp();
+    try {
+      app?.setHeaderColor?.(color);
+      app?.setBackgroundColor?.(color);
+    } catch {
+      // Purely decorative.
+    }
   },
 
   get initData(): string {
