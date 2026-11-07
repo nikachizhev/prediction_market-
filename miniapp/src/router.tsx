@@ -5,7 +5,7 @@ import { BalancePill } from './components/BalancePill';
 import { TabBar } from './components/TabBar';
 import { useToast } from './components/Toast';
 import { grantMessage } from './grants';
-import { challengeFromStartParam, chatFromStartParam, draftFromStartParam, marketFromStartParam } from './links';
+import { challengeFromStartParam, chatFromStartParam, draftFromStartParam, marketFromStartParam, wheelDemoFromStartParam } from './links';
 import { Onboarding } from './screens/Onboarding';
 import { Placeholder } from './screens/Placeholder';
 import { useSession } from './session';
@@ -94,6 +94,11 @@ function useMarketDeepLink(ready: boolean) {
     const chat = chatFromStartParam(tg.startParam);
     if (chat !== null) {
       navigate(`/chat/${encodeURIComponent(chat)}`);
+      return;
+    }
+    const wheelDemo = wheelDemoFromStartParam(tg.startParam);
+    if (wheelDemo !== null) {
+      navigate(`/wheel?demo=1${wheelDemo.prize ? `&prize=${wheelDemo.prize}` : ''}`);
       return;
     }
     const challenge = challengeFromStartParam(tg.startParam);

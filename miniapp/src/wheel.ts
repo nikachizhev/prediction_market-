@@ -50,3 +50,16 @@ const PHRASES = ['Капля удачи', 'Хороший знак', 'Ораку
 export function winPhrase(level: number): string {
   return PHRASES[Math.min(Math.max(0, level), PHRASES.length - 1)];
 }
+
+/** The demo's prize: the one asked for in the link if it is on the wheel, otherwise by the same odds. */
+export function pickDemoPrize(prizes: WheelPrize[], wanted: string | null, rnd: () => number = Math.random): string {
+  const asked = prizes.find((p) => wanted !== null && Number(p.prize) === Number(wanted));
+  if (asked) return asked.prize;
+  let roll = rnd() * prizes.reduce((sum, p) => sum + p.chance, 0);
+  for (const p of prizes) {
+    roll -= p.chance;
+    if (roll < 0) return p.prize;
+  }
+  return prizes[prizes.length - 1].prize;
+}
+

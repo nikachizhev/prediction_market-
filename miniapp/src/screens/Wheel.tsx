@@ -1,6 +1,6 @@
 // «Колесо дня» (spec E12.2, docs/mockups/oracle/ArtWheel.dc.html): the card in the feed and the wheel itself.
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError, api, type WheelState } from '../api';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { CoinIcon } from '../components/CoinIcon';
@@ -9,7 +9,7 @@ import { formatMoney } from '../format';
 import { mountScene, type SceneHandle } from '../scene/scene';
 import { useSession } from '../session';
 import { tg } from '../telegram';
-import { cardView, celebrationLevel, chanceLabel, slicesOf, stopAngle, winPhrase } from '../wheel';
+import { cardView, celebrationLevel, chanceLabel, pickDemoPrize, slicesOf, stopAngle, winPhrase } from '../wheel';
 import './wheel.css';
 
 const WIDTH = 195;
@@ -66,6 +66,10 @@ export function WheelScreen() {
   const navigate = useNavigate();
   const toast = useToast();
   const { setBalance } = useSession();
+  const [params] = useSearchParams();
+  /** `?demo=1` (startapp=wheel_demo): spins as often as you like, nothing reaches the server, no coins. */
+  const demo = params.get('demo') === '1';
+  const demoPrize = params.get('prize');
   const canvas = useRef<HTMLCanvasElement>(null);
   const scene = useRef<SceneHandle | null>(null);
   const [state, setState] = useState<WheelState | null>(null);
@@ -81,16 +85,20 @@ export function WheelScreen() {
       .wheel()
       .then((res) => {
         setState(res);
+        if (demo) {
+          setPhase('ready');
+          return;
+        }
         setPrize(res.spun);
         setShown(Number(res.spun ?? 0));
         setPhase(res.spun !== null ? 'done' : res.unlocked ? 'ready' : 'locked');
       })
       .catch(() => navigate('/', { replace: true }));
-  }, [navigate]);
+  }, [navigate, demo]);
 
   useEffect(() => {
     if (!state || !canvas.current || scene.current) return;
-    const angle = state.spun !== null ? (stopAngle(state.prizes, state.spun, 0) ?? 0) : 0;
+    const angle = !demo && state.spun !== null ? (stopAngle(state.prizes, state.spun, 0) ?? 0) : 0;
     scene.current = mountScene(canvas.current, {
       width: WIDTH,
       height: HEIGHT,
@@ -109,31 +117,46 @@ export function WheelScreen() {
       scene.current?.stop();
       scene.current = null;
     };
-  }, [state]);
+  }, [state, demo]);
+
+  /** Spin to `won` and celebrate; `after` runs once the number has started to count up. */
+  const play = (won: string, after?: () => void) => {
+    if (!state) return;
+    setPhase('spinning');
+    setFresh(false);
+    tg.HapticFeedback.impact('medium');
+    const angle = stopAngle(state.prizes, won, 5, Math.random() - 0.5) ?? 0;
+    const finish = () => {
+      setPrize(won);
+      setFresh(true);
+      setShown(0);
+      setPhase('done');
+      scene.current?.celebrate(celebrationLevel(state.prizes, won));
+      tg.HapticFeedback.notification('success');
+      // Let the coins fly before the number runs up.
+      window.setTimeout(() => {
+        setShown(Number(won));
+        after?.();
+      }, 250);
+    };
+    if (!scene.current) {
+      finish();
+      return;
+    }
+    scene.current.spinWheel(angle, 3400, finish);
+  };
 
   const spin = async () => {
     if (!state || phase !== 'ready') return;
+    if (demo) {
+      play(pickDemoPrize(state.prizes, demoPrize));
+      return;
+    }
     setPhase('spinning');
-    tg.HapticFeedback.impact('medium');
     try {
       // The server picks the prize; the wheel only shows its answer.
       const res = await api.spinWheel();
-      const angle = stopAngle(state.prizes, res.prize, 5, Math.random() - 0.5) ?? 0;
-      const finish = () => {
-        setPrize(res.prize);
-        setFresh(true);
-        setShown(0);
-        setPhase('done');
-        scene.current?.celebrate(celebrationLevel(state.prizes, res.prize));
-        tg.HapticFeedback.notification('success');
-        // Let the coins fly before the number runs up and the balance follows.
-        window.setTimeout(() => {
-          setShown(Number(res.prize));
-          setBalance(res.balance);
-        }, 250);
-      };
-      if (scene.current) scene.current.spinWheel(angle, 3400, finish);
-      else finish();
+      play(res.prize, () => setBalance(res.balance));
     } catch (err) {
       setPhase(err instanceof ApiError && err.status === 400 ? 'locked' : 'ready');
       toast(err instanceof Error ? err.message : 'Не удалось. Попробуй ещё раз.');
@@ -141,9 +164,15 @@ export function WheelScreen() {
     }
   };
 
+  /** Today's spin once more: the same prize, nothing asked of the server. */
+  const replay = () => {
+    if (prize !== null && phase === 'done') play(prize);
+  };
+
   return (
     <div className="screen wheel">
       <h1 className="screen-title">Колесо дня</h1>
+      {demo && <p className="wheel-demo">Демо: монеты не начисляются, крутить можно сколько угодно</p>}
       <canvas ref={canvas} className="wheel-hero" aria-hidden="true" />
 
       <div className="wheel-action" aria-live="polite">
@@ -154,7 +183,16 @@ export function WheelScreen() {
               <CoinIcon size={40} strokeWidth={2.5} />
               <AnimatedNumber value={shown} duration={1100} format={(n) => '+' + formatMoney(Math.round(n), 0)} />
             </span>
-            <span className="sub">монеты уже на балансе · новое вращение завтра</span>
+            <span className="sub">{demo ? 'это демо, монеты не начислены' : 'монеты уже на балансе · новое вращение завтра'}</span>
+            {demo ? (
+              <button type="button" className="button-primary" onClick={() => play(pickDemoPrize(state!.prizes, demoPrize))}>
+                крутить ещё
+              </button>
+            ) : (
+              <button type="button" className="wheel-replay" onClick={replay}>
+                посмотреть ещё раз
+              </button>
+            )}
           </div>
         )}
         {phase === 'ready' && (

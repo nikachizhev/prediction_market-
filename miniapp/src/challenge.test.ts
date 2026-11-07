@@ -16,7 +16,7 @@ import {
   stakeOptions,
   type ChallengeDraft,
 } from './challenge';
-import { challengeFromStartParam, chatFromStartParam, marketFromStartParam } from './links';
+import { challengeFromStartParam, chatFromStartParam, marketFromStartParam, wheelDemoFromStartParam } from './links';
 
 const NOW = new Date('2026-11-07T12:00:00');
 const LIMITS: ChallengeLimits = { min_stake: '10', max_stake: '186', fee: '0.02', min_hours: 1, max_days: 30, accept_hours: 24 };
@@ -195,3 +195,14 @@ describe('starting from a chat', () => {
     expect(shareWays({ prepared: false })).toEqual(['link']);
   });
 });
+
+describe('the wheel demo link', () => {
+  it('reads an optional prize', () => {
+    expect(wheelDemoFromStartParam('wheel_demo')).toEqual({ prize: null });
+    expect(wheelDemoFromStartParam('wheel_demo_100')).toEqual({ prize: '100' });
+    expect(wheelDemoFromStartParam('wheel_demo_x')).toBeNull();
+    expect(wheelDemoFromStartParam('wheel')).toBeNull();
+    expect(marketFromStartParam('wheel_demo')).toBeNull();
+  });
+});
+
