@@ -110,7 +110,7 @@ export function WheelScreen() {
         const now = performance.now();
         if (now - lastTick.current < 70) return;
         lastTick.current = now;
-        tg.HapticFeedback.selection();
+        tg.HapticFeedback.tick();
       },
     });
     return () => {
@@ -124,7 +124,7 @@ export function WheelScreen() {
     if (!state) return;
     setPhase('spinning');
     setFresh(false);
-    tg.HapticFeedback.impact('medium');
+    tg.HapticFeedback.impact('heavy');
     const angle = stopAngle(state.prizes, won, 5, Math.random() - 0.5) ?? 0;
     const finish = () => {
       setPrize(won);

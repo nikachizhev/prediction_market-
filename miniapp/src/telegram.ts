@@ -213,6 +213,13 @@ export const tg = {
     selection(): void {
       webApp()?.HapticFeedback.selectionChanged();
     },
+    /** A tick you can feel: Android's selection buzz is too short to notice, so a light impact there. */
+    tick(): void {
+      const app = webApp();
+      if (!app) return;
+      if (app.platform === 'android') app.HapticFeedback.impactOccurred('light');
+      else app.HapticFeedback.selectionChanged();
+    },
   },
 
   openTelegramLink(url: string): void {

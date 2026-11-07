@@ -37,6 +37,8 @@ export interface WheelSlice {
   label: string;
   /** Share of the circle, from 0 to 1. */
   share: number;
+  /** Colour by prize: 0 for the commonest, up to the rarest. Without it, by position. */
+  tone?: number;
 }
 
 export interface WheelProp {
@@ -352,13 +354,11 @@ const DEFAULT_SLICES: WheelSlice[] = [
   { label: '100', share: 0.01 },
 ];
 
-/** Smaller slices get smaller numbers further out, where the slice is widest. */
-function labelSize(share: number): { size: number; at: number } {
-  if (share >= 0.5) return { size: 16, at: 0.58 };
-  if (share >= 0.2) return { size: 14, at: 0.62 };
-  if (share >= 0.08) return { size: 11, at: 0.68 };
-  if (share >= 0.03) return { size: 8, at: 0.76 };
-  return { size: 5, at: 0.84 };
+/** The number reads outward along the slice, as big as the slice is wide there; null when it can't fit. */
+function labelSize(share: number, r: number): number | null {
+  const wide = r * 0.66 * share * Math.PI * 2;
+  const size = Math.min(13, Math.floor(wide * 0.62));
+  return size >= 6 ? size : null;
 }
 
 function drawWheel(g: Ctx, s: WheelProp, t: number): void {
@@ -377,33 +377,66 @@ function drawWheel(g: Ctx, s: WheelProp, t: number): void {
   g.save();
   g.translate(x, y);
   g.rotate((s.angle * Math.PI) / 180);
+  const slices = s.slices ?? DEFAULT_SLICES;
+  const edges: number[] = [];
   let from = -Math.PI / 2;
-  (s.slices ?? DEFAULT_SLICES).forEach((slice, i) => {
-    const style = SLICE_STYLE[i % SLICE_STYLE.length];
-    const { size, at } = labelSize(slice.share);
+  slices.forEach((slice, i) => {
+    const style = SLICE_STYLE[(slice.tone ?? i) % SLICE_STYLE.length];
     const to = from + slice.share * Math.PI * 2;
+    edges.push(from);
     g.fillStyle = style.c;
     g.beginPath();
     g.moveTo(0, 0);
     g.arc(0, 0, r, from, to);
     g.closePath();
     g.fill();
-    g.strokeStyle = '#100815';
-    g.lineWidth = 1;
-    g.stroke();
+    // A lighter band at the rim gives each slice some depth.
+    g.fillStyle = 'rgba(255, 240, 210, 0.12)';
+    g.beginPath();
+    g.arc(0, 0, r, from, to);
+    g.arc(0, 0, r * 0.84, to, from, true);
+    g.closePath();
+    g.fill();
     const mid = (from + to) / 2;
+    const size = labelSize(slice.share, r);
     g.save();
     g.rotate(mid);
-    g.translate(r * at, 0);
-    g.rotate(Math.PI / 2);
-    g.fillStyle = style.ink;
-    g.font = `700 ${size}px Georgia, serif`;
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText(slice.label, 0, 0);
+    if (size !== null) {
+      g.translate(r * 0.62, 0);
+      g.fillStyle = style.ink;
+      g.font = `800 ${size}px Inter, system-ui, sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(slice.label, 0, 0);
+    } else {
+      // Too thin for a number (the jackpot): a glowing gem instead; the odds below say what it is.
+      glow(g, r * 0.78, 0, 12 + Math.sin(t * 3) * 2, AMBER, 0.75);
+      g.translate(r * 0.7, 0);
+      g.fillStyle = style.ink === '#22120a' ? '#ff3e2f' : style.ink;
+      g.beginPath();
+      g.moveTo(-5, 0);
+      g.lineTo(0, -1.6);
+      g.lineTo(5, 0);
+      g.lineTo(0, 1.6);
+      g.closePath();
+      g.fill();
+    }
     g.restore();
     from = to;
   });
+  // Thin dark lines between the slices, then the hub's shadow.
+  g.strokeStyle = '#100815';
+  g.lineWidth = 1;
+  for (const a of edges) {
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    g.stroke();
+  }
+  g.fillStyle = 'rgba(16, 8, 21, 0.45)';
+  g.beginPath();
+  g.arc(0, 0, r * 0.26, 0, Math.PI * 2);
+  g.fill();
   g.lineWidth = 5;
   g.strokeStyle = '#c98a2c';
   g.beginPath();
@@ -414,12 +447,30 @@ function drawWheel(g: Ctx, s: WheelProp, t: number): void {
   g.beginPath();
   g.arc(0, 0, r + 2, 0, Math.PI * 2);
   g.stroke();
-  for (let i = 0; i < 24; i += 1) {
-    const a = (i / 24) * Math.PI * 2;
-    g.fillStyle = i % 2 ? '#fff0b8' : '#5a2c0c';
-    g.fillRect(Math.cos(a) * r - 1, Math.sin(a) * r - 1, 2, 2);
+  // A pin on every slice edge: what the pointer knocks against.
+  for (const a of edges) {
+    const px = Math.cos(a) * (r - 1);
+    const py = Math.sin(a) * (r - 1);
+    g.fillStyle = '#3a1a08';
+    g.fillRect(px - 1.5, py - 0.5, 3, 3);
+    g.fillStyle = '#fff6cf';
+    g.fillRect(px - 1.5, py - 1.5, 3, 3);
   }
   g.restore();
+  // Lights round the rim chase each other, faster while the wheel spins.
+  const step = Math.floor(t * (2 + heat * 10));
+  for (let i = 0; i < 20; i += 1) {
+    const a = (i / 20) * Math.PI * 2;
+    const bx = x + Math.cos(a) * (r + 6);
+    const by = y + Math.sin(a) * (r + 6);
+    const lit = (i + step) % 3 === 0;
+    g.fillStyle = lit ? '#fff3c4' : '#6a3510';
+    g.fillRect(bx - 1.5, by - 1.5, 3, 3);
+    if (lit) {
+      g.fillStyle = 'rgba(255, 199, 102, 0.35)';
+      g.fillRect(bx - 2.5, by - 2.5, 5, 5);
+    }
+  }
   g.fillStyle = '#c98a2c';
   g.beginPath();
   g.arc(x, y, 9, 0, Math.PI * 2);
