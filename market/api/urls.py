@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import assist_views, challenge_views, chat_views, create_help_views, draft_views, views
+from . import assist_views, challenge_views, wheel_views, chat_views, create_help_views, draft_views, views
 
 app_name = "api"
 
@@ -25,6 +25,8 @@ urlpatterns = [
     path("markets/<int:pk>/notify", views.notify_level, name="notify_level"),
     path("markets/<int:pk>/share", views.share, name="share"),
     path("markets/<int:pk>/report", views.report, name="report"),
+    path("wheel", wheel_views.wheel, name="wheel"),
+    path("wheel/spin", wheel_views.spin, name="wheel_spin"),
     path("challenges", challenge_views.challenges, name="challenges"),
     path("challenges/<str:code>", challenge_views.challenge, name="challenge"),
     path("challenges/<str:code>/accept", challenge_views.accept, name="challenge_accept"),

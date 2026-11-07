@@ -615,7 +615,8 @@ def profit(trader: Trader) -> Decimal:
     from django.db.models import Sum
     daily = trader.daily_rewards.aggregate(total=Sum("coins"))["total"] or Decimal(0)
     # Daily bonuses are counted via DailyReward (it predates the ledger); the starter pack via START_BALANCE.
-    other = trader.ledger.filter(kind__in=[LedgerEntry.Kind.INSURANCE, LedgerEntry.Kind.REFERRAL]).aggregate(
+    other = trader.ledger.filter(kind__in=[LedgerEntry.Kind.INSURANCE, LedgerEntry.Kind.REFERRAL,
+                                           LedgerEntry.Kind.WHEEL]).aggregate(
         total=Sum("amount"))["total"] or Decimal(0)
     # 1-on-1 challenges stay out of the rating (spec E11), frozen stakes included.
     other += trader.ledger.filter(kind__in=LedgerEntry.CHALLENGE_KINDS).aggregate(
@@ -1571,6 +1572,65 @@ def cancel_silent_challenge(challenge):
         raise MarketError("Вызов ещё ждёт ответов.")
     _close_refunded(locked, people, "silent")
     return locked
+
+
+# --- «Колесо дня» (spec E12.2) ----------------------------------------------------------------------
+
+def wheel_prizes() -> list[tuple[Decimal, int]]:
+    return [(Decimal(prize), int(weight)) for prize, weight in settings.WHEEL_PRIZES]
+
+
+def _wheel_day(now=None):
+    from zoneinfo import ZoneInfo
+    return timezone.localtime(now or timezone.now(), ZoneInfo("Europe/Moscow")).date()
+
+
+def wheel_unlocked(trader: Trader, now=None) -> bool:
+    """A purchase of at least WHEEL_MIN_TRADE in a market today (Moscow): the wheel follows a prediction."""
+    return Trade.objects.filter(trader=trader, created_at__gte=_moscow_midnight(now or timezone.now()),
+                                cost__gte=Decimal(settings.WHEEL_MIN_TRADE)).exists()
+
+
+def wheel_state(trader: Trader, now=None) -> dict:
+    from .models import WheelSpin
+    spin = WheelSpin.objects.filter(trader=trader, day=_wheel_day(now)).first()
+    return {"spun": spin.prize if spin else None, "unlocked": spin is not None or wheel_unlocked(trader, now)}
+
+
+def _pick_prize(rng=None) -> Decimal:
+    import secrets
+    prizes = wheel_prizes()
+    total = sum(weight for _, weight in prizes)
+    roll = (rng or secrets.SystemRandom()).randrange(total)
+    for prize, weight in prizes:
+        if roll < weight:
+            return prize
+        roll -= weight
+    raise AssertionError("unreachable")
+
+
+@transaction.atomic
+def spin_wheel(trader: Trader, *, rng=None):
+    """One spin a day: a repeat returns the same spin and credits nothing. The prize is a bonus, not profit."""
+    from django.db import IntegrityError
+    from .models import WheelSpin
+    trader = Trader.objects.select_for_update().get(pk=trader.pk)
+    day = _wheel_day()
+    spin = WheelSpin.objects.filter(trader=trader, day=day).first()
+    if spin is not None:
+        return spin
+    if not wheel_unlocked(trader):
+        raise MarketError(f"Колесо откроется после прогноза от {settings.WHEEL_MIN_TRADE} монет.")
+    prize = _pick_prize(rng)
+    try:
+        with transaction.atomic():
+            spin = WheelSpin.objects.create(trader=trader, day=day, prize=prize)
+    except IntegrityError:  # the unique day guards against a race the row lock somehow missed
+        return WheelSpin.objects.get(trader=trader, day=day)
+    trader.balance += prize
+    trader.save(update_fields=["balance"])
+    _record(trader, LedgerEntry.Kind.WHEEL, prize)
+    return spin
 
 
 # --- notifications and referral rewards (spec E6.3, E5) ----------------------------------------

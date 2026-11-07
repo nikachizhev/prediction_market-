@@ -36,7 +36,7 @@ export type BackdropMood = 'amber' | 'ember' | 'violet' | 'moon';
 
 /** Each part of the app has its own light; everything else — the same hall. */
 export function moodOf(pathname: string): BackdropMood {
-  if (pathname.startsWith('/challenge')) return 'ember';
+  if (pathname.startsWith('/challenge') || pathname.startsWith('/wheel')) return 'ember';
   if (pathname.startsWith('/rating')) return 'moon';
   if (pathname.startsWith('/profile') || pathname.startsWith('/create')) return 'violet';
   return 'amber';

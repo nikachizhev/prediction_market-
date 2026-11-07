@@ -13,6 +13,7 @@ import { useToast } from '../components/Toast';
 import { useTradeSheet } from '../components/TradeSheet';
 import { pluralize } from '../format';
 import { tg } from '../telegram';
+import { WheelCard } from './Wheel';
 import { applyProbability, mergeMarket, replaceCard } from '../trade';
 import '../recommendations.css';
 
@@ -273,6 +274,7 @@ export function FeedScreen() {
       </div>
 
       <div className="screen-body">
+        <WheelCard />
         {sort === 'recommended' && <p className="sub recommendation-note">Выбери любимые темы в профиле. <Link to="/profile">Настроить интересы</Link></p>}
         {state === 'loading' && [0, 1, 2].map((i) => <CardSkeleton key={i} />)}
 

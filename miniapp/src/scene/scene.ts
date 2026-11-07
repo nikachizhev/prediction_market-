@@ -33,12 +33,20 @@ export interface CandlesProp {
   count?: number;
 }
 
+export interface WheelSlice {
+  label: string;
+  /** Share of the circle, from 0 to 1. */
+  share: number;
+}
+
 export interface WheelProp {
   type: 'wheel';
   x: number;
   y: number;
   r: number;
   angle: number;
+  /** Clockwise from the pointer; the server's table. */
+  slices?: WheelSlice[];
 }
 
 export interface PodiumPlace {
@@ -320,13 +328,30 @@ function drawCandles(g: Ctx, s: CandlesProp, t: number, width: number): void {
   }
 }
 
-const SLICES = [
-  { v: '5', p: 0.6, c: '#2a2360', ink: '#d8d2ff', size: 16, at: 0.58 },
-  { v: '10', p: 0.25, c: '#5a2a8c', ink: '#ffffff', size: 14, at: 0.62 },
-  { v: '25', p: 0.1, c: '#c8341f', ink: '#fff2d6', size: 11, at: 0.68 },
-  { v: '50', p: 0.04, c: '#f29a24', ink: '#22120a', size: 8, at: 0.76 },
-  { v: '100', p: 0.01, c: '#fff1c2', ink: '#22120a', size: 5, at: 0.84 },
+const SLICE_STYLE = [
+  { c: '#2a2360', ink: '#d8d2ff' },
+  { c: '#5a2a8c', ink: '#ffffff' },
+  { c: '#c8341f', ink: '#fff2d6' },
+  { c: '#f29a24', ink: '#22120a' },
+  { c: '#fff1c2', ink: '#22120a' },
 ];
+
+const DEFAULT_SLICES: WheelSlice[] = [
+  { label: '5', share: 0.6 },
+  { label: '10', share: 0.25 },
+  { label: '25', share: 0.1 },
+  { label: '50', share: 0.04 },
+  { label: '100', share: 0.01 },
+];
+
+/** Smaller slices get smaller numbers further out, where the slice is widest. */
+function labelSize(share: number): { size: number; at: number } {
+  if (share >= 0.5) return { size: 16, at: 0.58 };
+  if (share >= 0.2) return { size: 14, at: 0.62 };
+  if (share >= 0.08) return { size: 11, at: 0.68 };
+  if (share >= 0.03) return { size: 8, at: 0.76 };
+  return { size: 5, at: 0.84 };
+}
 
 function drawWheel(g: Ctx, s: WheelProp, t: number): void {
   const { x, y, r } = s;
@@ -344,9 +369,11 @@ function drawWheel(g: Ctx, s: WheelProp, t: number): void {
   g.translate(x, y);
   g.rotate((s.angle * Math.PI) / 180);
   let from = -Math.PI / 2;
-  SLICES.forEach((slice) => {
-    const to = from + slice.p * Math.PI * 2;
-    g.fillStyle = slice.c;
+  (s.slices ?? DEFAULT_SLICES).forEach((slice, i) => {
+    const style = SLICE_STYLE[i % SLICE_STYLE.length];
+    const { size, at } = labelSize(slice.share);
+    const to = from + slice.share * Math.PI * 2;
+    g.fillStyle = style.c;
     g.beginPath();
     g.moveTo(0, 0);
     g.arc(0, 0, r, from, to);
@@ -358,13 +385,13 @@ function drawWheel(g: Ctx, s: WheelProp, t: number): void {
     const mid = (from + to) / 2;
     g.save();
     g.rotate(mid);
-    g.translate(r * slice.at, 0);
+    g.translate(r * at, 0);
     g.rotate(Math.PI / 2);
-    g.fillStyle = slice.ink;
-    g.font = `700 ${slice.size}px Georgia, serif`;
+    g.fillStyle = style.ink;
+    g.font = `700 ${size}px Georgia, serif`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillText(slice.v, 0, 0);
+    g.fillText(slice.label, 0, 0);
     g.restore();
     from = to;
   });

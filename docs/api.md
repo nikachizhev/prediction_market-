@@ -381,3 +381,27 @@ interface Challenge {
 - Проводки вызова — `LedgerEntry.CHALLENGE_KINDS`, поле `LedgerEntry.challenge`. Они не входят в рейтинг и статистику.
 - Рынок чата: `publication_state="approved"` сразу, состояние проверки — `Question.background_check`.
 - Параметры — `config/settings.py`: `CHALLENGE_*`, `AI_RESOLVE_*`.
+
+
+## Фаза 3f (контракт, 08.11.2026)
+
+Колесо дня (спека E12.2). Остальные награды фазы допишут свои задачи.
+
+```ts
+interface WheelPrize {
+  prize: string;   // монеты
+  chance: number;  // доля от 0 до 1; доли на колесе рисуются по ней
+}
+
+interface WheelState {
+  unlocked: boolean;      // сегодня была покупка в рынке от WHEEL_MIN_TRADE монет
+  spun: string | null;    // уже вращал сегодня: сколько выпало
+  prizes: WheelPrize[];   // в порядке долей на колесе, по часовой стрелке от стрелки
+}
+```
+
+| Метод | Путь | Тело | Ответ |
+| --- | --- | --- | --- |
+| GET | `/api/wheel` | — | `WheelState` |
+| POST | `/api/wheel/spin` | — | `{ prize, balance, wheel: WheelState }`; повтор в тот же день возвращает то же вращение и ничего не начисляет; колесо закрыто — 400 |
+
