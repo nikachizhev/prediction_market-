@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WheelPrize } from './api';
-import { cardView, chanceLabel, slicesOf, stopAngle } from './wheel';
+import { cardView, celebrationLevel, chanceLabel, slicesOf, stopAngle, winPhrase } from './wheel';
 
 const PRIZES: WheelPrize[] = [
   { prize: '5', chance: 0.6 },
@@ -46,5 +46,21 @@ describe('labels', () => {
     expect(slicesOf(PRIZES)[2]).toEqual({ label: '25', share: 0.1 });
     expect(chanceLabel(0.6)).toBe('60%');
     expect(chanceLabel(0.005)).toBe('0,5%');
+  });
+});
+
+describe('the win', () => {
+  it('is louder for a rarer prize', () => {
+    expect(celebrationLevel(PRIZES, '5')).toBe(0);
+    expect(celebrationLevel(PRIZES, '25')).toBe(2);
+    expect(celebrationLevel(PRIZES, '100')).toBe(4);
+    expect(celebrationLevel(PRIZES, '7')).toBe(0);
+  });
+
+  it('has a phrase for every level', () => {
+    expect(winPhrase(0)).toBe('Капля удачи');
+    expect(winPhrase(4)).toBe('Оракул сегодня щедр!');
+    expect(winPhrase(9)).toBe('Оракул сегодня щедр!');
+    expect(winPhrase(-1)).toBe('Капля удачи');
   });
 });

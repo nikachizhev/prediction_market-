@@ -2,12 +2,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ApiError, api, type WheelState } from '../api';
+import { AnimatedNumber } from '../components/AnimatedNumber';
+import { CoinIcon } from '../components/CoinIcon';
 import { useToast } from '../components/Toast';
 import { formatMoney } from '../format';
 import { mountScene, type SceneHandle } from '../scene/scene';
 import { useSession } from '../session';
 import { tg } from '../telegram';
-import { cardView, chanceLabel, slicesOf, stopAngle } from '../wheel';
+import { cardView, celebrationLevel, chanceLabel, slicesOf, stopAngle, winPhrase } from '../wheel';
 import './wheel.css';
 
 const WIDTH = 195;
@@ -69,6 +71,10 @@ export function WheelScreen() {
   const [state, setState] = useState<WheelState | null>(null);
   const [phase, setPhase] = useState<Phase>('loading');
   const [prize, setPrize] = useState<string | null>(null);
+  /** The number counts up from zero right after the wheel stops; a prize seen again later just shows. */
+  const [shown, setShown] = useState(0);
+  const [fresh, setFresh] = useState(false);
+  const lastTick = useRef(0);
 
   useEffect(() => {
     api
@@ -76,6 +82,7 @@ export function WheelScreen() {
       .then((res) => {
         setState(res);
         setPrize(res.spun);
+        setShown(Number(res.spun ?? 0));
         setPhase(res.spun !== null ? 'done' : res.unlocked ? 'ready' : 'locked');
       })
       .catch(() => navigate('/', { replace: true }));
@@ -90,6 +97,13 @@ export function WheelScreen() {
       transparent: true,
       still: prefersStill(),
       props: [{ type: 'wheel', x: WIDTH / 2, y: 104, r: 78, angle, slices: slicesOf(state.prizes) }],
+      onTick: () => {
+        // A light tick for each slice edge, but not a buzz when the wheel is at full speed.
+        const now = performance.now();
+        if (now - lastTick.current < 70) return;
+        lastTick.current = now;
+        tg.HapticFeedback.selection();
+      },
     });
     return () => {
       scene.current?.stop();
@@ -107,9 +121,16 @@ export function WheelScreen() {
       const angle = stopAngle(state.prizes, res.prize, 5, Math.random() - 0.5) ?? 0;
       const finish = () => {
         setPrize(res.prize);
-        setBalance(res.balance);
+        setFresh(true);
+        setShown(0);
         setPhase('done');
+        scene.current?.celebrate(celebrationLevel(state.prizes, res.prize));
         tg.HapticFeedback.notification('success');
+        // Let the coins fly before the number runs up and the balance follows.
+        window.setTimeout(() => {
+          setShown(Number(res.prize));
+          setBalance(res.balance);
+        }, 250);
       };
       if (scene.current) scene.current.spinWheel(angle, 3400, finish);
       else finish();
@@ -127,9 +148,13 @@ export function WheelScreen() {
 
       <div className="wheel-action" aria-live="polite">
         {phase === 'done' && prize !== null && (
-          <div className="wheel-result">
-            <span className="wheel-prize">+{formatMoney(prize)}</span>
-            <span className="sub">новое вращение завтра</span>
+          <div className={`wheel-result ${fresh ? 'is-fresh' : ''}`}>
+            {fresh && <span className="wheel-phrase">{winPhrase(state ? celebrationLevel(state.prizes, prize) : 0)}</span>}
+            <span className="wheel-prize">
+              <CoinIcon size={40} strokeWidth={2.5} />
+              <AnimatedNumber value={shown} duration={1100} format={(n) => '+' + formatMoney(Math.round(n), 0)} />
+            </span>
+            <span className="sub">монеты уже на балансе · новое вращение завтра</span>
           </div>
         )}
         {phase === 'ready' && (
@@ -150,6 +175,7 @@ export function WheelScreen() {
 
       {state && (
         <section className="card wheel-odds" aria-label="Шансы">
+          <span className="wheel-odds-title">Шансы</span>
           <div className="wheel-odds-row">
             {state.prizes.map((p) => (
               <span key={p.prize} className="wheel-odd">
@@ -159,8 +185,8 @@ export function WheelScreen() {
             ))}
           </div>
           <span className="sub small">
-            Размер долей равен шансам. Вращение бесплатное, его нельзя купить. Монеты нельзя вывести, в прибыль рейтинга
-            они не входят.
+            Чем шире доля, тем чаще она выпадает — колесо честное. Крутить можно раз в день и бесплатно. Монеты игровые:
+            их нельзя купить или вывести, а в рейтинг идёт только прибыль от прогнозов.
           </span>
         </section>
       )}

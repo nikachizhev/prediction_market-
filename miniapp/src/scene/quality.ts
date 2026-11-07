@@ -48,3 +48,37 @@ export const MOOD_LIGHT: Record<BackdropMood, Rgb> = {
   violet: [190, 90, 230],
   moon: [120, 170, 255],
 };
+
+/** While something moves fast (the wheel, a burst of coins) the scene runs at the screen's own rate. */
+export const FAST_FRAME_MS = 16;
+
+/**
+ * The wheel's angle at progress `k` (0..1) of a spin to `to` degrees: a small wind-up back, a long
+ * slowing run, a little overshoot past the slice and a settle back onto it. Ends exactly at `to`.
+ */
+export function spinCurve(k: number, to: number): number {
+  const t = Math.min(1, Math.max(0, k));
+  if (t >= 1) return to;
+  const windUp = 0.1;
+  const back = 10;
+  if (t < windUp) {
+    const u = t / windUp;
+    return -back * Math.sin((u * Math.PI) / 2);
+  }
+  const u = (t - windUp) / (1 - windUp);
+  const run = -back + (to + back) * (1 - Math.pow(1 - u, 4));
+  const overshoot = u > 0.78 ? 7 * Math.sin((Math.PI * (u - 0.78)) / 0.22) : 0;
+  return run + overshoot;
+}
+
+/** Which slice is under the pointer when the wheel is turned by `angle` degrees clockwise. */
+export function sliceIndexAt(shares: number[], angle: number): number {
+  const total = shares.reduce((a, b) => a + b, 0) || 1;
+  const at = ((((-angle) % 360) + 360) % 360) / 360;
+  let from = 0;
+  for (let i = 0; i < shares.length; i += 1) {
+    from += shares[i] / total;
+    if (at < from) return i;
+  }
+  return shares.length - 1;
+}

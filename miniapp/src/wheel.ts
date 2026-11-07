@@ -37,3 +37,16 @@ export function chanceLabel(chance: number): string {
   const percent = chance * 100;
   return `${percent < 1 ? percent.toFixed(1).replace('.', ',') : Math.round(percent)}%`;
 }
+
+/** 0 for the commonest prize, up to the rarest: how loud the win is. */
+export function celebrationLevel(prizes: WheelPrize[], prize: string | number): number {
+  const order = [...prizes].sort((a, b) => b.chance - a.chance).map((p) => Number(p.prize));
+  const at = order.indexOf(Number(prize));
+  return at < 0 ? 0 : at;
+}
+
+const PHRASES = ['Капля удачи', 'Хороший знак', 'Оракул улыбнулся', 'Звёзды сошлись', 'Оракул сегодня щедр!'];
+
+export function winPhrase(level: number): string {
+  return PHRASES[Math.min(Math.max(0, level), PHRASES.length - 1)];
+}
