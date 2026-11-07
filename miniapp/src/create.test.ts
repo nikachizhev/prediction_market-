@@ -350,6 +350,22 @@ describe('templates', () => {
 });
 
 describe('AI helper suggestion', () => {
+  it('takes options into a draft without them, and undo brings the draft back', () => {
+    const before = draft({ mode: 'binary', options: undefined });
+    const d = applyAssist(before, result({ options: ['Аня', 'Боря', 'Вера'] }));
+    expect(d.mode).toBe('multiple');
+    expect(d.options).toEqual(['Аня', 'Боря', 'Вера']);
+    const undone = undoAssist(d);
+    expect(undone.mode).toBe('binary');
+    expect(undone.options).toBeUndefined();
+  });
+
+  it('never replaces options the creator typed', () => {
+    const own = draft({ mode: 'multiple', options: ['Мой вариант', ''] });
+    const d = applyAssist(own, result({ options: ['Аня', 'Боря'] }));
+    expect(d.options).toEqual(['Мой вариант', '']);
+  });
+
   it('fills rules, category and both dates with times in local time, keeping the question', () => {
     const before = draft({ category: '', criteria: '' });
     const d = applyAssist(

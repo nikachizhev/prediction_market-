@@ -412,3 +412,29 @@ def test_api_announce_kept_through_premoderation(anya_api):
     assert code == 200 and data["market"] is None and data["publication"] == "pending"
     market = Question.objects.get(pk=data["draft_id"])
     assert market.announce is True and market.announced_at is None
+
+
+@pytest.mark.django_db
+def test_rollout_migration_keeps_old_crowded_markets_quiet(bot):
+    from datetime import datetime, timezone as tz
+    from importlib import import_module
+
+    from django.apps import apps
+
+    group = chat()
+    author = make("Автор Рынка")
+    crowded = chat_market(group, author)
+    small = chat_market(group, author)
+    bettors(group, crowded, ANYA, BORIS, VERA)
+    bettors(group, small, GLEB)
+    before = datetime(2026, 11, 1, tzinfo=tz.utc)
+    Question.objects.filter(pk__in=[crowded.pk, small.pk]).update(created_at=before)
+
+    import_module("market.migrations.0037_quiet_old_chat_markets").forwards(apps, None)
+
+    crowded.refresh_from_db()
+    small.refresh_from_db()
+    assert crowded.announced_at is not None and small.announced_at is None
+    assert not ChatPost.objects.filter(kind="new_market", question=crowded).exists()
+    bot_chats.tick(timezone.now())
+    assert not ChatPost.objects.filter(kind="new_market", question=crowded).exists()

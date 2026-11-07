@@ -36,6 +36,8 @@ export interface FieldsSnapshot {
   closeTime: string;
   resultDate: string;
   resultTime: string;
+  mode?: CreateMode;
+  options?: string[];
   marks: FilledGroup[];
   filledBy: FillSource | null;
 }
@@ -345,6 +347,8 @@ function snapshot(draft: CreateDraft): FieldsSnapshot {
     closeTime: draft.closeTime,
     resultDate: draft.resultDate,
     resultTime: draft.resultTime,
+    mode: draft.mode,
+    options: draft.options,
     marks: draft.marks,
     filledBy: draft.filledBy,
   };
@@ -352,17 +356,21 @@ function snapshot(draft: CreateDraft): FieldsSnapshot {
 
 /**
  * Fills rules, category and both dates with times from the helper's answer, in the user's local
- * time; the clearer question is only offered. «Вернуть как было» restores what is replaced here.
+ * time; the clearer question is only offered. Options («кто из…») fill the draft only when the creator
+ * typed none. «Вернуть как было» restores what is replaced here.
  */
 export function applyAssist(draft: CreateDraft, result: AssistResult): CreateDraft {
   const closes = localParts(result.closes_at);
   const resolves = localParts(result.resolves_at);
   const question = (result.question ?? '').trim();
   const offer = question.length >= TITLE_MIN && question.length <= TITLE_MAX && question !== draft.title.trim();
+  const suggested = result.options ?? [];
+  const fillOptions = suggested.length >= OPTIONS_MIN && cleanedOptions(draft).length === 0;
   return {
     ...draft,
     criteria: result.criteria,
     category: result.category,
+    ...(fillOptions ? { mode: 'multiple' as const, options: [...suggested] } : {}),
     ...(closes && resolves
       ? { closeDate: closes.date, closeTime: closes.time, resultDate: resolves.date, resultTime: resolves.time }
       : {}),

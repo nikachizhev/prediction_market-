@@ -88,7 +88,7 @@ panel('Баланс пользователей', [('pm_balance_coins', 'Бала
 panel('Эмиссия бонусов · 24 часа', [('pm_ledger_coins{window="24h",kind=~"starter|daily|insurance|referral"}', '{{kind}}')], 'suffix: монет')
 end()
 panel('Выплаты и возвраты · 24 часа', [('pm_ledger_coins{window="24h",kind=~"payout|refund|subsidy_return|dispute_refund"}', '{{kind}}')], 'suffix: монет')
-panel('Комиссия авторам · 24 часа', [('pm_ledger_coins{window="24h",kind="creator_fee"}', 'Авторам')], 'suffix: монет')
+panel('Комиссия авторам · 24 часа', [('pm_ledger_coins{window="24h",kind="creator_fee"}', 'Авторам'), ('pm_ledger_coins{window="24h",kind="proposer_fee"}', 'Предложившим итог')], 'suffix: монет')
 end()
 write_dashboard('prediction-market', 'Рынок прогнозов · бизнес', 'business')
 panels = []

@@ -71,7 +71,7 @@ def test_default_level_star_position_nothing():
 def test_option_of_a_multi_market_uses_the_root_level():
     creator, anya = make("Автор"), make("Аня", chat=1)
     root = services.create_market(creator, title="Кто победит?", criteria="c", category="fun",
-                                  closes_at=NOON + timedelta(days=3), resolves_at=NOON + timedelta(days=4),
+                                  closes_at=timezone.now() + timedelta(days=3), resolves_at=timezone.now() + timedelta(days=4),
                                   options=["Аня", "Борис"])
     option = root.submarkets.first()
     notify_levels.set_level(anya, option, "none")
@@ -227,7 +227,7 @@ def test_restore_puts_back_the_previous_explicit_level(api):
 def test_mute_from_an_option_id_mutes_the_root(api):
     creator, anya = make("Автор"), make("Аня", chat=1)
     root = services.create_market(creator, title="Кто победит?", criteria="c", category="fun",
-                                  closes_at=NOON + timedelta(days=3), resolves_at=NOON + timedelta(days=4),
+                                  closes_at=timezone.now() + timedelta(days=3), resolves_at=timezone.now() + timedelta(days=4),
                                   options=["Аня", "Борис"])
     Question.objects.filter(pk=root.pk).update(publication_state="approved")
     root.submarkets.update(publication_state="approved")
@@ -305,7 +305,7 @@ def test_notify_endpoint_sets_level_and_detail_shows_it(anya_api):
 def test_notify_on_an_option_sets_the_whole_market(anya_api):
     creator = make("Автор")
     root = services.create_market(creator, title="Кто победит?", criteria="c", category="fun",
-                                  closes_at=NOON + timedelta(days=3), resolves_at=NOON + timedelta(days=4),
+                                  closes_at=timezone.now() + timedelta(days=3), resolves_at=timezone.now() + timedelta(days=4),
                                   options=["Аня", "Борис"])
     Question.objects.filter(pk=root.pk).update(publication_state="approved")
     root.submarkets.update(publication_state="approved")
