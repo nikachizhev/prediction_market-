@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Друг открыл ссылку</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; display: flex; flex-direction: column; background: {{t.bg}}; color: {{t.ink}}; font-family: Inter, system-ui, sans-serif">
+  <header style="display: flex; align-items: center; justify-content: center; height: 56px"><span style="font-size: 16px; font-weight: 600">Вызов от Кирилла</span></header>
+  <div style="flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 8px 16px">
+    <h1 style="margin: 0; font-size: 24px; line-height: 1.2; font-weight: 700">Сдам ли я матанализ на 4 или 5 до 25 января?</h1>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+      <div style="background: {{t.yesTint}}; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 13px; color: {{t.sub}}">Кирилл за</span>
+        <span style="font-size: 22px; font-weight: 700; color: {{t.yes}}">ДА</span>
+      </div>
+      <div style="background: {{t.noTint}}; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 13px; color: {{t.sub}}">Ты будешь за</span>
+        <span style="font-size: 22px; font-weight: 700; color: {{t.no}}">НЕТ</span>
+      </div>
+    </div>
+    <section style="background: {{t.card}}; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; font-size: 14px"><span style="color: {{t.sub}}">Ставка каждого</span><span style="font-weight: 600">50</span></div>
+      <div style="display: flex; justify-content: space-between; font-size: 14px"><span style="color: {{t.sub}}">Победитель получит</span><span style="font-weight: 600">98</span></div>
+      <div style="display: flex; justify-content: space-between; font-size: 14px"><span style="color: {{t.sub}}">Итог станет известен</span><span style="font-weight: 600">25 января</span></div>
+    </section>
+    <section style="background: {{t.card}}; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 13px; font-weight: 600">Как определяем результат</span>
+      <span style="font-size: 14px; line-height: 1.45">ДА — если до 25 января в зачётке стоит 4 или 5.<br>НЕТ — если стоит 3 или ниже, незачёт или экзамен не сдан.</span>
+    </section>
+    <span style="font-size: 13px; line-height: 1.45; color: {{t.sub}}">В дату итога бот спросит вас обоих. Если ответите одинаково, монеты придут сразу. Если нет, решит модератор.</span>
+  </div>
+  <footer style="padding: 12px 16px 12px; display: flex; flex-direction: column; gap: 4px; border-top: 1px solid {{t.line}}">
+    <button style="height: 52px; border: none; border-radius: 14px; background: {{t.ink}}; color: {{t.bg}}; font: 600 16px Inter, system-ui, sans-serif">Принять за 50</button>
+    <button style="height: 40px; border: none; background: transparent; color: {{t.sub}}; font: 500 14px Inter, system-ui, sans-serif">Пожаловаться</button>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? false;
+    return { t: dark
+      ? { bg: '#0E1014', card: '#181B21', ink: '#F1F3F5', sub: '#9AA3AE', line: '#2A2E36', yes: '#7DB0FF', yesTint: '#1E2A3C', no: '#FF9E6B', noTint: '#33241D' }
+      : { bg: '#F2F3F5', card: '#FFFFFF', ink: '#111418', sub: '#5F6672', line: '#E3E5E8', yes: '#1A5FB8', yesTint: '#E7EFFA', no: '#B23A0B', noTint: '#FBEDE6' } };
+  }
+}
+</script>
+</body>
+</html>

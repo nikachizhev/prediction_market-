@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Сообщения бота</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; display: flex; flex-direction: column; gap: 12px; padding: 16px; box-sizing: border-box; background: {{t.bg}}; color: {{t.ink}}; font-family: Inter, system-ui, sans-serif">
+  <h1 style="margin: 0; font-size: 18px; font-weight: 700">Бот</h1>
+  <section style="background: {{t.card}}; border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+    <span style="font-size: 14px; line-height: 1.4">Аня приняла твой вызов:<br>«Сдам ли я матанализ на 4 или 5 до 25 января?»<br>Ставка каждого 50. Итог спрошу 25 января.</span>
+    <button style="height: 40px; border: none; border-radius: 10px; background: {{t.bg}}; color: {{t.ink}}; font: 500 14px Inter, system-ui, sans-serif">Открыть вызов</button>
+  </section>
+  <section style="background: {{t.card}}; border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+    <span style="font-size: 14px; line-height: 1.4">Пора решить вызов с Аней:<br>«Сдам ли я матанализ на 4 или 5 до 25 января?»<br>Чем закончилось?</span>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+      <button style="height: 40px; border: none; border-radius: 10px; background: {{t.bg}}; color: {{t.ink}}; font: 600 14px Inter, system-ui, sans-serif">ДА</button>
+      <button style="height: 40px; border: none; border-radius: 10px; background: {{t.bg}}; color: {{t.ink}}; font: 600 14px Inter, system-ui, sans-serif">НЕТ</button>
+      <button style="height: 40px; border: none; border-radius: 10px; background: {{t.bg}}; color: {{t.ink}}; font: 600 14px Inter, system-ui, sans-serif">Отменить</button>
+    </div>
+  </section>
+  <section style="background: {{t.card}}; border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+    <span style="font-size: 14px; line-height: 1.4">Соперник указал: ДА. Если согласен, нажми ДА. Не ответишь за 24 часа — его ответ встанет.<br>Другой ответ откроет спор за 20 монет.</span>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+      <button style="height: 40px; border: none; border-radius: 10px; background: {{t.bg}}; color: {{t.ink}}; font: 600 14px Inter, system-ui, sans-serif">ДА</button>
+      <button style="height: 40px; border: none; border-radius: 10px; background: {{t.bg}}; color: {{t.ink}}; font: 600 13px Inter, system-ui, sans-serif">НЕТ за 20</button>
+      <button style="height: 40px; border: none; border-radius: 10px; background: {{t.bg}}; color: {{t.ink}}; font: 600 13px Inter, system-ui, sans-serif">Отмена за 20</button>
+    </div>
+  </section>
+  <section style="background: {{t.card}}; border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+    <span style="font-size: 14px; line-height: 1.4">Спор по вызову с Аней: вы ответили по-разному. Пришли доказательство — фото, скриншот или ссылку сообщением сюда. На это 24 часа.</span>
+  </section>
+  <section style="background: {{t.card}}; border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+    <span style="font-size: 14px; line-height: 1.4">Ты выиграл вызов: +98<br>«Сдам ли я матанализ на 4 или 5 до 25 января?»</span>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? false;
+    return { t: dark
+      ? { bg: '#0E1014', card: '#181B21', ink: '#F1F3F5' }
+      : { bg: '#F2F3F5', card: '#FFFFFF', ink: '#111418' } };
+  }
+}
+</script>
+</body>
+</html>

@@ -136,7 +136,10 @@ export function MineScreen() {
               role="tab"
               aria-selected={t.key === tab}
               className={`mine-tab ${t.key === tab ? 'is-active' : ''}`}
-              onClick={() => pick(t.key)}
+              onClick={(e) => {
+                e.currentTarget.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+                pick(t.key);
+              }}
             >
               {t.label}
             </button>

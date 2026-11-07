@@ -14,8 +14,9 @@
 }
 
 .mine-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
   gap: 4px;
   padding: 4px;
   border-radius: 14px;
@@ -23,13 +24,14 @@
 }
 
 .mine-tab {
+  flex: 1 0 auto;
   height: 40px;
   padding: 0 4px;
   border: none;
   border-radius: 10px;
   background: transparent;
   color: var(--ink);
-  font: 600 14px/1 var(--font);
+  font: 600 13px/1 var(--font);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

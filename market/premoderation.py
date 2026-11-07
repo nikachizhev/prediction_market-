@@ -42,7 +42,7 @@ def waiting_for_moderator() -> Q:
     return Q(publication_state__in=WAITING) | Q(background_check__in=WAITING)
 
 
-def _restart_background_check(question, old, kwargs) -> None:
+def _restart_background_check(question, kwargs) -> None:
     """A chat market stays visible and tradable (spec E3); only the check starts over."""
     from .models import Question
     fields = kwargs.get("update_fields")
@@ -73,7 +73,7 @@ def prepare_save(question, kwargs):
     if old is not None and not any(old[f] != getattr(question, f) for f in CONTENT if fields is None or f in fields):
         return
     if is_chat_market(question):
-        _restart_background_check(question, old, kwargs)
+        _restart_background_check(question, kwargs)
         return
     question.publication_state, question.publication_reason = "pending", ""
     question.publication_hash, question.publication_job = "", None

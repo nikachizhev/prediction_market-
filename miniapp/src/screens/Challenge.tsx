@@ -291,7 +291,7 @@ export function NewChallengeScreen() {
           <span className="sub small">На балансе мало монет для вызова.</span>
         )}
         <span className="sub small">
-          От {formatMoney(limits.min_stake)} до {formatMoney(limits.max_stake)}: 20% твоего баланса, но не больше 200.
+          От {formatMoney(limits.min_stake)} до {formatMoney(limits.max_stake)} — твой лимит сделки сейчас.
         </span>
       </div>
 
@@ -426,7 +426,7 @@ export function ChallengeScreen() {
 
   return (
     <div className="screen ch">
-      {phase === 'invite' && <p className="sub">Вызов от {c.author_name}</p>}
+      {phase === 'invite' && <p className="sub">Вызывает: {c.author_name}</p>}
       {phase === 'waiting_rival' && <h2 className="ch-head">Отправь вызов другу</h2>}
       {phase !== 'invite' && phase !== 'waiting_rival' && rival && <p className="sub">Соперник: {rival}</p>}
       <h1 className="ch-title">{c.title}</h1>
@@ -663,7 +663,7 @@ export function ChallengeScreen() {
                 <span className="ch-row-value">{formatMoney(c.pot)}</span>
               </div>
               <div className="ch-row">
-                <span className="sub">Комиссия 2%</span>
+                <span className="sub">Комиссия</span>
                 <span className="ch-row-value">−{formatMoney(Number(c.pot) - Number(c.prize))}</span>
               </div>
             </section>
