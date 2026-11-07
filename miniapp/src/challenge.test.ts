@@ -5,7 +5,7 @@ import {
   challengeShareUrl,
   closedText,
   draftProblem,
-  formParams,
+  formTitle,
   hoursLeft,
   newChallengePath,
   hoursText,
@@ -179,11 +179,10 @@ describe('the deep link', () => {
 });
 
 describe('starting from a chat', () => {
-  it('reads what was written after @bot', () => {
-    expect(formParams('?inline=1&text=%D0%9F%D0%B5%D1%82%D1%8F')).toEqual({ title: 'Петя', inline: true });
-    expect(formParams('')).toEqual({ title: '', inline: false });
-    expect(formParams(`?text=${'я'.repeat(200)}`).title).toHaveLength(120);
-    expect(formParams('?inline=0').inline).toBe(false);
+  it('reads the question written elsewhere', () => {
+    expect(formTitle('?text=%D0%9F%D0%B5%D1%82%D1%8F')).toBe('Петя');
+    expect(formTitle('')).toBe('');
+    expect(formTitle(`?text=${'я'.repeat(200)}`)).toHaveLength(120);
   });
 
   it('carries the line from «Создать» to the form', () => {
@@ -191,9 +190,8 @@ describe('starting from a chat', () => {
     expect(newChallengePath('   ')).toBe('/challenge/new');
   });
 
-  it('sends the card back into the chat it came from, or by the best way left', () => {
-    expect(shareWays({ inline: true, fromInline: true, prepared: true })).toEqual(['inline', 'prepared', 'link']);
-    expect(shareWays({ inline: true, fromInline: false, prepared: true })).toEqual(['prepared', 'link']);
-    expect(shareWays({ inline: false, fromInline: true, prepared: false })).toEqual(['link']);
+  it('sends the card by the best way left', () => {
+    expect(shareWays({ prepared: true })).toEqual(['prepared', 'link']);
+    expect(shareWays({ prepared: false })).toEqual(['link']);
   });
 });

@@ -10,11 +10,13 @@ referral link that opens the market in the Mini App.
 from __future__ import annotations
 
 import logging
+import hashlib
 import re
 from pathlib import Path
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 
 from . import charts, telegram
@@ -27,6 +29,8 @@ INLINE_LIMIT = 10
 INLINE_CACHE_SECONDS = 30
 CHALLENGE_QUERY = re.compile(r"^ch_([A-Za-z0-9_-]{1,24})$")
 CHALLENGE_TEXT_MAX = 120   # the question's limit: `services.CHALLENGE_TITLE_MAX`
+START_PREFIX = "newch"     # /start newch_<key> from the button above inline results
+INLINE_TEXT_SECONDS = 600  # what was written after @bot is kept this long, for the form
 
 
 def market_link(trader: Trader | None, question: Question) -> str:
@@ -135,15 +139,40 @@ def own_open_challenges(trader: Trader, query: str) -> list[Challenge]:
     return list(found[:INLINE_LIMIT]) if not query else []
 
 
-def create_challenge_button(query: str) -> dict | None:
-    """«Создать вызов» above the results: the form with what the person wrote after @bot, nothing is charged yet."""
-    if not settings.SITE_URL.startswith("https://"):
-        return None  # Telegram accepts only https for a Mini App
-    params = {"inline": "1"}
-    text = "" if CHALLENGE_QUERY.match(query) else query
-    if text:
-        params["text"] = text[:CHALLENGE_TEXT_MAX]
-    return {"text": "Создать вызов", "web_app": {"url": f"{settings.SITE_URL}/app/challenge/new?{urlencode(params)}"}}
+def _text_key(user_id: int, key: str) -> str:
+    return f"inline-challenge:{user_id}:{key}"
+
+
+def create_challenge_button(user_id: int | None, query: str) -> dict:
+    """«Создать вызов» above the results.
+
+    It leads to the chat with the bot, not straight to the Mini App: Telegram gives a Mini App opened from inline
+    mode no signed initData, so nobody could log in. The start parameter holds 64 characters at most, so the text
+    waits here; both this query and that /start reach the same bot process. Telegram may answer a repeated query
+    from its own cache, so the key comes from the text: an old button still finds its own text.
+    """
+    text = "" if CHALLENGE_QUERY.match(query) else query[:CHALLENGE_TEXT_MAX]
+    if not text or not user_id:
+        return {"text": "Создать вызов", "start_parameter": START_PREFIX}
+    key = hashlib.sha256(text.encode()).hexdigest()[:16]
+    cache.set(_text_key(user_id, key), text, INLINE_TEXT_SECONDS)
+    return {"text": "Создать вызов", "start_parameter": f"{START_PREFIX}_{key}"}
+
+
+def owns_start(param: str) -> bool:
+    return param == START_PREFIX or param.startswith(f"{START_PREFIX}_")
+
+
+def start_create_challenge(chat_id: int, param: str) -> None:
+    """/start newch_<key>: the button opens the form with a signed initData. Nothing is charged until the form."""
+    from .bot_resolution import app_button
+    _, _, key = param.partition("_")
+    text = cache.get(_text_key(chat_id, key)) if key else None
+    path = "challenge/new" + (f"?{urlencode({'text': text})}" if text else "")
+    # Text outside the spec's wording.
+    lead = f"Вызов другу:\n«{text}»\n" if text else "Вызов другу.\n"
+    telegram.send(chat_id, f"{lead}Проверь условия, выбери ставку и отправь другу.",
+                  reply_markup={"inline_keyboard": [[app_button("Создать вызов", path)]]})
 
 
 def search(trader: Trader, query: str) -> list[Question]:
@@ -172,12 +201,8 @@ def handle_inline_query(inline_query: dict) -> None:
         results = [challenge_result(c) for c in own_open_challenges(trader, query)]
         if not CHALLENGE_QUERY.match(query):
             results += [inline_result(trader, q) for q in search(trader, query)]
-    extra = {}
-    button = create_challenge_button(query)
-    if button:
-        extra["button"] = button
     try:
         telegram.api("answerInlineQuery", inline_query_id=inline_query.get("id"), results=results,
-                     is_personal=True, cache_time=INLINE_CACHE_SECONDS, **extra)
+                     is_personal=True, cache_time=INLINE_CACHE_SECONDS, button=create_challenge_button(user_id, query))
     except telegram.TelegramError:
         log.warning("answerInlineQuery failed")

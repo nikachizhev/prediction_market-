@@ -376,7 +376,7 @@ interface Challenge {
 
 ### Бот (для бэкенда)
 
-- Инлайн-режим (`market/share.py`): над результатами кнопка `Создать вызов` — `web_app` на `/app/challenge/new?text=<текст>&inline=1`. Запрос `ch_<код>` отдаёт автору карточку его открытого вызова.
+- Инлайн-режим (`market/share.py`): над результатами кнопка `Создать вызов` — `start_parameter` `newch_<ключ>`: чат с ботом, затем его кнопка `web_app` на `/app/challenge/new?text=<текст>`. Текст ждёт в кэше процесса бота 10 минут, потерялся — форма откроется пустой. Запрос `ch_<код>` отдаёт автору карточку его открытого вызова.
 - Callback-данные: `chal:…` — `market/bot_challenges.py`; `aiok:<id>` и `aino:<id>` — ответ создателя на предложение ИИ (`market/bot_resolution_dialog.py`).
 - Проводки вызова — `LedgerEntry.CHALLENGE_KINDS`, поле `LedgerEntry.challenge`. Они не входят в рейтинг и статистику.
 - Рынок чата: `publication_state="approved"` сразу, состояние проверки — `Question.background_check`.

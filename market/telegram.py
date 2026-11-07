@@ -150,6 +150,10 @@ def handle_update(update):
         return
     parts = message.get("text", "").split(maxsplit=1)
     command = parts[0].split("@")[0] if parts else ""
+    from . import share
+    if command == "/start" and len(parts) == 2 and share.owns_start(parts[1]):
+        share.start_create_challenge(chat_id, parts[1])
+        return
     if command == "/start" and len(parts) == 2 and parts[1].startswith("resolve_"):
         resolution_dialog.start(chat_id, parts[1][len("resolve_"):])
         return
