@@ -9,10 +9,11 @@ import { useToast } from '../components/Toast';
 import { formatEnds, formatMoney, formatPercent, formatSigned } from '../format';
 import { canSell, createdStatusLine, heldSides, positionAfterSell, positionStats, positionsTotals } from '../market';
 import { tg } from '../telegram';
+import { ChallengesTab } from './Challenge';
 import { mergeMarket, sideLabel } from '../trade';
 import './mine.css';
 
-type Tab = 'positions' | 'watch' | 'created';
+type Tab = 'positions' | 'watch' | 'created' | 'challenges';
 type LoadState = 'loading' | 'ready' | 'error';
 type Held = MineResponse['positions'][number];
 
@@ -120,6 +121,7 @@ export function MineScreen() {
     { key: 'positions', label: 'Позиции' + count(data?.positions.length) },
     { key: 'watch', label: 'Слежу' + count(data?.watched.length) },
     { key: 'created', label: 'Мои рынки' + count(data?.created.length) },
+    { key: 'challenges', label: 'Вызовы' },
   ];
 
   return (
@@ -134,7 +136,10 @@ export function MineScreen() {
               role="tab"
               aria-selected={t.key === tab}
               className={`mine-tab ${t.key === tab ? 'is-active' : ''}`}
-              onClick={() => pick(t.key)}
+              onClick={(e) => {
+                e.currentTarget.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+                pick(t.key);
+              }}
             >
               {t.label}
             </button>
@@ -150,9 +155,9 @@ export function MineScreen() {
           {drafts.map((draft) => <p key={draft.id}><strong>{draft.title}</strong><br /><span className="sub">{draft.label}</span></p>)}
           <button type="button" className="button-secondary" onClick={() => setAttempt((n) => n + 1)}>Обновить статусы</button>
         </section>}
-        {state === 'loading' && [0, 1, 2].map((i) => <CardSkeleton key={i} />)}
+        {tab !== 'challenges' && state === 'loading' && [0, 1, 2].map((i) => <CardSkeleton key={i} />)}
 
-        {state === 'error' && (
+        {tab !== 'challenges' && state === 'error' && (
           <div className="feed-message" role="alert">
             <p>Не удалось загрузить. {error}</p>
             <button type="button" className="button-secondary" onClick={() => setAttempt((n) => n + 1)}>
@@ -172,6 +177,8 @@ export function MineScreen() {
         {state === 'ready' && data && tab === 'created' && (
           <Created items={data.created} onResolve={openResolve} onEmpty={() => navigate('/create')} />
         )}
+
+        {tab === 'challenges' && <ChallengesTab />}
       </div>
 
       {sell.sheet}

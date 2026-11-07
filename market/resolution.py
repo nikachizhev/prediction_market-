@@ -158,8 +158,8 @@ def tick(now=None) -> dict:
         log.exception("bot outbox flush failed")
 
     # Closed chats (spec E8): disputes for chat admins, then the chats' own outbox.
-    from . import bot_chats, chat_disputes
-    for name, step in (("chat_disputes", chat_disputes.tick), ("chats", bot_chats.tick)):
+    from . import bot_challenges, bot_chats, chat_disputes
+    for name, step in (("challenges", bot_challenges.tick), ("chat_disputes", chat_disputes.tick), ("chats", bot_chats.tick)):
         try:
             for key, value in step(now).items():
                 done[f"{name}_{key}"] = value

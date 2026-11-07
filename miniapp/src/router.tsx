@@ -4,14 +4,16 @@ import { BalancePill } from './components/BalancePill';
 import { TabBar } from './components/TabBar';
 import { useToast } from './components/Toast';
 import { grantMessage } from './grants';
-import { chatFromStartParam, draftFromStartParam, marketFromStartParam } from './links';
+import { challengeFromStartParam, chatFromStartParam, draftFromStartParam, marketFromStartParam } from './links';
 import { Onboarding } from './screens/Onboarding';
 import { Placeholder } from './screens/Placeholder';
 import { useSession } from './session';
 import { tg } from './telegram';
 import {
+  ChallengeScreen,
   CreateScreen,
   CreatedScreen,
+  NewChallengeScreen,
   FeedScreen,
   MarketScreen,
   MineScreen,
@@ -73,7 +75,7 @@ let deepLinkHandled = false;
 
 /**
  * `startapp=ref_<code>-m<id>` or `m<id>` opens the market, `chat_<code>` the closed chat,
- * `draft_<code>` the creation preview of a chat draft, once the session is ready.
+ * `ch_<code>` the challenge, `draft_<code>` the creation preview of a chat draft, once the session is ready.
  */
 function useMarketDeepLink(ready: boolean) {
   const navigate = useNavigate();
@@ -88,6 +90,11 @@ function useMarketDeepLink(ready: boolean) {
     const chat = chatFromStartParam(tg.startParam);
     if (chat !== null) {
       navigate(`/chat/${encodeURIComponent(chat)}`);
+      return;
+    }
+    const challenge = challengeFromStartParam(tg.startParam);
+    if (challenge !== null) {
+      navigate(`/challenge/${encodeURIComponent(challenge)}`);
       return;
     }
     const draft = draftFromStartParam(tg.startParam);
@@ -144,6 +151,8 @@ export const router = createBrowserRouter(
         { path: '/market/:id/created', element: <CreatedScreen /> },
         { path: '/notifications', element: <NotificationsScreen /> },
         { path: '/chat/:code', element: <ChatScreen /> },
+        { path: '/challenge/new', element: <NewChallengeScreen /> },
+        { path: '/challenge/:code', element: <ChallengeScreen /> },
         { path: '*', element: <NotFoundScreen /> },
       ],
     },

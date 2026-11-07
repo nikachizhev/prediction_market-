@@ -92,7 +92,11 @@ def _new_referral_code() -> str:
 
 
 def _referrer(start_param: str) -> Trader | None:
-    """`ref_<code>` or a market link `ref_<code>-m<id>`; a plain `m<id>` has no inviter."""
+    """`ref_<code>`, a market link `ref_<code>-m<id>` or a challenge's `ch_<code>`; a plain `m<id>` has no inviter."""
+    if start_param.startswith("ch_"):
+        from .models import Challenge
+        challenge = Challenge.objects.select_related("author").filter(code=start_param[3:]).first()
+        return challenge.author if challenge else None
     if not start_param.startswith("ref_"):
         return None
     code, sep, market = start_param[4:].partition("-m")

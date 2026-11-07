@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Спор</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; display: flex; flex-direction: column; background: {{t.bg}}; color: {{t.ink}}; font-family: Inter, system-ui, sans-serif">
+  <header style="display: flex; align-items: center; justify-content: center; height: 56px"><span style="font-size: 16px; font-weight: 600">Вызов с Аней</span></header>
+  <div style="flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 8px 16px">
+    <h1 style="margin: 0; font-size: 24px; line-height: 1.2; font-weight: 700">Сдам ли я матанализ на 4 или 5 до 25 января?</h1>
+    <section style="background: {{t.card}}; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+      <span style="display: inline-flex; align-self: flex-start; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; background: {{t.noTint}}; color: {{t.no}}; font-size: 13px; font-weight: 600">Спор у модератора</span>
+      <div style="display: flex; justify-content: space-between; font-size: 14px"><span style="color: {{t.sub}}">Твой ответ</span><span style="font-weight: 700">ДА</span></div>
+      <div style="display: flex; justify-content: space-between; font-size: 14px"><span style="color: {{t.sub}}">Ответ Ани</span><span style="font-weight: 700">НЕТ</span></div>
+    </section>
+    <section style="background: {{t.card}}; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+      <span style="font-size: 15px; font-weight: 600">Пришли доказательство в бот</span>
+      <span style="font-size: 14px; line-height: 1.45; color: {{t.sub}}">Фото, скриншот или ссылка. На это ещё 23 часа. Без доказательства модератор всё равно решит спор, но это будет доводом против тебя.</span>
+      <a href="https://t.me" style="height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: {{t.ink}}; color: {{t.bg}}; font-size: 15px; font-weight: 600; text-decoration: none">Открыть бот</a>
+    </section>
+    <span style="font-size: 13px; line-height: 1.45; color: {{t.sub}}">Модератор выберет победителя или отменит вызов с возвратом ставок. Его решение окончательное.</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? false;
+    return { t: dark
+      ? { bg: '#0E1014', card: '#181B21', ink: '#F1F3F5', sub: '#9AA3AE', line: '#2A2E36', no: '#FF9E6B', noTint: '#33241D' }
+      : { bg: '#F2F3F5', card: '#FFFFFF', ink: '#111418', sub: '#5F6672', line: '#E3E5E8', no: '#B23A0B', noTint: '#FBEDE6' } };
+  }
+}
+</script>
+</body>
+</html>

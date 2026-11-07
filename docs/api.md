@@ -363,7 +363,7 @@ interface Challenge {
 
 | Метод | Путь | Тело | Ответ |
 | --- | --- | --- | --- |
-| GET | `/api/challenges` | — | `{ challenges: Challenge[] }` — только мои, новые сверху |
+| GET | `/api/challenges` | — | `{ challenges: Challenge[], limits: { min_stake, max_stake, fee, min_hours, max_days, accept_hours } }` — только мои, новые сверху; `limits` — для формы создания |
 | POST | `/api/challenges` | `{ title, criteria, side, stake, resolves_at, request_key }` | `{ challenge, balance }`; повтор с тем же `request_key` не списывает второй раз |
 | GET | `/api/challenges/{code}` | — | `{ challenge, balance }`; 404, если вызов принят другими, отменён или отклонён |
 | POST | `/api/challenges/{code}/accept` | — | `{ challenge, balance }`; повтор принявшего не списывает второй раз |

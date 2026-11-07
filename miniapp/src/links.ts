@@ -32,6 +32,12 @@ export function chatFromStartParam(startParam: string | null | undefined): strin
   return m ? m[1] : null;
 }
 
+/** Challenge code from a start_param `ch_<code>` (spec E11); null for anything else. */
+export function challengeFromStartParam(startParam: string | null | undefined): string | null {
+  const m = /^ch_([A-Za-z0-9_-]{1,64})$/.exec(startParam ?? '');
+  return m ? m[1] : null;
+}
+
 /** Draft code from a start_param `draft_<code>` (the bot's «Изменить» under /market in a chat); null for anything else. */
 export function draftFromStartParam(startParam: string | null | undefined): string | null {
   const m = /^draft_([A-Za-z0-9_-]{1,64})$/.exec(startParam ?? '');

@@ -42,7 +42,7 @@ def waiting_for_moderator() -> Q:
     return Q(publication_state__in=WAITING) | Q(background_check__in=WAITING)
 
 
-def _restart_background_check(question, old, kwargs) -> None:
+def _restart_background_check(question, kwargs) -> None:
     """A chat market stays visible and tradable (spec E3); only the check starts over."""
     from .models import Question
     fields = kwargs.get("update_fields")
@@ -73,7 +73,7 @@ def prepare_save(question, kwargs):
     if old is not None and not any(old[f] != getattr(question, f) for f in CONTENT if fields is None or f in fields):
         return
     if is_chat_market(question):
-        _restart_background_check(question, old, kwargs)
+        _restart_background_check(question, kwargs)
         return
     question.publication_state, question.publication_reason = "pending", ""
     question.publication_hash, question.publication_job = "", None
@@ -230,4 +230,44 @@ def process_queue(limit=10):
             version = digest(payload)
         state, reason = classify(payload) if attempts <= 3 else ("review", "unavailable")
         count += bool(apply_decision(pk, state, reason, actor="automatic", expected_hash=version, job=job))
+    return count
+
+
+def process_challenges(limit=10):
+    """1-on-1 challenges are open at once and checked with the same rules (spec E11)."""
+    from .models import Challenge
+    from .services import reject_challenge
+    if not settings.PREMODERATION_ENABLED:
+        return 0
+    now = timezone.now()
+    due = Challenge.objects.filter(
+        Q(check_state="pending") | Q(check_state__in=("error", "checking"), check_retry_at__lte=now)
+    ).order_by("created_at", "pk").values_list("pk", flat=True)[:limit]
+    count = 0
+    for pk in list(due):
+        job = uuid.uuid4()
+        with transaction.atomic():
+            challenge = Challenge.objects.select_for_update().get(pk=pk)
+            if challenge.check_state not in ("pending", "error", "checking"):
+                continue
+            challenge.check_state, challenge.check_job = "checking", job
+            challenge.check_retry_at = now+timedelta(minutes=5)
+            challenge.check_attempts += 1
+            challenge.save(update_fields=["check_state", "check_job", "check_retry_at", "check_attempts"])
+            attempts = challenge.check_attempts
+            payload = {"question": {"title": challenge.title, "resolution_criteria": challenge.criteria}}
+        state, reason = classify(payload) if attempts <= 3 else ("review", "unavailable")
+        with transaction.atomic():
+            challenge = Challenge.objects.select_for_update().get(pk=pk)
+            if challenge.check_job != job:  # a complaint or a moderator got there first
+                continue
+            count += 1
+            if state == "rejected":
+                reject_challenge(challenge)
+                Challenge.objects.filter(pk=pk).update(check_reason=reason)
+                continue
+            challenge.check_state = "clear" if state == "approved" else state
+            challenge.check_reason, challenge.check_job = reason, None
+            challenge.check_retry_at = now+timedelta(minutes=5) if state == "error" else None
+            challenge.save(update_fields=["check_state", "check_reason", "check_job", "check_retry_at"])
     return count
