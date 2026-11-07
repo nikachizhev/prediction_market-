@@ -566,6 +566,18 @@ def test_telegram_failure_on_the_reminder_keeps_money_and_retries(people, propos
         assert resolution.tick(at_half)["evidence_reminded"] == 1
 
 
+def test_my_markets_switch_does_not_mute_the_message_about_the_bond(people, proposed):
+    from market.bot_notifications import bot_allowed
+    _, anya, *_ = people
+    anya.notify_prefs = {"creator": False, "quiet": True}
+    anya.save(update_fields=["notify_prefs"])
+    close_window(proposed)
+    with patch("market.telegram.api", return_value={"message_id": 1}):
+        resolution.tick(timezone.now())
+    message = BotMessage.objects.get(key=f"proposer-result:{proposed.pk}")
+    assert bot_allowed(anya, message.kind, proposed)
+
+
 def test_worker_settles_a_participants_outcome_and_tells_them(people, proposed):
     creator, anya, *_ = people
     close_window(proposed)
@@ -575,7 +587,7 @@ def test_worker_settles_a_participants_outcome_and_tells_them(people, proposed):
     assert done["finalized"] == 1 and again["finalized"] == 0
     assert ledger(anya, LedgerEntry.Kind.PROPOSAL_BOND_REFUND) == [BOND]  # exactly once
     message = BotMessage.objects.get(key=f"proposer-result:{proposed.pk}")
-    assert message.kind == "creator" and message.trader_id == anya.pk  # a resolution step: never muted
+    assert message.kind == "resolve" and message.trader_id == anya.pk  # a resolution step: never muted
     assert "Твой итог встал" in message.text and "Залог +20" in message.text and "доля комиссии" in message.text
 
 

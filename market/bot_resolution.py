@@ -303,8 +303,9 @@ def _proposer_result(root: Question, markup: dict) -> None:
         text = f"«{root.title}». Залог +{bond} вернулся" + (f", доля комиссии +{coins(fee)}." if fee > 0 else ".")
     else:
         title, text = "Твой итог не подтвердился:", f"«{root.title}» — спор признан, залог {bond} не возвращается."
-    # "creator" — a resolution step: not muted by the quiet mode or a market's notify level.
-    enqueue(proposer, "creator", f"proposer-result:{root.pk}", title, text, question=root,
+    # "resolve" — a resolution step with no switch: the bond is the proposer's money, and «Мои рынки»
+    # is about markets they created.
+    enqueue(proposer, "resolve", f"proposer-result:{root.pk}", title, text, question=root,
             payload={"reply_markup": markup})
 
 

@@ -1083,6 +1083,17 @@
           },
           "instant": false,
           "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "pm_ledger_coins{window=\"24h\",kind=\"proposer_fee\"}",
+          "legendFormat": "Предложившим итог",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
