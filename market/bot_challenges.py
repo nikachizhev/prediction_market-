@@ -57,15 +57,15 @@ def _answer_buttons(challenge: Challenge, rival_answer: str = "") -> list[list[d
 
 def challenge_accepted(pk: int) -> None:
     c = _load(pk)
-    enqueue(c.author, "challenge", f"challenge-accepted:{c.pk}", f"{c.opponent.display_name} принял твой вызов:",
-            f"«{c.title}»\nСтавка каждого {coins(c.stake)}. Итог спрошу {day_month(c.resolves_at)}.",
+    enqueue(c.author, "challenge", f"challenge-accepted:{c.pk}", "Твой вызов приняли:",
+            f"«{c.title}»\nСоперник: {c.opponent.display_name}. Ставка каждого {coins(c.stake)}. Итог спрошу {day_month(c.resolves_at)}.",
             payload={"reply_markup": {"inline_keyboard": [[_open_button(c)]]}})
 
 
 def ask_both(c: Challenge) -> None:
     for trader in _people(c):
         enqueue(trader, "challenge", f"challenge-ask:{c.pk}:{trader.pk}",
-                f"Пора решить вызов с {_rival_name(c, trader)}:", f"«{c.title}»\nЧем закончилось?",
+                "Пора решить вызов:", f"«{c.title}»\nСоперник: {_rival_name(c, trader)}. Чем закончилось?",
                 payload={"reply_markup": {"inline_keyboard": _answer_buttons(c) + [[_open_button(c)]]}})
 
 
@@ -84,8 +84,8 @@ def challenge_disputed(pk: int) -> None:
     c = _load(pk)
     for trader in _people(c):
         enqueue(trader, "challenge", f"challenge-disputed:{c.pk}:{trader.pk}",
-                f"Спор по вызову с {_rival_name(c, trader)}:",
-                f"«{c.title}»\nВы ответили по-разному. Пришли доказательство — фото, скриншот или ссылку "
+                "Спор по вызову:",
+                f"«{c.title}»\nСоперник: {_rival_name(c, trader)}. Вы ответили по-разному. Пришли доказательство — фото, скриншот или ссылку "
                 f"сообщением сюда. На это {settings.EVIDENCE_HOURS} часа.",
                 payload={"reply_markup": {"inline_keyboard": [[_open_button(c)]]}})
 

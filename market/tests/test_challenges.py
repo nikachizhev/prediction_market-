@@ -482,7 +482,7 @@ def test_accepted_goes_to_the_author_even_with_everything_switched_off(people):
     services.accept_challenge(anya, challenge)
     bot_challenges.challenge_accepted(challenge.pk)
     message = messages(creator).get()
-    assert "принял твой вызов" in message.text and bot_allowed(creator, "challenge")
+    assert "Твой вызов приняли" in message.text and bot_allowed(creator, "challenge")
 
 
 def test_outcome_date_asks_both_once(people):

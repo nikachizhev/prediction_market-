@@ -85,13 +85,20 @@ def _reply(challenge: Challenge, trader: Trader) -> dict:
     return {"challenge": serialize(challenge, trader), "balance": s.money(trader.balance)}
 
 
+def _limits(trader: Trader) -> dict:
+    """What the creation form needs: the numbers live in settings, not in the screens."""
+    return {"min_stake": s.money(settings.CHALLENGE_MIN_STAKE), "max_stake": s.money(services.trade_limit(trader)),
+            "fee": settings.CHALLENGE_FEE, "min_hours": settings.CHALLENGE_MIN_HOURS,
+            "max_days": settings.CHALLENGE_MAX_DAYS, "accept_hours": settings.CHALLENGE_ACCEPT_HOURS}
+
+
 @endpoint("GET", "POST")
 def challenges(request):
     trader = request.trader
     if request.method == "GET":
         mine = (Challenge.objects.filter(Q(author=trader) | Q(opponent=trader))
                 .select_related("author", "opponent").order_by("-created_at", "-id")[:100])
-        return {"challenges": [serialize(c, trader) for c in mine]}
+        return {"challenges": [serialize(c, trader) for c in mine], "limits": _limits(trader)}
     data = body(request)
     resolves_at = parse_datetime(str(data.get("resolves_at") or ""))
     if resolves_at is not None and timezone.is_naive(resolves_at):

@@ -10,6 +10,7 @@ export { RatingScreen } from './Rating';
 export { ProfileScreen } from './Profile';
 export { NotificationsScreen } from './Notifications';
 export { ChatScreen } from './Chat';
+export { ChallengeScreen, ChallengesTab, NewChallengeScreen } from './Challenge';
 
 export function NotFoundScreen() {
   return <Placeholder title="Страница не найдена" cards={0} />;

@@ -510,7 +510,74 @@ function newRequestKey(): string {
 
 // ---- Endpoints ----
 
+export type ChallengeStatus = 'open' | 'active' | 'disputed' | 'finished' | 'cancelled';
+export type ChallengeRole = 'author' | 'opponent' | 'guest';
+export type ChallengeAnswer = Side | 'cancel';
+
+/** 1-on-1 challenge (phase 3e, spec E11; docs/api.md «Фаза 3e»). */
+export interface Challenge {
+  code: string;
+  title: string;
+  criteria: string;
+  role: ChallengeRole;
+  /** For a guest — the side they would get. */
+  my_side: Side;
+  stake: Money;
+  pot: Money;
+  prize: Money;
+  resolves_at: string;
+  expires_at: string;
+  status: ChallengeStatus;
+  author_name: string;
+  opponent_name: string | null;
+  link: string | null;
+  can_accept: boolean;
+  can_cancel: boolean;
+  can_answer: boolean;
+  my_answer: ChallengeAnswer | null;
+  rival_answer: ChallengeAnswer | null;
+  answer_until: string | null;
+  dispute_cost: Money;
+  proof_until: string | null;
+  outcome: ChallengeAnswer | null;
+  result: 'won' | 'lost' | 'refunded' | null;
+  payout: Money | null;
+  closed_reason: string | null;
+}
+
+export interface ChallengeLimits {
+  min_stake: Money;
+  max_stake: Money;
+  fee: string;
+  min_hours: number;
+  max_days: number;
+  accept_hours: number;
+}
+
+export interface ChallengeReply {
+  challenge: Challenge;
+  balance: Money;
+}
+
+export interface CreateChallengeData {
+  title: string;
+  criteria: string;
+  side: Side;
+  stake: number;
+  resolves_at: string;
+}
+
 export const api = {
+  challenges: () => request<{ challenges: Challenge[]; limits: ChallengeLimits }>('GET', '/challenges'),
+  challenge: (code: string) => request<ChallengeReply>('GET', `/challenges/${encodeURIComponent(code)}`),
+  createChallenge: (data: CreateChallengeData, request_key: string = newRequestKey()) =>
+    request<ChallengeReply>('POST', '/challenges', { ...data, request_key }),
+  acceptChallenge: (code: string) => request<ChallengeReply>('POST', `/challenges/${encodeURIComponent(code)}/accept`),
+  cancelChallenge: (code: string) => request<ChallengeReply>('POST', `/challenges/${encodeURIComponent(code)}/cancel`),
+  answerChallenge: (code: string, answer: ChallengeAnswer) =>
+    request<ChallengeReply>('POST', `/challenges/${encodeURIComponent(code)}/answer`, { answer }),
+  reportChallenge: (code: string, reason?: string) =>
+    request<{ ok: true }>('POST', `/challenges/${encodeURIComponent(code)}/complaint`, { reason }),
   session: (start_param?: string) => request<Session>('POST', '/session', start_param ? { start_param } : {}),
 
   me: () => request<Me>('GET', '/me'),
