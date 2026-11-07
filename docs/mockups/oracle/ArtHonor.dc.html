@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Доска почёта</title>
+<script src="./support.js"></script>
+<script src="./scene.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #07060d; color: #EDE4D3; font-family: 'IBM Plex Mono', monospace">
+  <canvas ref="{{setCanvas}}" aria-hidden="true" style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; image-rendering: pixelated"></canvas>
+  <h1 style="position: absolute; left: 16px; top: 18px; margin: 0; font: 700 40px/1 'Cormorant Garamond', serif; text-shadow: 0 2px 18px #000">Доска почёта</h1>
+  <span style="position: absolute; left: 16px; top: 62px; font-size: 12px; letter-spacing: 0.08em; color: #C9BFD8">топ-3 прошлой недели</span>
+
+  <sc-for list="{{places}}" as="p" hint-placeholder-count="3">
+    <div style="position: absolute; left: {{p.left}}px; top: {{p.top}}px; width: 104px; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; text-shadow: 0 0 8px #000">
+      <span style="font: 700 30px/1 'Cormorant Garamond', serif; color: {{p.ink}}">{{p.place}}</span>
+      <span style="font-size: 14px; font-weight: 600">{{p.name}}</span>
+      <span style="font-size: 12px; color: {{p.ink}}; font-variant-numeric: tabular-nums">{{p.profit}}</span>
+    </div>
+  </sc-for>
+
+  <section style="position: absolute; left: 16px; right: 16px; bottom: 18px; background: rgba(9, 7, 18, 0.86); border: 1px solid rgba(190, 180, 230, 0.26); padding: 4px 14px">
+    <sc-for list="{{rows}}" as="r" hint-placeholder-count="4">
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 46px; border-bottom: 1px solid rgba(190, 180, 230, 0.16)">
+        <span style="width: 18px; font-size: 13px; color: #C9BFD8; font-variant-numeric: tabular-nums">{{r.rank}}</span>
+        <span style="flex: none; width: 30px; height: 30px; box-sizing: border-box; border-radius: 999px; border: 2px solid {{r.ring}}; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600">{{r.initial}}</span>
+        <span style="flex: 1; font-size: 14px">{{r.name}}</span>
+        <span style="font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums">{{r.value}}</span>
+      </div>
+    </sc-for>
+    <p style="margin: 8px 0 8px; font-size: 12px; line-height: 1.4; color: #C9BFD8">рамка держится всю неделю. нужно хотя бы 3 разрешённых прогноза</p>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  setCanvas = (el) => {
+    if (el && !this.scene && window.PMScene) {
+      this.scene = window.PMScene.mount(el, {
+        fogY: 170,
+        cones: [
+          { x: 97, color: [255, 200, 70], a: 0.75, w: 44, len: 0.42 },
+          { x: 44, color: [170, 190, 230], a: 0.45, w: 34, len: 0.46 },
+          { x: 150, color: [230, 130, 70], a: 0.45, w: 34, len: 0.46 },
+        ],
+        props: [{ type: 'podium', places: [
+          { x: 44, y: 112, color: [190, 205, 235] },
+          { x: 150, y: 122, color: [226, 136, 80] },
+          { x: 97, y: 88, color: [255, 205, 80], crown: true },
+        ] }],
+      });
+    }
+  };
+  componentWillUnmount() {
+    if (this.scene) this.scene.stop();
+  }
+  renderVals() {
+    const place = (place, name, profit, left, top, ink) => ({ place, name, profit, left, top, ink });
+    const row = (rank, name, value, ring) => ({ rank, name, value, ring, initial: name[0] });
+    return {
+      setCanvas: this.setCanvas,
+      places: [
+        place('II', 'Боря', '+310', 36, 296, '#D5DFF5'),
+        place('I', 'Аня', '+540', 143, 248, '#FFCD50'),
+        place('III', 'Вера', '+190', 248, 316, '#F0A070'),
+      ],
+      rows: [
+        row(1, 'Вера', '+220', '#E2884F'),
+        row(2, 'Глеб', '+150', 'rgba(190, 180, 230, 0.26)'),
+        row(3, 'Аня', '+120', '#FFCD50'),
+        row(4, 'Даша', '+70', 'rgba(190, 180, 230, 0.26)'),
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

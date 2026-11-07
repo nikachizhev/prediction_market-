@@ -4,7 +4,7 @@ import { api, ApiError, type MarketDetail, type Quote, type Side } from '../api'
 import { formatMoney, formatPercent } from '../format';
 import { useSession } from '../session';
 import { tg } from '../telegram';
-import { themes } from '../theme';
+import { oracleTheme } from '../theme';
 import { clampStake, defaultStake, maxStake, quickStakes, sideLabel, splitPercents, toMoney } from '../trade';
 import { AnimatedNumber } from './AnimatedNumber';
 import { CoinIcon } from './CoinIcon';
@@ -13,8 +13,8 @@ import { Skeleton } from './Skeleton';
 
 const QUOTE_DEBOUNCE_MS = 250;
 
-/** Fill colours of the confirm button; equal in both themes. */
-export const SIDE_FILL: Record<Side, string> = { yes: themes.light.yesFill, no: themes.light.noFill };
+/** Fill colours of the confirm button. */
+export const SIDE_FILL: Record<Side, string> = { yes: oracleTheme.yesFill, no: oracleTheme.noFill };
 
 interface TradePanelProps {
   market: MarketDetail;
