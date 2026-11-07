@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WheelPrize } from './api';
-import { cardView, celebrationLevel, chanceLabel, pickDemoPrize, slicesOf, stopAngle, winPhrase } from './wheel';
+import { cardView, celebrationLevel, chanceLabel, pickDemoPrize, slicesOf, stopAngle, wheelLayout, winPhrase } from './wheel';
+import { tg } from './telegram';
 
 const PRIZES: WheelPrize[] = [
   { prize: '5', chance: 0.6 },
@@ -13,18 +14,50 @@ const PRIZES: WheelPrize[] = [
 /** Where the pointer lands, in degrees clockwise from the start of the first slice. */
 const landing = (angle: number) => (((360 - angle) % 360) + 360) % 360;
 
-describe('where the wheel stops', () => {
-  it('stops in the middle of the prize slice after full turns', () => {
-    expect(stopAngle(PRIZES, '25')).toBe(1800 + 36); // the 25 slice spans 306–342°
-    expect(landing(stopAngle(PRIZES, 5)!)).toBeCloseTo(108);
-    expect(landing(stopAngle(PRIZES, '100')!)).toBeCloseTo(358.2);
+describe('the wheel as drawn', () => {
+  const layout = wheelLayout(PRIZES);
+
+  it('keeps every chance whole: the pieces of a prize add up to its chance', () => {
+    for (const p of PRIZES) {
+      const sum = layout.filter((s) => s.prize === p.prize).reduce((a, s) => a + s.share, 0);
+      expect(sum).toBeCloseTo(p.chance);
+    }
   });
 
-  it('never leaves the slice when moved inside it', () => {
+  it('cuts the commonest prize into pieces with another prize between each two', () => {
+    expect(layout).toHaveLength(16);
+    expect(layout.filter((s) => s.prize === '5')).toHaveLength(8);
+    layout.forEach((s, i) => expect(s.prize === '5').toBe(i % 2 === 0));
+    expect(layout.map((s) => s.prize).filter((p) => p !== '5')).toEqual(['10', '25', '10', '50', '10', '25', '10', '100']);
+  });
+
+  it('colours a piece by how rare its prize is', () => {
+    expect(layout.find((s) => s.prize === '100')?.rank).toBe(4);
+    expect(slicesOf(PRIZES)[1]).toEqual({ label: '10', share: 0.0625, tone: 1 });
+  });
+
+  it('is one slice when there is one prize', () => {
+    expect(wheelLayout([{ prize: '5', chance: 1 }])).toEqual([{ prize: '5', share: 1, rank: 0 }]);
+  });
+});
+
+describe('where the wheel stops', () => {
+  it('lands inside a piece of the prize', () => {
+    expect(landing(stopAngle(PRIZES, '5', 5, 0, 0)!)).toBeCloseTo(13.5); // the first 5 spans 0–27°
+    expect(stopAngle(PRIZES, '25', 5, 0, 0)).toBe(1800 + 360 - 85.5); // the first 25 spans 76.5–94.5°
+    expect(landing(stopAngle(PRIZES, '100', 5, 0, 0)!)).toBeCloseTo(358.2); // the last sliver, 356.4–360°
+  });
+
+  it('chooses among the pieces of the prize', () => {
+    const tens = [0, 0.3, 0.6, 0.99].map((pick) => landing(stopAngle(PRIZES, '10', 1, 0, pick)!));
+    expect(new Set(tens.map((a) => Math.round(a))).size).toBe(4);
+  });
+
+  it('never leaves the piece when moved inside it', () => {
     for (const offset of [-1, -0.5, 0.5, 1]) {
-      const at = landing(stopAngle(PRIZES, '50', 3, offset)!);
-      expect(at).toBeGreaterThan(342);
-      expect(at).toBeLessThan(356.4);
+      const at = landing(stopAngle(PRIZES, '50', 3, offset, 0.5)!);
+      expect(at).toBeGreaterThan(171);
+      expect(at).toBeLessThan(185.4);
     }
   });
 
@@ -43,7 +76,6 @@ describe('the wheel card in the feed', () => {
 
 describe('labels', () => {
   it('turns the table into slices and readable odds', () => {
-    expect(slicesOf(PRIZES)[2]).toEqual({ label: '25', share: 0.1 });
     expect(chanceLabel(0.6)).toBe('60%');
     expect(chanceLabel(0.005)).toBe('0,5%');
   });
@@ -78,3 +110,26 @@ describe('the demo', () => {
   });
 });
 
+
+describe('the tick under the finger', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const stub = (platform: string) => {
+    const haptics = { impactOccurred: vi.fn(), selectionChanged: vi.fn(), notificationOccurred: vi.fn() };
+    vi.stubGlobal('window', { Telegram: { WebApp: { initData: 'x', platform, HapticFeedback: haptics } } });
+    return haptics;
+  };
+
+  it('is a light impact on Android, where the selection buzz is too short to feel', () => {
+    const haptics = stub('android');
+    tg.HapticFeedback.tick();
+    expect(haptics.impactOccurred).toHaveBeenCalledWith('light');
+    expect(haptics.selectionChanged).not.toHaveBeenCalled();
+  });
+
+  it('is the selection tick elsewhere', () => {
+    const haptics = stub('ios');
+    tg.HapticFeedback.tick();
+    expect(haptics.selectionChanged).toHaveBeenCalledTimes(1);
+  });
+});

@@ -3,26 +3,72 @@ import type { WheelPrize, WheelState } from './api';
 import type { WheelSlice } from './scene/scene';
 import { formatMoney } from './format';
 
-export function slicesOf(prizes: WheelPrize[]): WheelSlice[] {
-  return prizes.map((p) => ({ label: formatMoney(p.prize), share: p.chance }));
+export interface WheelSegment {
+  prize: string;
+  /** Share of the circle, from 0 to 1. */
+  share: number;
+  /** 0 for the commonest prize, up to the rarest: picks the colour. */
+  rank: number;
 }
 
 /**
- * Degrees to turn the wheel so the prize's slice stops under the pointer at the top. Slices go clockwise
- * from the pointer; `turns` full turns come first, `offset` (from -0.5 to 0.5) moves within the slice.
+ * The wheel as drawn: the commonest prize cut into pieces with the others between them, so no single
+ * slice gives the answer away. Each prize keeps its whole chance as the sum of its pieces: the wheel stays
+ * honest. A rarer prize gets fewer pieces (at most 4); the commonest gets one piece per gap.
  */
-export function stopAngle(prizes: WheelPrize[], prize: string | number, turns = 5, offset = 0): number | null {
-  const target = Number(prize);
-  let from = 0;
-  for (const p of prizes) {
-    const width = p.chance * 360;
-    if (Number(p.prize) === target) {
-      const at = from + width / 2 + Math.max(-0.5, Math.min(0.5, offset)) * width * 0.7;
-      return 360 * turns + ((360 - at) % 360);
+export function wheelLayout(prizes: WheelPrize[]): WheelSegment[] {
+  const order = [...prizes].sort((a, b) => b.chance - a.chance);
+  const rankOf = (p: WheelPrize) => order.indexOf(p);
+  if (order.length < 2) return order.map((p) => ({ prize: p.prize, share: p.chance, rank: 0 }));
+  const [common, ...others] = order;
+  const pieces = others.map((p) => Math.max(1, Math.min(4, Math.round(p.chance * 16))));
+  const gaps = pieces.reduce((a, b) => a + b, 0);
+  // Spread each prize's pieces evenly around the wheel, the most pieces first.
+  const slots: (WheelPrize | null)[] = Array(gaps).fill(null);
+  others.forEach((p, i) => {
+    const n = pieces[i];
+    for (let k = 0; k < n; k += 1) {
+      let at = Math.round((k * gaps) / n);
+      while (slots[at % gaps] !== null) at += 1;
+      slots[at % gaps] = p;
     }
+  });
+  const out: WheelSegment[] = [];
+  for (const p of slots as WheelPrize[]) {
+    out.push({ prize: common.prize, share: common.chance / gaps, rank: 0 });
+    out.push({ prize: p.prize, share: p.chance / pieces[others.indexOf(p)], rank: rankOf(p) });
+  }
+  return out;
+}
+
+export function slicesOf(prizes: WheelPrize[]): WheelSlice[] {
+  return wheelLayout(prizes).map((s) => ({ label: formatMoney(s.prize), share: s.share, tone: s.rank }));
+}
+
+/**
+ * Degrees to turn the wheel so one of the prize's pieces stops under the pointer at the top. Pieces go
+ * clockwise from the pointer; `pick` (0..1) chooses which piece, `turns` full turns come first and
+ * `offset` (from -0.5 to 0.5) moves within the piece.
+ */
+export function stopAngle(
+  prizes: WheelPrize[],
+  prize: string | number,
+  turns = 5,
+  offset = 0,
+  pick: number = Math.random(),
+): number | null {
+  const target = Number(prize);
+  const spots: { from: number; width: number }[] = [];
+  let from = 0;
+  for (const s of wheelLayout(prizes)) {
+    const width = s.share * 360;
+    if (Number(s.prize) === target) spots.push({ from, width });
     from += width;
   }
-  return null;
+  if (spots.length === 0) return null;
+  const spot = spots[Math.min(spots.length - 1, Math.floor(Math.max(0, pick) * spots.length))];
+  const at = spot.from + spot.width / 2 + Math.max(-0.5, Math.min(0.5, offset)) * spot.width * 0.7;
+  return 360 * turns + ((360 - at) % 360);
 }
 
 export type WheelCardView = 'locked' | 'open' | 'spun';
