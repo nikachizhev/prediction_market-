@@ -40,6 +40,7 @@ describe('the light of each part of the app', () => {
     ['/', 'amber'],
     ['/market/5', 'amber'],
     ['/challenge/abc', 'ember'],
+    ['/wheel', 'ember'],
     ['/rating', 'moon'],
     ['/profile', 'violet'],
     ['/create', 'violet'],

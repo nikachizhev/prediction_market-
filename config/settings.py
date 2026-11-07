@@ -138,6 +138,10 @@ CHALLENGE_MIN_HOURS = 1         # the outcome date from now, at least...
 CHALLENGE_MAX_DAYS = 30         # ...and at most
 CHALLENGE_ANSWER_HOURS = 24     # for the second one to answer; silence means the first answer stands
 CHALLENGE_SILENCE_HOURS = 72    # both silent this long after the outcome date -> stakes go back
+# «Колесо дня» (spec E12.2): one free spin a Moscow day after a purchase of at least WHEEL_MIN_TRADE in a market.
+# (prize, weight): the slices on the wheel are drawn by these weights; the average prize is about 11 coins.
+WHEEL_PRIZES = ((5, 60), (10, 25), (25, 10), (50, 4), (100, 1))
+WHEEL_MIN_TRADE = 10
 
 # AI rules helper (spec E9.1): any OpenAI-compatible chat completions API, OpenRouter by default.
 # Without a key the helper is off and the creation wizard works as before.

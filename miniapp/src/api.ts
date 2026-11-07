@@ -567,7 +567,23 @@ export interface CreateChallengeData {
   resolves_at: string;
 }
 
+/** «Колесо дня» (phase 3f, spec E12.2; docs/api.md «Фаза 3f»). */
+export interface WheelPrize {
+  prize: Money;
+  /** Share from 0 to 1; the slices are drawn by it. */
+  chance: number;
+}
+
+export interface WheelState {
+  unlocked: boolean;
+  spun: Money | null;
+  /** In the order of the slices, clockwise from the pointer. */
+  prizes: WheelPrize[];
+}
+
 export const api = {
+  wheel: () => request<WheelState>('GET', '/wheel'),
+  spinWheel: () => request<{ prize: Money; balance: Money; wheel: WheelState }>('POST', '/wheel/spin'),
   challenges: () => request<{ challenges: Challenge[]; limits: ChallengeLimits }>('GET', '/challenges'),
   challenge: (code: string) => request<ChallengeReply>('GET', `/challenges/${encodeURIComponent(code)}`),
   createChallenge: (data: CreateChallengeData, request_key: string = newRequestKey()) =>

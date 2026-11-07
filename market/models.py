@@ -589,9 +589,10 @@ class LedgerEntry(models.Model):
         CHALLENGE_REFUND = "challenge_refund", "Возврат ставки в вызове"
         CHALLENGE_DISPUTE = "challenge_dispute", "Спор в вызове"
         CHALLENGE_DISPUTE_BACK = "challenge_disp_back", "Спор в вызове признан"
+        WHEEL = "wheel", "Колесо дня"
 
     # Coins that appear from nothing; excluded from profit in the rating.
-    BONUS_KINDS = (Kind.STARTER, Kind.DAILY, Kind.INSURANCE, Kind.REFERRAL)
+    BONUS_KINDS = (Kind.STARTER, Kind.DAILY, Kind.INSURANCE, Kind.REFERRAL, Kind.WHEEL)
     # 1-on-1 challenges (spec E11) stay out of the rating and statistics: two people could pump each other.
     CHALLENGE_KINDS = (Kind.CHALLENGE_STAKE, Kind.CHALLENGE_PAYOUT, Kind.CHALLENGE_REFUND,
                        Kind.CHALLENGE_DISPUTE, Kind.CHALLENGE_DISPUTE_BACK)
@@ -1037,3 +1038,18 @@ class Challenge(models.Model):
 
     def __str__(self) -> str:
         return self.title
+
+
+class WheelSpin(models.Model):
+    """«Колесо дня» (spec E12.2): one free spin per Moscow day after a prediction; the server picks the prize."""
+
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="wheel_spins")
+    day = models.DateField()
+    prize = models.DecimalField(max_digits=8, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "вращение колеса"
+        verbose_name_plural = "вращения колеса"
+        constraints = [models.UniqueConstraint(fields=["trader", "day"], name="one_wheel_spin_per_day")]
+
