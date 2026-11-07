@@ -38,6 +38,8 @@ export interface FieldsSnapshot {
   resultTime: string;
   mode?: CreateMode;
   options?: string[];
+  aiCheck: boolean;
+  aiSource: string | null;
   marks: FilledGroup[];
   filledBy: FillSource | null;
 }
@@ -86,6 +88,9 @@ export interface CreateDraft {
   announce: boolean;
   /** Code of the chat draft (startapp=draft_<code>, spec E9.4); the market is made from it. */
   draftCode: string | null;
+  /** «Итог проверит ИИ» (spec E4): kept by the creator, filled only by the helper. */
+  aiCheck: boolean;
+  aiSource: string | null;
 }
 
 export type CreateField = 'title' | 'options' | 'criteria' | 'category' | 'closes' | 'resolves';
@@ -135,6 +140,8 @@ export function defaultDraft(now: Date = new Date()): CreateDraft {
     flow: 'line',
     line: '',
     announce: false,
+    aiCheck: false,
+    aiSource: null,
     draftCode: null,
   };
 }
@@ -226,6 +233,11 @@ export function canProceed(draft: CreateDraft, step: CreateStep, now: Date = new
   return titleOk && rulesOk;
 }
 
+/** «Итог проверит ИИ» exists only for a public YES/NO market the helper found a source for. */
+export function aiCheckAvailable(draft: CreateDraft): boolean {
+  return !draft.chat && draft.mode !== 'multiple' && !!draft.aiSource;
+}
+
 /**
  * Body of POST /api/markets, or null while the draft is incomplete; `assist` and `template` only when
  * used, `announce` and `draft` only with a chat.
@@ -245,6 +257,7 @@ export function createPayload(draft: CreateDraft): CreateMarketData | null {
     ...(draft.chat ? { chat: draft.chat } : {}),
     ...(draft.chat && draft.announce ? { announce: true } : {}),
     ...(draft.chat && draft.draftCode ? { draft: draft.draftCode } : {}),
+    ...(aiCheckAvailable(draft) && draft.aiCheck ? { ai_check: true, ai_source: draft.aiSource ?? '' } : {}),
   };
   if (draft.mode === 'multiple') {
     return { ...base, options: cleanedOptions(draft) };
@@ -299,11 +312,12 @@ export type DraftEdit = Partial<
     | 'resultTime'
     | 'chat'
     | 'announce'
+    | 'aiCheck'
   >
 >;
 
 /** Changes that are not corrections of the helper's market: navigation and where it is announced. */
-const NOT_CONTENT: (keyof DraftEdit)[] = ['step', 'chat', 'announce'];
+const NOT_CONTENT: (keyof DraftEdit)[] = ['step', 'chat', 'announce', 'aiCheck'];
 
 const GROUP_OF: Partial<Record<keyof DraftEdit, FilledGroup>> = {
   closeDate: 'dates',
@@ -349,6 +363,8 @@ function snapshot(draft: CreateDraft): FieldsSnapshot {
     resultTime: draft.resultTime,
     mode: draft.mode,
     options: draft.options,
+    aiCheck: draft.aiCheck,
+    aiSource: draft.aiSource,
     marks: draft.marks,
     filledBy: draft.filledBy,
   };
@@ -371,6 +387,8 @@ export function applyAssist(draft: CreateDraft, result: AssistResult): CreateDra
     criteria: result.criteria,
     category: result.category,
     ...(fillOptions ? { mode: 'multiple' as const, options: [...suggested] } : {}),
+    aiCheck: !!result.public_source,
+    aiSource: result.public_source ?? null,
     ...(closes && resolves
       ? { closeDate: closes.date, closeTime: closes.time, resultDate: resolves.date, resultTime: resolves.time }
       : {}),
@@ -696,6 +714,11 @@ function readSnapshot(value: unknown): FieldsSnapshot | null {
     closeTime,
     resultDate,
     resultTime,
+    ...(value.mode === 'multiple' && Array.isArray(value.options)
+      ? { mode: 'multiple' as const, options: value.options.filter(isText) }
+      : {}),
+    aiCheck: value.aiCheck === true,
+    aiSource: isText(value.aiSource) ? value.aiSource : null,
     marks: readMarks(value.marks),
     filledBy: readSource(value.filledBy),
   };
@@ -739,6 +762,8 @@ export function readDraft(value: unknown): CreateDraft | null {
     line: isText(value.line) ? value.line : '',
     announce: value.announce === true,
     draftCode: isText(value.draftCode) && value.draftCode !== '' ? value.draftCode : null,
+    aiCheck: value.aiCheck === true,
+    aiSource: isText(value.aiSource) && value.aiSource !== '' ? value.aiSource : null,
     ...(value.mode === 'multiple' && Array.isArray(value.options)
       ? { mode: 'multiple' as const, options: value.options.filter(isText) }
       : {}),

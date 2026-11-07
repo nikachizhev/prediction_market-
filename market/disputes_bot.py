@@ -45,7 +45,9 @@ def show_card(chat_id, question, page=0, *, message_id=None, result=''):
         proposed_str = ', '.join(f'{s.option_label or s.title}: {LABELS.get(s.proposed_outcome, "—")}' for s in subs)
     else:
         proposed_str = LABELS.get(question.proposed_outcome, "Не указан")
-    if by_participant(question):
+    if question.proposed_by_ai:
+        who = 'ИИ по ссылке (автор рынка не указал итог)'
+    elif by_participant(question):
         proposer = question.proposed_by
         who = f'участник {proposer.pseudonym or proposer.name} (автор рынка не указал итог)'
     else:
@@ -122,8 +124,11 @@ def handle_callback(chat_id, data, *, message_id=None):
             raise MarketError('Споры изменились или уже рассмотрены. Откройте рынок заново.')
         if stage == 'ask':
             changed = decision == 'cancel' or decision != question.proposed_outcome
-            participant = by_participant(question)
-            if participant:
+            participant = by_participant(question) or question.proposed_by_ai
+            if question.proposed_by_ai:
+                effect = ('Споры признаются: залоги возвращаются, автор рынка не наказывается.' if changed else
+                          'Споры отклоняются: залоги не возвращаются, итог ИИ остаётся.')
+            elif participant:
                 effect = ('Споры признаются: залоги возвращаются, участник теряет залог за итог, автор рынка не наказывается.' if changed else
                           'Споры отклоняются: залоги не возвращаются, итог участника подтверждается, ему возвращается залог и доля комиссии.')
             else:

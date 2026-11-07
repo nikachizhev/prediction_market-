@@ -180,7 +180,8 @@ PREMODERATION_LINK_HOSTS = {"github.com", "api.github.com", "docs.python.org"}
 
 # Outcome from AI for public events (spec E4, phase 3e). Off until a model with web search is chosen.
 AI_RESOLVE_ENABLED = os.environ.get("AI_RESOLVE_ENABLED", "0") == "1"
-AI_RESOLVE_MODEL = os.environ.get("AI_RESOLVE_MODEL", "")
+AI_RESOLVE_MODEL = os.environ.get("AI_RESOLVE_MODEL", LLM_MODEL)
+AI_RESOLVE_ENGINE = os.environ.get("AI_RESOLVE_ENGINE", "exa")  # OpenRouter's web search engine
 AI_RESOLVE_API_KEY = os.environ.get("AI_RESOLVE_API_KEY", LLM_API_KEY)
 AI_RESOLVE_URL = os.environ.get("AI_RESOLVE_URL", LLM_BASE_URL)
 AI_RESOLVE_TIMEOUT = 60         # seconds per request; web search is slow

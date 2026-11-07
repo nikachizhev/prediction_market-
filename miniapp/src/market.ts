@@ -393,22 +393,29 @@ export interface ResolutionView {
   /** «Итог от автора» / «Итог предложил участник». */
   source: string;
   byParticipant: boolean;
+  byAi: boolean;
+  /** AI's proof: a link to the page it found. */
+  link: string | null;
   /** The photo only when there is one: a result without a photo is a normal result. */
   evidence: string | null;
 }
 
-export function resolutionView(resolution: Pick<Resolution, 'evidence_url' | 'by_participant'> | null | undefined): ResolutionView {
+export function resolutionView(resolution: Pick<Resolution, 'evidence_url' | 'by_participant'> & Partial<Pick<Resolution, 'by_ai' | 'note'>> | null | undefined): ResolutionView {
   const byParticipant = resolution?.by_participant === true;
+  const byAi = resolution?.by_ai === true;
   const url = resolution?.evidence_url;
+  const note = resolution?.note;
   return {
-    source: byParticipant ? 'Итог предложил участник' : 'Итог от автора',
+    source: byAi ? 'Итог предложил ИИ' : byParticipant ? 'Итог предложил участник' : 'Итог от автора',
     byParticipant,
+    byAi,
+    link: byAi && typeof note === 'string' && note.startsWith('https://') ? note : null,
     evidence: typeof url === 'string' && url !== '' ? url : null,
   };
 }
 
 /** «Автор · разрешил 5 рынков · 0 проигранных споров · 2 рынка разрешили участники». */
-export function authorLine(author: Pick<MarketDetail['author'], 'resolved' | 'disputes_lost' | 'resolved_by_participants'>): string {
+export function authorLine(author: Pick<MarketDetail['author'], 'resolved' | 'disputes_lost' | 'resolved_by_participants' | 'resolved_by_ai'>): string {
   const parts = [
     'Автор',
     `разрешил ${pluralize(author.resolved, 'рынок', 'рынка', 'рынков')}`,
@@ -417,6 +424,10 @@ export function authorLine(author: Pick<MarketDetail['author'], 'resolved' | 'di
   const byParticipants = author.resolved_by_participants;
   if (typeof byParticipants === 'number' && byParticipants > 0) {
     parts.push(`${pluralize(byParticipants, 'рынок', 'рынка', 'рынков')} разрешили участники`);
+  }
+  const byAi = author.resolved_by_ai;
+  if (typeof byAi === 'number' && byAi > 0) {
+    parts.push(`${pluralize(byAi, 'рынок', 'рынка', 'рынков')} разрешил ИИ`);
   }
   return parts.join(' · ');
 }

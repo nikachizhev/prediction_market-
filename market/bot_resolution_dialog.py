@@ -24,6 +24,7 @@ from django.utils import timezone
 from . import services, telegram
 from .bot_resolution import (app_button, is_chat_market, multi_prompt_lines, outcome_keyboard, participant_keyboard,
                              participant_prompt, participants, picks_from_code)
+from .events import log_event
 from .models import Question, ResolutionDraft, Trader
 
 log = logging.getLogger(__name__)
@@ -259,6 +260,30 @@ def _on_outcome(user_id, message, question, outcome) -> str | None:
     return _publish(user_id, trader, question, outcome)
 
 
+def _on_ai_confirm(user_id, message, question, _arg) -> str | None:
+    """`aiok:<id>` — the creator confirms AI's outcome: their own outcome, with AI's link as proof."""
+    trader = _creator_check(user_id, message, question)
+    if trader is None:
+        return None
+    _drop_buttons(message)
+    if question.ai_state != "proposed" or question.ai_outcome not in ("yes", "no"):
+        return None
+    log_event(trader, "ai_resolve", {"market": question.pk, "result": "confirmed"})
+    return _publish(user_id, trader, question, question.ai_outcome, link=question.ai_evidence_url)
+
+
+def _on_ai_other(user_id, message, question, _arg) -> str | None:
+    """`aino:<id>` — AI is wrong: the usual question, and AI's proposal no longer stands in for silence."""
+    trader = _creator_check(user_id, message, question)
+    if trader is None:
+        return None
+    _drop_buttons(message)
+    Question.objects.filter(pk=question.pk, ai_state="proposed").update(ai_state="none")
+    log_event(trader, "ai_resolve", {"market": question.pk, "result": "corrected"})
+    telegram.send(user_id, f"Чем закончилось?\n«{question.title}»", reply_markup=outcome_keyboard(question))
+    return None
+
+
 def _on_option(user_id, message, question, arg) -> str | None:
     """`resopt:<id>:<option>:<yes|no>` — a pick for one option of a market with options."""
     trader = _creator_check(user_id, message, question)
@@ -342,11 +367,11 @@ def _draft(user_id, question) -> ResolutionDraft | None:
 
 
 def _publish(user_id, trader: Trader, question: Question, outcome: str,
-             picked: dict[int, str] | None = None) -> str | None:
+             picked: dict[int, str] | None = None, *, link: str = "") -> str | None:
     """State the creator's outcome with the draft's photo, if any; the row lock makes a double tap harmless."""
     with transaction.atomic():
         draft = ResolutionDraft.objects.select_for_update().filter(trader=trader, question=question).first()
-        evidence, file_id, is_document, note = None, "", False, ""
+        evidence, file_id, is_document, note = None, "", False, link
         if draft is not None and draft.evidence:
             with draft.evidence.open("rb") as f:
                 evidence = ContentFile(f.read(), name=os.path.basename(draft.evidence.name))
@@ -396,8 +421,13 @@ def notify_participants(question: Question, *, is_document: bool = False) -> int
     title = html.escape(question.title[:200])
     subs = _subs(question)
     by_participant = services.by_participant(question)
+    by_ai = question.proposed_by_ai
     picked = {s.pk: s.proposed_outcome for s in subs if s.proposed_outcome in ("yes", "no")}
-    if question.proposed_outcome == "cancel":
+    if by_ai:
+        # Text outside the spec.
+        head = (f"Автор не указал итог рынка «{title}». Итог предложил ИИ: "
+                f"<b>{LABELS[question.proposed_outcome]}</b>.")
+    elif question.proposed_outcome == "cancel":
         head = f"Создатель рынка «{title}» отменяет его."
     elif by_participant and subs:
         # Text outside the spec.
@@ -418,7 +448,7 @@ def notify_participants(question: Question, *, is_document: bool = False) -> int
     markup = {"inline_keyboard": [[{"text": "Оспорить", "callback_data": f"disp:{question.pk}"}],
                                   [app_button("Открыть рынок", f"market/{question.pk}")]]}
     people = list(participants(question).exclude(pk=question.proposed_by_id))
-    if by_participant and question.creator and question.creator.telegram_chat_id:
+    if (by_participant or by_ai) and question.creator and question.creator.telegram_chat_id:
         people.append(question.creator)
     for trader in people:
         payload = {"parse_mode": "HTML", "reply_markup": markup}
@@ -619,6 +649,8 @@ def _on_dispute_decline(user_id, message, question, _arg) -> str | None:
 
 HANDLERS = {
     "res": _on_outcome,
+    "aiok": _on_ai_confirm,
+    "aino": _on_ai_other,
     "resopt": _on_option,
     "resnext": _on_next,
     "resphoto": _on_photo,

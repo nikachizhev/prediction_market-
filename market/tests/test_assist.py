@@ -65,7 +65,7 @@ def test_success_fills_the_contract(anya):
     with model(reply(answer())) as post:
         code, data = anya.post("assist", {"title": TITLE, "category": "study"})
     assert code == 200 and post.call_count == 1
-    assert set(data) == {"question", "why", "options", "criteria", "category", "closes_at", "resolves_at", "left"}
+    assert set(data) == {"question", "why", "options", "public_source", "criteria", "category", "closes_at", "resolves_at", "left"}
     assert data["question"] is None and data["why"] is None and data["options"] is None
     assert data["criteria"].startswith("ДА — если") and data["category"] == "study"
     closes = datetime.fromisoformat(data["closes_at"])

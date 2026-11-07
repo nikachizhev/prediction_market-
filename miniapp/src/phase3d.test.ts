@@ -72,7 +72,7 @@ describe('result in the market card', () => {
     expect(view.evidence).toBeNull();
     expect(view.source).toBe('Итог от автора');
     expect(resolutionView({ evidence_url: '', by_participant: false }).evidence).toBeNull();
-    expect(resolutionView(null)).toEqual({ source: 'Итог от автора', byParticipant: false, evidence: null });
+    expect(resolutionView(null)).toEqual({ source: 'Итог от автора', byParticipant: false, byAi: false, link: null, evidence: null });
   });
 
   it('shows the photo when there is one', () => {
@@ -83,8 +83,22 @@ describe('result in the market card', () => {
     expect(resolutionView({ evidence_url: null, by_participant: true })).toEqual({
       source: 'Итог предложил участник',
       byParticipant: true,
+      byAi: false,
+      link: null,
       evidence: null,
     });
+  });
+
+  it('marks a result proposed by AI and takes only a safe link', () => {
+    const view = resolutionView({ evidence_url: null, by_participant: false, by_ai: true, note: 'https://liga.example/1' });
+    expect(view.source).toBe('Итог предложил ИИ');
+    expect(view.link).toBe('https://liga.example/1');
+    expect(resolutionView({ evidence_url: null, by_participant: false, by_ai: true, note: 'javascript:alert(1)' }).link).toBeNull();
+    expect(resolutionView({ evidence_url: null, by_participant: false, note: 'https://x.example' }).link).toBeNull();
+  });
+
+  it('adds markets resolved by AI to the author reputation', () => {
+    expect(authorLine({ resolved: 1, disputes_lost: 0, resolved_by_ai: 2 })).toContain('2 рынка разрешил ИИ');
   });
 
   it('adds markets resolved by participants to the author reputation', () => {

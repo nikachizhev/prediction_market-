@@ -300,6 +300,11 @@ def create_market(request):
     announce = data.get("announce")
     if announce is not None and not isinstance(announce, bool):
         raise BadRequest("Укажите announce: true или false.")
+    ai_check, ai_source = data.get("ai_check"), data.get("ai_source")
+    if ai_check is not None and not isinstance(ai_check, bool):
+        raise BadRequest("Укажите ai_check: true или false.")
+    if ai_source is not None and not isinstance(ai_source, str):
+        raise BadRequest("Укажите ai_source строкой.")
     group = None
     if data.get("chat") not in (None, ""):
         group = chat_for(request.trader, data["chat"])
@@ -332,7 +337,8 @@ def create_market(request):
                 request.trader, title=str(data.get("title") or ""), criteria=str(data.get("criteria") or ""),
                 category=str(data.get("category") or ""), closes_at=closes_at, resolves_at=resolves_at,
                 request_key=data.get("request_key") or None, group=group, options=data.get("options"),
-                announce=(bool(announce) and group is not None) or draft is not None, expected_cost=expected_cost)
+                announce=(bool(announce) and group is not None) or draft is not None, expected_cost=expected_cost,
+                ai_check=bool(ai_check), ai_source=ai_source or "")
             if draft is not None and not draft.question_id:
                 draft.question = question
                 draft.save(update_fields=["question"])
