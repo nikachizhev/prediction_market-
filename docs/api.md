@@ -370,11 +370,13 @@ interface Challenge {
 | POST | `/api/challenges/{code}/cancel` | — | `{ challenge, balance }` |
 | POST | `/api/challenges/{code}/answer` | `{ answer: "yes" \| "no" \| "cancel" }` | `{ challenge, balance }` |
 | POST | `/api/challenges/{code}/complaint` | `{ reason? }` | `{ ok: true }` |
+| POST | `/api/challenges/{code}/share` | — | `{ prepared_message_id }` для `WebApp.shareMessage`; только автор и только пока вызов открыт, иначе 400; Telegram недоступен — 503 |
 
 Ошибки правил — 400 с текстом, как у сделок. Чужой вызов — 404, как чужой приватный рынок.
 
 ### Бот (для бэкенда)
 
+- Инлайн-режим (`market/share.py`): над результатами кнопка `Создать вызов` — `web_app` на `/app/challenge/new?text=<текст>&inline=1`. Запрос `ch_<код>` отдаёт автору карточку его открытого вызова.
 - Callback-данные: `chal:…` — `market/bot_challenges.py`; `aiok:<id>` и `aino:<id>` — ответ создателя на предложение ИИ (`market/bot_resolution_dialog.py`).
 - Проводки вызова — `LedgerEntry.CHALLENGE_KINDS`, поле `LedgerEntry.challenge`. Они не входят в рейтинг и статистику.
 - Рынок чата: `publication_state="approved"` сразу, состояние проверки — `Question.background_check`.

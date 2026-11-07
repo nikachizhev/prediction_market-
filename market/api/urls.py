@@ -31,6 +31,7 @@ urlpatterns = [
     path("challenges/<str:code>/cancel", challenge_views.cancel, name="challenge_cancel"),
     path("challenges/<str:code>/answer", challenge_views.answer, name="challenge_answer"),
     path("challenges/<str:code>/complaint", challenge_views.complaint, name="challenge_complaint"),
+    path("challenges/<str:code>/share", challenge_views.share, name="challenge_share"),
     path("chats", chat_views.chat_list, name="chats"),
     path("chats/<str:code>", chat_views.chat, name="chat"),
     path("chats/<str:code>/markets", chat_views.chat_markets, name="chat_markets"),

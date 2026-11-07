@@ -1,4 +1,4 @@
-"""Sharing a market card into any chat (spec E6.4).
+"""Sharing a market or challenge card into any chat (spec E6.4, E11).
 
 Two ways, both built on the same inline result:
 - the Mini App asks `POST /api/markets/{id}/share` for a prepared message (Bot API `savePreparedInlineMessage`)
@@ -10,19 +10,23 @@ referral link that opens the market in the Mini App.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.utils import timezone
 
 from . import charts, telegram
 from .access import visible_questions
-from .models import Group, Question, Trader
+from .models import Challenge, Group, Question, Trader
 
 log = logging.getLogger(__name__)
 
 INLINE_LIMIT = 10
 INLINE_CACHE_SECONDS = 30
+CHALLENGE_QUERY = re.compile(r"^ch_([A-Za-z0-9_-]{1,24})$")
+CHALLENGE_TEXT_MAX = 120   # the question's limit: `services.CHALLENGE_TITLE_MAX`
 
 
 def market_link(trader: Trader | None, question: Question) -> str:
@@ -95,6 +99,53 @@ def prepare(trader: Trader, question: Question) -> str:
     return str(prepared["id"])
 
 
+def challenge_link(challenge: Challenge) -> str:
+    return f"https://t.me/{settings.TELEGRAM_BOT_USERNAME}/{settings.TELEGRAM_APP_NAME}?startapp=ch_{challenge.code}"
+
+
+def challenge_result(challenge: Challenge) -> dict:
+    """The friend's card. The button is a plain URL: web_app buttons work only in the chat with the bot."""
+    from .services import challenge_prize
+    from .bot_notifications import coins
+    terms = f"Ставка каждого {coins(challenge.stake)} · победитель получит {coins(challenge_prize(challenge.stake))}"
+    text = f"Вызывает: {challenge.author.display_name}\n{challenge.title}\n{terms}"
+    return {"type": "article", "id": f"ch{challenge.pk}", "title": f"Вызов: {challenge.title}"[:100], "description": terms,
+            "input_message_content": {"message_text": text},
+            "reply_markup": {"inline_keyboard": [[{"text": "Принять вызов", "url": challenge_link(challenge)}]]}}
+
+
+def prepare_challenge(trader: Trader, challenge: Challenge) -> str:
+    """Prepared inline message for WebApp.shareMessage: a friend or a group; raises TelegramError."""
+    if not trader.telegram_chat_id:
+        raise telegram.TelegramError("Нет Telegram-аккаунта.")
+    prepared = telegram.api(
+        "savePreparedInlineMessage", user_id=trader.telegram_chat_id, result=challenge_result(challenge),
+        allow_user_chats=True, allow_bot_chats=False, allow_group_chats=True, allow_channel_chats=False,
+    )
+    return str(prepared["id"])
+
+
+def own_open_challenges(trader: Trader, query: str) -> list[Challenge]:
+    """`ch_<code>` or an empty query: only the author's cards, and only while they can be accepted."""
+    found = (Challenge.objects.filter(author=trader, status=Challenge.Status.OPEN, expires_at__gt=timezone.now())
+             .exclude(check_state="rejected").select_related("author").order_by("-created_at", "-id"))
+    match = CHALLENGE_QUERY.match(query)
+    if match:
+        return list(found.filter(code=match.group(1))[:1])
+    return list(found[:INLINE_LIMIT]) if not query else []
+
+
+def create_challenge_button(query: str) -> dict | None:
+    """«Создать вызов» above the results: the form with what the person wrote after @bot, nothing is charged yet."""
+    if not settings.SITE_URL.startswith("https://"):
+        return None  # Telegram accepts only https for a Mini App
+    params = {"inline": "1"}
+    text = "" if CHALLENGE_QUERY.match(query) else query
+    if text:
+        params["text"] = text[:CHALLENGE_TEXT_MAX]
+    return {"text": "Создать вызов", "web_app": {"url": f"{settings.SITE_URL}/app/challenge/new?{urlencode(params)}"}}
+
+
 def search(trader: Trader, query: str) -> list[Question]:
     """Closed chats' markets stay inside their chat (spec E8.3): inline mode never offers them."""
     from .bot_markets import tracked_markets
@@ -115,11 +166,18 @@ def search(trader: Trader, query: str) -> list[Question]:
 def handle_inline_query(inline_query: dict) -> None:
     user_id = (inline_query.get("from") or {}).get("id")
     trader = Trader.objects.filter(telegram_chat_id=user_id).first() if user_id else None
+    query = (inline_query.get("query") or "").strip()
     results = []
     if trader is not None:
-        results = [inline_result(trader, q) for q in search(trader, inline_query.get("query") or "")]
+        results = [challenge_result(c) for c in own_open_challenges(trader, query)]
+        if not CHALLENGE_QUERY.match(query):
+            results += [inline_result(trader, q) for q in search(trader, query)]
+    extra = {}
+    button = create_challenge_button(query)
+    if button:
+        extra["button"] = button
     try:
         telegram.api("answerInlineQuery", inline_query_id=inline_query.get("id"), results=results,
-                     is_personal=True, cache_time=INLINE_CACHE_SECONDS)
+                     is_personal=True, cache_time=INLINE_CACHE_SECONDS, **extra)
     except telegram.TelegramError:
         log.warning("answerInlineQuery failed")

@@ -1,7 +1,7 @@
 // 1-on-1 challenge (spec E11): creating, the link, accepting, «Чем закончилось?», a dispute, the end.
 // Texts — docs/mockups/challenge. Money and rules are on the server: the screens only show its answer.
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ApiError,
   api,
@@ -19,12 +19,14 @@ import {
   challengeShareUrl,
   closedText,
   draftProblem,
+  formParams,
   hoursLeft,
   hoursText,
   otherSide,
   prizeOf,
   rowState,
   rowSubtitle,
+  shareWays,
   stakeOptions,
   type ChallengeDraft,
 } from '../challenge';
@@ -118,7 +120,8 @@ export function NewChallengeScreen() {
   const { me, setBalance, patchMe } = useSession();
   const [limits, setLimits] = useState<ChallengeLimits | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [draft, setDraft] = useState<ChallengeDraft>(() => defaultDraft());
+  const opened = formParams(useLocation().search);
+  const [draft, setDraft] = useState<ChallengeDraft>(() => ({ ...defaultDraft(), title: opened.title }));
   const [helping, setHelping] = useState(false);
   const [filledByHelper, setFilledByHelper] = useState(false);
   const [sending, setSending] = useState(false);
@@ -195,7 +198,7 @@ export function NewChallengeScreen() {
       );
       setBalance(res.balance);
       tg.HapticFeedback.notification('success');
-      navigate(`/challenge/${res.challenge.code}`, { replace: true });
+      navigate(`/challenge/${res.challenge.code}${opened.inline ? '?inline=1' : ''}`, { replace: true });
     } catch (err) {
       setProblem(message(err));
       tg.HapticFeedback.notification('error');
@@ -331,6 +334,7 @@ export function NewChallengeScreen() {
 
 export function ChallengeScreen() {
   const { code = '' } = useParams();
+  const fromInline = formParams(useLocation().search).inline;
   const navigate = useNavigate();
   const toast = useToast();
   const { me, setBalance } = useSession();
@@ -415,6 +419,20 @@ export function ChallengeScreen() {
       if (tg.canRequestWriteAccess && !tg.botCanWrite) await tg.requestWriteAccess();
       return api.acceptChallenge(c.code);
     });
+  const send = async () => {
+    tg.HapticFeedback.impact('light');
+    const ways = shareWays({ inline: tg.canSwitchInline, fromInline, prepared: tg.canShareMessage });
+    for (const way of ways) {
+      try {
+        if (way === 'inline') tg.switchInlineQuery(`ch_${c.code}`);
+        else if (way === 'prepared') await tg.shareMessage((await api.shareChallenge(c.code)).prepared_message_id);
+        else tg.openTelegramLink(challengeShareUrl(c));
+        return;
+      } catch {
+        // The next way: the plain link always works.
+      }
+    }
+  };
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(c.link ?? '');
@@ -498,8 +516,8 @@ export function ChallengeScreen() {
               </span>
             </div>
           </section>
-          <button type="button" className="button-primary" onClick={() => tg.openTelegramLink(challengeShareUrl(c))}>
-            Отправить другу
+          <button type="button" className="button-primary" onClick={send}>
+            {fromInline ? 'Отправить в этот чат' : 'Отправить другу'}
           </button>
           <button type="button" className="button-secondary" onClick={copyLink}>
             Скопировать ссылку
