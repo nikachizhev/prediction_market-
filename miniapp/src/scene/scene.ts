@@ -1,6 +1,6 @@
 // «Зал оракула» (docs/mockups/oracle/scene.js): a living low-res scene. Canvas 2D only, no libraries.
 // Drawn at half the screen's size, scaled up pixelated and dithered, so it reads as one painted world.
-import { dotColor, drawBudgetExceeded, FRAME_MS, mix, type Rgb } from './quality';
+import { dotColor, drawBudgetExceeded, FAST_FRAME_MS, FRAME_MS, mix, sliceIndexAt, spinCurve, type Rgb } from './quality';
 
 const STEP = 20;
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
@@ -47,6 +47,10 @@ export interface WheelProp {
   angle: number;
   /** Clockwise from the pointer; the server's table. */
   slices?: WheelSlice[];
+  /** The pointer's flick when a slice edge passes it, 0..1. */
+  kick?: number;
+  /** How hot the wheel glows while it spins, 0..1. */
+  heat?: number;
 }
 
 export interface PodiumPlace {
@@ -86,6 +90,8 @@ export interface SceneOptions {
   still?: boolean;
   /** Called once when the device turned out too slow to animate. */
   onTooSlow?: () => void;
+  /** A slice edge passed the pointer while the wheel spins: a light haptic tick. */
+  onTick?: () => void;
 }
 
 export interface SceneHandle {
@@ -93,6 +99,8 @@ export interface SceneHandle {
   /** Change a prop in place, for example the orb's probability. */
   update(type: SceneProp['type'], patch: Partial<SceneProp>): void;
   spinWheel(degrees: number, ms: number, done?: () => void): void;
+  /** A burst of coins out of the wheel; `level` from 0 (the commonest prize) up. */
+  celebrate(level: number): void;
 }
 
 const rgb = (c: Rgb, a?: number): string =>
@@ -364,7 +372,8 @@ function drawWheel(g: Ctx, s: WheelProp, t: number): void {
   g.closePath();
   g.fill();
   plinth(g, x, y + r + 40, 40);
-  glow(g, x, y, r * 1.9, EMBER, 0.34 + Math.sin(t) * 0.04);
+  const heat = s.heat ?? 0;
+  glow(g, x, y, r * (1.9 + heat * 0.5), EMBER, 0.34 + Math.sin(t) * 0.04 + heat * 0.3);
   g.save();
   g.translate(x, y);
   g.rotate((s.angle * Math.PI) / 180);
@@ -420,14 +429,19 @@ function drawWheel(g: Ctx, s: WheelProp, t: number): void {
   g.arc(x, y, 5, 0, Math.PI * 2);
   g.fill();
   glow(g, x, y, 13, EMBER, 0.7);
+  // The pointer flicks back as each slice edge knocks it.
+  g.save();
+  g.translate(x, y - r - 9);
+  g.rotate((-(s.kick ?? 0) * 18 * Math.PI) / 180);
   g.fillStyle = '#ffe2a0';
   g.beginPath();
-  g.moveTo(x, y - r + 9);
-  g.lineTo(x - 7, y - r - 9);
-  g.lineTo(x + 7, y - r - 9);
+  g.moveTo(0, 18);
+  g.lineTo(-7, 0);
+  g.lineTo(7, 0);
   g.closePath();
   g.fill();
-  glow(g, x, y - r - 4, 16, AMBER, 0.55);
+  g.restore();
+  glow(g, x, y - r - 4, 16 + heat * 8, AMBER, 0.55 + heat * 0.3);
 }
 
 function drawPodium(g: Ctx, s: PodiumProp, t: number): void {
@@ -554,7 +568,7 @@ export function mountScene(canvas: HTMLCanvasElement, o: SceneOptions): SceneHan
   canvas.width = w;
   canvas.height = h;
   const g = canvas.getContext('2d', { willReadFrequently: true });
-  if (!g) return { stop() {}, update() {}, spinWheel(_d, _m, done) { done?.(); } };
+  if (!g) return { stop() {}, update() {}, spinWheel(_d, _m, done) { done?.(); }, celebrate() {} };
   const cones = o.cones ?? [{ x: w / 2, color: AMBER, a: 0.55, w: w * 0.47, len: 0.72 }];
   const back = o.transparent ? null : hall(w, h, cones);
   const shade = o.transparent ? null : vignette(w, h);
@@ -579,7 +593,15 @@ export function mountScene(canvas: HTMLCanvasElement, o: SceneOptions): SceneHan
   let visible = true;
   let stopped = false;
   let slowFrames = 0;
-  let spin: { prop: WheelProp; to: number; ms: number; from: number; done?: () => void } | null = null;
+  let spin: { prop: WheelProp; to: number; ms: number; from: number; slice: number; done?: () => void } | null = null;
+  // Sparks off the rim and coins of a win: plain physics in scene pixels per second.
+  type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; coin: boolean };
+  let particles: Particle[] = [];
+  let flash = 0;
+  let lastDraw = start;
+  const wheelOf = () => props.find((p): p is WheelProp => p.type === 'wheel');
+  const sharesOf = (p: WheelProp) => (p.slices ?? [{ share: 0.6 }, { share: 0.25 }, { share: 0.1 }, { share: 0.04 }, { share: 0.01 }]).map((s) => s.share);
+  const busy = () => spin !== null || particles.length > 0 || flash > 0.01 || (wheelOf()?.kick ?? 0) > 0.01;
 
   const draw = (now: number) => {
     const t = (now - start) / 1000;
@@ -592,9 +614,33 @@ export function mountScene(canvas: HTMLCanvasElement, o: SceneOptions): SceneHan
       [-512, 0, 512].forEach((dx) => g.drawImage(fogB, dx + bx * 2, fogY - 70, 512, 130));
       g.globalAlpha = 1;
     }
+    const dt = Math.min(0.1, Math.max(0, (now - lastDraw) / 1000));
+    lastDraw = now;
+    const wheel = wheelOf();
+    if (wheel) {
+      wheel.kick = (wheel.kick ?? 0) * Math.pow(0.02, dt);
+      wheel.heat = (wheel.heat ?? 0) * Math.pow(0.15, dt);
+    }
     if (spin) {
       const k = Math.min(1, (now - spin.from) / spin.ms);
-      spin.prop.angle = spin.to * (1 - Math.pow(1 - k, 4));
+      const before = spin.prop.angle;
+      spin.prop.angle = spinCurve(k, spin.to);
+      const speed = dt > 0 ? Math.abs(spin.prop.angle - before) / dt : 0;
+      spin.prop.heat = Math.max(spin.prop.heat ?? 0, Math.min(1, speed / 1400));
+      const slice = sliceIndexAt(sharesOf(spin.prop), spin.prop.angle);
+      if (slice !== spin.slice) {
+        spin.slice = slice;
+        spin.prop.kick = 1;
+        o.onTick?.();
+      }
+      // Sparks fly off the rim, more the faster it turns.
+      const rim = spin.prop;
+      for (let i = 0; i < Math.round((rim.heat ?? 0) * 3); i += 1) {
+        const a = Math.random() * Math.PI * 2;
+        const out = 40 + Math.random() * 60;
+        particles.push({ x: rim.x + Math.cos(a) * rim.r, y: rim.y + Math.sin(a) * rim.r, vx: -Math.sin(a) * out,
+          vy: Math.cos(a) * out - 20, life: 0, max: 0.35 + Math.random() * 0.3, size: 1, coin: false });
+      }
       if (k >= 1) {
         const done = spin.done;
         spin = null;
@@ -602,6 +648,28 @@ export function mountScene(canvas: HTMLCanvasElement, o: SceneOptions): SceneHan
       }
     }
     props.forEach((p) => drawProp(g, p, t, w));
+    if (flash > 0.01 && wheel) {
+      glow(g, wheel.x, wheel.y, wheel.r * 2.6, AMBER, flash * 0.8);
+      flash *= Math.pow(0.12, dt);
+    }
+    particles = particles.filter((p) => (p.life += dt) < p.max);
+    particles.forEach((p) => {
+      p.vy += (p.coin ? 260 : 120) * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      const fade = 1 - p.life / p.max;
+      if (p.coin) {
+        // A spinning coin: its width breathes, the rim catches the light.
+        const spinW = Math.max(1, Math.round(Math.abs(Math.cos(p.life * 14 + p.x)) * p.size * 2));
+        g.fillStyle = `rgba(255, 196, 64, ${fade})`;
+        g.fillRect(p.x - spinW / 2, p.y - p.size, spinW, p.size * 2);
+        g.fillStyle = `rgba(255, 248, 210, ${fade})`;
+        g.fillRect(p.x - spinW / 2, p.y - p.size, Math.max(1, spinW / 3), 1);
+      } else {
+        g.fillStyle = `rgba(255, ${140 + Math.round(fade * 100)}, 60, ${fade})`;
+        g.fillRect(p.x, p.y, p.size, p.size);
+      }
+    });
     if (fogA && fogB) {
       g.globalAlpha = 0.62;
       [-512, 0, 512].forEach((dx) => g.drawImage(fogA, dx + ax * 2, fogY + 10, 512, 160));
@@ -626,13 +694,13 @@ export function mountScene(canvas: HTMLCanvasElement, o: SceneOptions): SceneHan
   const loop = (now: number) => {
     if (stopped) return;
     frame = requestAnimationFrame(loop);
-    if (!visible || document.hidden || now - last < FRAME_MS) return;
+    if (!visible || document.hidden || now - last < (busy() ? FAST_FRAME_MS : FRAME_MS)) return;
     last = now;
     const before = performance.now();
     draw(now);
     slowFrames = performance.now() - before > FRAME_MS ? slowFrames + 1 : Math.max(0, slowFrames - 1);
     // A spinning wheel must finish; otherwise a device that can't keep up gets a still picture.
-    if (drawBudgetExceeded(slowFrames) && !spin) {
+    if (drawBudgetExceeded(slowFrames) && !busy()) {
       stopped = true;
       cancelAnimationFrame(frame);
       o.onTooSlow?.();
@@ -668,7 +736,19 @@ export function mountScene(canvas: HTMLCanvasElement, o: SceneOptions): SceneHan
         done?.();
         return;
       }
-      spin = { prop, to: degrees, ms, from: performance.now(), done };
+      spin = { prop, to: degrees, ms, from: performance.now(), done, slice: sliceIndexAt(sharesOf(prop), prop.angle) };
+    },
+    celebrate(level) {
+      const wheel = wheelOf();
+      if (!wheel || o.still || stopped) return;
+      flash = 0.6 + level * 0.15;
+      const count = 14 + level * 16;
+      for (let i = 0; i < count; i += 1) {
+        const a = -Math.PI / 2 + (Math.random() - 0.5) * (1.2 + level * 0.35);
+        const power = 90 + Math.random() * (110 + level * 40);
+        particles.push({ x: wheel.x + (Math.random() - 0.5) * 10, y: wheel.y, vx: Math.cos(a) * power,
+          vy: Math.sin(a) * power, life: 0, max: 1.1 + Math.random() * 0.9, size: 2 + (Math.random() < 0.3 ? 1 : 0), coin: true });
+      }
     },
   };
 }

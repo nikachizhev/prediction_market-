@@ -79,11 +79,69 @@
 }
 
 .wheel-prize {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-size: 56px;
   line-height: 1;
   font-weight: 700;
   color: var(--yes);
   font-variant-numeric: tabular-nums;
+}
+
+.wheel-phrase {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+/* The win jumps in, then glows. */
+.wheel-result.is-fresh .wheel-phrase {
+  animation: wheel-rise 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+.wheel-result.is-fresh .wheel-prize {
+  animation: wheel-pop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1) 0.1s both, wheel-glow 1.6s ease-in-out 0.8s 3;
+}
+
+@keyframes wheel-pop {
+  from {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes wheel-rise {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes wheel-glow {
+  50% {
+    text-shadow: 0 0 22px rgba(255, 199, 102, 0.9), 0 0 6px rgba(255, 199, 102, 0.9);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wheel-result.is-fresh .wheel-phrase,
+  .wheel-result.is-fresh .wheel-prize {
+    animation: none;
+  }
+}
+
+.wheel-odds-title {
+  font-weight: 600;
 }
 
 .wheel-wait {
