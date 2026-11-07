@@ -1373,7 +1373,8 @@ h1 {
 :root {
   --accent: #ff4a32;
   --accent-ink: #12060a;
-  --font: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  /* Text and figures: a plain sans reads best over a living scene (feedback 08.11.2026). */
+  --font: Inter, system-ui, -apple-system, sans-serif;
   --font-display: 'Cormorant Garamond', Georgia, serif;
   --radius-card: 4px;
   --radius-control: 4px;
@@ -1381,7 +1382,6 @@ h1 {
 
 body {
   background: var(--bg);
-  font-size: 14px;
 }
 
 .backdrop {
@@ -1428,11 +1428,11 @@ body {
 .create-ask-title,
 .created-title,
 .first-market-title,
-.profile-name,
-.market-title {
+.profile-name {
   font-family: var(--font-display);
   font-weight: 700;
   letter-spacing: 0;
+  font-variant-numeric: lining-nums;
 }
 
 .screen-title,
@@ -1453,7 +1453,8 @@ body {
 .first-market-title,
 .created-title,
 .profile-name {
-  font-size: 24px;
+  font-size: 26px;
+  line-height: 1.15;
 }
 
 .mk-pct,
@@ -1468,9 +1469,8 @@ body {
 .ch-side-value,
 .profile-balance-value,
 .profile-stat-value {
-  font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: 0;
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
 .button-primary {
