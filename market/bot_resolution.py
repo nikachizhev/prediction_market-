@@ -309,6 +309,20 @@ def _proposer_result(root: Question, markup: dict) -> None:
             payload={"reply_markup": markup})
 
 
+def chat_market_rejected(question_id: int) -> None:
+    """The background check refused an open chat market (spec E3): it is cancelled, the money is back."""
+    from .bot_notifications import enqueue
+    question = Question.objects.select_related("creator").get(pk=question_id)
+    title = question.title
+    # Texts outside the spec.
+    if question.creator is not None:
+        enqueue(question.creator, "resolve", f"chat-rejected:{question.pk}", "Рынок отменён:",
+                f"«{title}» нарушает правила и снят после проверки. Цена создания вернулась.", question=question)
+    for trader in participants(question):
+        enqueue(trader, "results", f"chat-rejected:{question.pk}:{trader.pk}", "Рынок отменён:",
+                f"«{title}» снят после проверки. Твои монеты вернулись.", question=question)
+
+
 def send_results(question: Question) -> None:
     """Result and payout for every participant through the notification outbox; confetti for winners.
 

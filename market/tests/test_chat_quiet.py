@@ -148,15 +148,11 @@ def test_ticked_market_is_announced_once_with_the_usual_text(bot):
 
 @pytest.mark.django_db
 @override_settings(PREMODERATION_ENABLED=True)
-def test_ticked_market_waits_for_premoderation(bot):
+def test_ticked_market_is_announced_without_waiting_for_premoderation(bot):
     group = chat()
     market = chat_market(group, make("Автор"), announce=True)
-    assert market.publication_state == "pending"
-    assert bot_chats.tick(msk(12))["queued"] == 0 and not ChatPost.objects.exists()
-    # Approved three days later: an asked announcement still goes out.
-    Question.objects.filter(pk=market.pk).update(publication_state="approved",
-                                                 created_at=timezone.now() - timedelta(days=3))
-    assert bot_chats.tick(msk(12, 5))["queued"] == 1
+    assert market.publication_state == "approved" and market.background_check == "pending"
+    assert bot_chats.tick(msk(12))["queued"] == 1
     assert ChatPost.objects.get().key == f"new:{market.pk}"
 
 
@@ -404,14 +400,14 @@ def test_api_announce_must_be_boolean(anya_api, value):
 
 @pytest.mark.django_db
 @override_settings(PREMODERATION_ENABLED=True)
-def test_api_announce_kept_through_premoderation(anya_api):
+def test_api_returns_a_ready_chat_market_under_premoderation(anya_api):
     group = chat()
     join(group, trader(ANYA))
     with chat_api_telegram():
         code, data = anya_api.post("markets", create_payload(chat=group.code, announce=True))
-    assert code == 200 and data["market"] is None and data["publication"] == "pending"
-    market = Question.objects.get(pk=data["draft_id"])
-    assert market.announce is True and market.announced_at is None
+    assert code == 200 and data["market"] is not None
+    market = Question.objects.get(pk=data["market"]["id"])
+    assert market.announce is True and market.background_check == "pending"
 
 
 @pytest.mark.django_db

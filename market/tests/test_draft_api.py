@@ -230,9 +230,9 @@ def test_create_from_draft_under_premoderation(anya):
     draft = make_draft(group, ANYA)
     with override_settings(PREMODERATION_ENABLED=True), telegram(count=28):
         code, data = anya.post("markets", from_draft(draft))
-    assert code == 200 and data["market"] is None and data["publication"] == "pending"
+    assert code == 200 and data["market"] is not None
     draft.refresh_from_db()
-    assert draft.question_id == data["draft_id"]
+    assert draft.question_id == data["market"]["id"]
 
 
 @pytest.mark.parametrize("value", ["oneline", "oneline_edited", "accepted"])

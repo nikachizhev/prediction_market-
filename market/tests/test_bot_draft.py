@@ -414,14 +414,14 @@ def test_create_with_options(bot, anya):
     assert sorted(root.submarkets.values_list("option_label", flat=True)) == ["ПИ-21", "ПИ-22", "ПИ-23"]
 
 
-def test_create_waits_for_premoderation(bot, anya):
+def test_create_does_not_wait_for_premoderation(bot, anya):
     draft = made_draft(bot, anya)
     with override_settings(PREMODERATION_ENABLED=True):
         press(ANYA, draft)
     question = Question.objects.get()
-    assert question.publication_state == "pending"
+    assert question.publication_state == "approved" and question.background_check == "pending"
     (edit,) = bot.sent("editMessageText")
-    assert edit["text"].startswith("Рынок создан, проверяем…") and edit["reply_markup"] == {"inline_keyboard": []}
+    assert not edit["text"].startswith("Рынок создан, проверяем…")
 
 
 def test_not_enough_coins_is_an_alert_to_the_caller(bot, anya):

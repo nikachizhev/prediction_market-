@@ -121,7 +121,8 @@ def renew_panel(chat_id: int):
 def show_home(chat_id, *, message_id=None):
     count = Question.objects.filter(complaints__status='pending').distinct().count()
     disputes = Question.objects.filter(resolution_state=Question.Resolution.DISPUTED).count()
-    publications = Question.objects.filter(parent__isnull=True, publication_state__in=('review', 'error')).count()
+    from .premoderation import waiting_for_moderator
+    publications = Question.objects.filter(waiting_for_moderator(), parent__isnull=True).count()
     render(chat_id, f'🛡 МОДЕРАЦИЯ\n\nПроверка публикации: {publications} рынков.\nЖалобы: {count} рынков.\nСпоры об исходе: {disputes} рынков.\n\nВыберите раздел кнопкой ниже.', navigation(), message_id=message_id)
 
 

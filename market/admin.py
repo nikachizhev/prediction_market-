@@ -64,8 +64,8 @@ class TraderAdmin(admin.ModelAdmin):
 
 @admin.register(Question)
 class QuestionAdmin(admin.ModelAdmin):
-    list_display = ("title", "publication_state", "kind", "source_type", "status", "outcome", "deadline", "result_link")
-    list_filter = ("publication_state", "resolution_state", "kind", "status", "category", "source_type")
+    list_display = ("title", "publication_state", "background_check", "kind", "source_type", "status", "outcome", "deadline", "result_link")
+    list_filter = ("publication_state", "background_check", "resolution_state", "kind", "status", "category", "source_type")
     search_fields = ("title", "resolution_criteria")
     readonly_fields = ("status", "outcome", "answer", "q_yes", "q_no", "pool_yes", "pool_no", "created_at", "resolved_at", "hidden_at", "moderation_hidden", "refund_compensation",
                        # Phase 3d: who stated the outcome and the bond are money state — only services change them.
