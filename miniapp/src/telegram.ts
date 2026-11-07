@@ -79,8 +79,6 @@ interface TgWebApp {
   requestWriteAccess?(cb?: (allowed: boolean) => void): void;
   /** Bot API 8.0+: shares a message prepared by the bot (savePreparedInlineMessage). */
   shareMessage?(msgId: string, cb?: (sent: boolean) => void): void;
-  /** Bot API 6.7+: back to the chat's inline mode with this query in the input field. */
-  switchInlineQuery?(query: string, chooseChatTypes?: string[]): void;
   onEvent(event: TelegramEvent, cb: () => void): void;
   offEvent(event: TelegramEvent, cb: () => void): void;
 }
@@ -264,19 +262,6 @@ export const tg = {
         reject(err);
       }
     });
-  },
-
-  /** True when the client can return to inline mode (6.7+). */
-  get canSwitchInline(): boolean {
-    const app = webApp();
-    return !!app && typeof app.switchInlineQuery === 'function' && app.isVersionAtLeast('6.7');
-  },
-
-  /** Inserts `@bot <query>` into the chat the Mini App was opened from. Throws when the client refuses. */
-  switchInlineQuery(query: string): void {
-    const app = webApp();
-    if (!app || typeof app.switchInlineQuery !== 'function') throw new Error('switchInlineQuery is unavailable');
-    app.switchInlineQuery(query);
   },
 
   /** Subscribes to a WebApp event; returns an unsubscribe function. */

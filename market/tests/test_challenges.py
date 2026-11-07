@@ -1,4 +1,5 @@
 """1-on-1 challenges (spec E11): money, limits, access, the bot. Telegram is always mocked."""
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from decimal import Decimal as D
@@ -719,25 +720,56 @@ def inline(bot, query, user=CREATOR):
     return bot.sent("answerInlineQuery")[-1]
 
 
-def test_inline_offers_to_create_a_challenge_with_the_written_text_and_charges_nothing(bot, people):
-    answer = inline(bot, "Петя опоздает на первую пару")
-    button = answer["button"]
-    assert button["text"] == "Создать вызов"
-    url = urlsplit(button["web_app"]["url"])
+def opened_form(bot, user, start_parameter):
+    """The person presses the button above inline results: /start in the chat with the bot."""
+    handle_update(text(user, f"/start {start_parameter}"))
+    message = bot.sent("sendMessage", user)[-1]
+    (button,) = message["reply_markup"]["inline_keyboard"][0]
+    return message, urlsplit(button["web_app"]["url"])
+
+
+def test_inline_button_leads_to_the_bot_chat_and_never_opens_a_mini_app_without_a_signature(bot, people):
+    # Telegram gives a Mini App opened from inline mode an empty initData (checked on prod 07.11.2026).
+    button = inline(bot, "Петя опоздает на первую пару")["button"]
+    assert button["text"] == "Создать вызов" and "web_app" not in button
+    assert re.fullmatch(r"[A-Za-z0-9_-]{1,64}", button["start_parameter"])  # Telegram's rule
+
+
+def test_form_gets_the_written_text_through_the_bot_and_charges_nothing(bot, people):
+    start = inline(bot, "Петя опоздает на первую пару")["button"]["start_parameter"]
+    message, url = opened_form(bot, CREATOR, start)
+    assert "Петя опоздает на первую пару" in message["text"]
     assert url.scheme == "https" and url.path == "/app/challenge/new"
-    assert parse_qs(url.query) == {"inline": ["1"], "text": ["Петя опоздает на первую пару"]}
+    assert parse_qs(url.query) == {"text": ["Петя опоздает на первую пару"]}
     assert not Challenge.objects.exists() and balance(people[0]) == START
+
+
+def test_each_query_keeps_its_own_text_when_telegram_answers_from_its_cache(bot, people):
+    first = inline(bot, "Первый вопрос про матанализ")["button"]["start_parameter"]
+    inline(bot, "Второй вопрос про историю")
+    assert parse_qs(opened_form(bot, CREATOR, first)[1].query)["text"] == ["Первый вопрос про матанализ"]
+
+
+def test_someone_elses_button_does_not_show_the_text(bot, people):
+    start = inline(bot, "Секретный вопрос про Петю")["button"]["start_parameter"]
+    message, url = opened_form(bot, ANYA, start)
+    assert "Секретный" not in message["text"] and url.query == ""
+
+
+def test_lost_text_still_opens_an_empty_form(bot, people):
+    message, url = opened_form(bot, CREATOR, "newch_0123456789abcdef")
+    assert url.path == "/app/challenge/new" and url.query == "" and "Вызов другу" in message["text"]
+
+
+def test_empty_query_opens_an_empty_form(bot, people):
+    assert inline(bot, "")["button"]["start_parameter"] == "newch"
+    assert opened_form(bot, CREATOR, "newch")[1].query == ""
 
 
 def test_inline_button_works_for_someone_new_and_cuts_a_long_text(bot, db):
     answer = inline(bot, "я" * 200, user=555)
     assert answer["results"] == []
-    assert parse_qs(urlsplit(answer["button"]["web_app"]["url"]).query)["text"] == ["я" * 120]
-
-
-def test_inline_has_no_button_without_https(bot, people):
-    with override_settings(SITE_URL="http://localhost:8000"):
-        assert "button" not in inline(bot, "Петя")
+    assert parse_qs(opened_form(bot, 555, answer["button"]["start_parameter"])[1].query)["text"] == ["я" * 120]
 
 
 def test_inline_gives_the_author_a_card_of_their_open_challenge(bot, people):
@@ -749,7 +781,7 @@ def test_inline_gives_the_author_a_card_of_their_open_challenge(bot, people):
     (button,) = card["reply_markup"]["inline_keyboard"][0]
     assert button["text"] == "Принять вызов" and button["url"].endswith(f"startapp=ch_{challenge.code}")
     assert "web_app" not in button  # those work only in the chat with the bot
-    assert "text" not in parse_qs(urlsplit(answer["button"]["web_app"]["url"]).query)
+    assert answer["button"]["start_parameter"] == "newch"
 
 
 def test_empty_inline_lists_own_open_challenges(bot, people):

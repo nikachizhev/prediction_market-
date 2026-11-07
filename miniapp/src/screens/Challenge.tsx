@@ -19,7 +19,7 @@ import {
   challengeShareUrl,
   closedText,
   draftProblem,
-  formParams,
+  formTitle,
   hoursLeft,
   hoursText,
   otherSide,
@@ -120,8 +120,8 @@ export function NewChallengeScreen() {
   const { me, setBalance, patchMe } = useSession();
   const [limits, setLimits] = useState<ChallengeLimits | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const opened = formParams(useLocation().search);
-  const [draft, setDraft] = useState<ChallengeDraft>(() => ({ ...defaultDraft(), title: opened.title }));
+  const opened = formTitle(useLocation().search);
+  const [draft, setDraft] = useState<ChallengeDraft>(() => ({ ...defaultDraft(), title: opened }));
   const [helping, setHelping] = useState(false);
   const [filledByHelper, setFilledByHelper] = useState(false);
   const [sending, setSending] = useState(false);
@@ -198,7 +198,7 @@ export function NewChallengeScreen() {
       );
       setBalance(res.balance);
       tg.HapticFeedback.notification('success');
-      navigate(`/challenge/${res.challenge.code}${opened.inline ? '?inline=1' : ''}`, { replace: true });
+      navigate(`/challenge/${res.challenge.code}`, { replace: true });
     } catch (err) {
       setProblem(message(err));
       tg.HapticFeedback.notification('error');
@@ -334,7 +334,6 @@ export function NewChallengeScreen() {
 
 export function ChallengeScreen() {
   const { code = '' } = useParams();
-  const fromInline = formParams(useLocation().search).inline;
   const navigate = useNavigate();
   const toast = useToast();
   const { me, setBalance } = useSession();
@@ -421,11 +420,9 @@ export function ChallengeScreen() {
     });
   const send = async () => {
     tg.HapticFeedback.impact('light');
-    const ways = shareWays({ inline: tg.canSwitchInline, fromInline, prepared: tg.canShareMessage });
-    for (const way of ways) {
+    for (const way of shareWays({ prepared: tg.canShareMessage })) {
       try {
-        if (way === 'inline') tg.switchInlineQuery(`ch_${c.code}`);
-        else if (way === 'prepared') await tg.shareMessage((await api.shareChallenge(c.code)).prepared_message_id);
+        if (way === 'prepared') await tg.shareMessage((await api.shareChallenge(c.code)).prepared_message_id);
         else tg.openTelegramLink(challengeShareUrl(c));
         return;
       } catch {
@@ -517,7 +514,7 @@ export function ChallengeScreen() {
             </div>
           </section>
           <button type="button" className="button-primary" onClick={send}>
-            {fromInline ? 'Отправить в этот чат' : 'Отправить другу'}
+            Отправить другу
           </button>
           <button type="button" className="button-secondary" onClick={copyLink}>
             Скопировать ссылку
