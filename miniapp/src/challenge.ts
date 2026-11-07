@@ -154,3 +154,29 @@ export function challengeShareUrl(c: Pick<Challenge, 'link' | 'title' | 'stake'>
   const text = `Спорим на ${formatMoney(c.stake)}? ${c.title}`;
   return `https://t.me/share/url?url=${encodeURIComponent(c.link ?? '')}&text=${encodeURIComponent(text)}`;
 }
+
+/** How the form was opened: `?text=` — what was written after @bot, `?inline=1` — from inline mode. */
+export function formParams(search: string): { title: string; inline: boolean } {
+  const params = new URLSearchParams(search);
+  return { title: (params.get('text') ?? '').trim().slice(0, TITLE_MAX), inline: params.get('inline') === '1' };
+}
+
+/** The form's address for a question already written elsewhere. */
+export function newChallengePath(text: string): string {
+  const title = text.trim();
+  return title ? `/challenge/new?text=${encodeURIComponent(title.slice(0, TITLE_MAX))}` : '/challenge/new';
+}
+
+export type ShareWay = 'inline' | 'prepared' | 'link';
+
+/**
+ * How to send the card, best first. Opened from a chat's inline mode, the card goes back into that chat;
+ * otherwise Telegram's chat picker with the card; the plain link when the client can't do either.
+ */
+export function shareWays(can: { inline: boolean; fromInline: boolean; prepared: boolean }): ShareWay[] {
+  return [
+    ...(can.fromInline && can.inline ? (['inline'] as const) : []),
+    ...(can.prepared ? (['prepared'] as const) : []),
+    'link',
+  ];
+}

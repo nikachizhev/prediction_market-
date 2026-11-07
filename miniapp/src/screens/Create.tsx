@@ -91,6 +91,7 @@ import {
 import { formatDayMonth, formatMoney } from '../format';
 import { useSession } from '../session';
 import { isTelegram, tg } from '../telegram';
+import { newChallengePath } from '../challenge';
 import './create.css';
 
 const EXAMPLES_MULTIPLE: { title: string; options: string[] }[] = [
@@ -873,6 +874,13 @@ export function CreateScreen() {
             )}
             <button type="button" className="create-link create-line-manual" onClick={fillMyself}>
               Заполнить самому
+            </button>
+            <button
+              type="button"
+              className="create-link create-line-manual"
+              onClick={() => navigate(newChallengePath(draft.line))}
+            >
+              Вызвать друга
             </button>
           </>
         )}

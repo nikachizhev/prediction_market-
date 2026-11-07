@@ -10,7 +10,7 @@ from .. import services
 from ..events import log_event
 from ..models import Challenge, Trader
 from . import serializers as s
-from .views import BadRequest, amount_of, body, endpoint
+from .views import BadRequest, Unavailable, amount_of, body, endpoint
 
 
 def _link(challenge: Challenge) -> str:
@@ -146,3 +146,19 @@ def complaint(request, code):
     data = body(request)
     services.report_challenge(request.trader, _visible(code, request.trader), str(data.get("reason") or ""))
     return {"ok": True}
+
+
+@endpoint("POST")
+def share(request, code):
+    """Prepared inline message for Telegram.WebApp.shareMessage: only the author's still open challenge."""
+    from .. import share as sharing
+    from ..telegram import TelegramError
+    found = _visible(code, request.trader)
+    if found.author_id != request.trader.pk or found.status != Challenge.Status.OPEN:
+        raise BadRequest("Отправить можно только свой открытый вызов.")
+    try:
+        prepared_id = sharing.prepare_challenge(request.trader, found)
+    except TelegramError:
+        raise Unavailable("Telegram сейчас недоступен. Поделитесь ссылкой.") from None
+    log_event(request.trader, "share", {"what": "challenge", "via": "prepared_message"})
+    return {"prepared_message_id": prepared_id}

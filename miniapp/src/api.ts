@@ -576,6 +576,8 @@ export const api = {
   cancelChallenge: (code: string) => request<ChallengeReply>('POST', `/challenges/${encodeURIComponent(code)}/cancel`),
   answerChallenge: (code: string, answer: ChallengeAnswer) =>
     request<ChallengeReply>('POST', `/challenges/${encodeURIComponent(code)}/answer`, { answer }),
+  shareChallenge: (code: string) =>
+    request<{ prepared_message_id: string }>('POST', `/challenges/${encodeURIComponent(code)}/share`),
   reportChallenge: (code: string, reason?: string) =>
     request<{ ok: true }>('POST', `/challenges/${encodeURIComponent(code)}/complaint`, { reason }),
   session: (start_param?: string) => request<Session>('POST', '/session', start_param ? { start_param } : {}),

@@ -4,6 +4,7 @@ from datetime import timedelta
 from decimal import Decimal as D
 from threading import Barrier
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from django.db import close_old_connections, connection
@@ -709,3 +710,92 @@ def test_admin_decides_a_dispute_with_an_action(people, client, django_user_mode
     assert response.status_code == 302
     challenge.refresh_from_db()
     assert challenge.winner_id == people[1].pk and challenge.decided_by == f"django:{admin.pk}"
+
+
+# --- from any chat: inline mode and the card --------------------------------------------------------
+
+def inline(bot, query, user=CREATOR):
+    handle_update({"inline_query": {"id": "iq", "from": {"id": user}, "query": query, "offset": ""}})
+    return bot.sent("answerInlineQuery")[-1]
+
+
+def test_inline_offers_to_create_a_challenge_with_the_written_text_and_charges_nothing(bot, people):
+    answer = inline(bot, "Петя опоздает на первую пару")
+    button = answer["button"]
+    assert button["text"] == "Создать вызов"
+    url = urlsplit(button["web_app"]["url"])
+    assert url.scheme == "https" and url.path == "/app/challenge/new"
+    assert parse_qs(url.query) == {"inline": ["1"], "text": ["Петя опоздает на первую пару"]}
+    assert not Challenge.objects.exists() and balance(people[0]) == START
+
+
+def test_inline_button_works_for_someone_new_and_cuts_a_long_text(bot, db):
+    answer = inline(bot, "я" * 200, user=555)
+    assert answer["results"] == []
+    assert parse_qs(urlsplit(answer["button"]["web_app"]["url"]).query)["text"] == ["я" * 120]
+
+
+def test_inline_has_no_button_without_https(bot, people):
+    with override_settings(SITE_URL="http://localhost:8000"):
+        assert "button" not in inline(bot, "Петя")
+
+
+def test_inline_gives_the_author_a_card_of_their_open_challenge(bot, people):
+    challenge = create(people[0], stake=D(50))
+    answer = inline(bot, f"ch_{challenge.code}")
+    (card,) = answer["results"]
+    text = card["input_message_content"]["message_text"]
+    assert "Вызывает: Автор" in text and challenge.title in text and "Ставка каждого 50" in text and "получит 98" in text
+    (button,) = card["reply_markup"]["inline_keyboard"][0]
+    assert button["text"] == "Принять вызов" and button["url"].endswith(f"startapp=ch_{challenge.code}")
+    assert "web_app" not in button  # those work only in the chat with the bot
+    assert "text" not in parse_qs(urlsplit(answer["button"]["web_app"]["url"]).query)
+
+
+def test_empty_inline_lists_own_open_challenges(bot, people):
+    challenge = create(people[0])
+    assert inline(bot, "")["results"][0]["id"] == f"ch{challenge.pk}"
+
+
+@pytest.mark.parametrize("close", ["accepted", "expired", "withdrawn", "rejected"])
+def test_inline_card_is_gone_once_it_cannot_be_accepted(bot, people, close):
+    creator, anya, *_ = people
+    challenge = create(creator)
+    if close == "accepted":
+        services.accept_challenge(anya, challenge)
+    elif close == "expired":
+        Challenge.objects.filter(pk=challenge.pk).update(expires_at=timezone.now() - timedelta(seconds=1))
+    elif close == "withdrawn":
+        services.cancel_challenge(creator, challenge)
+    else:
+        services.reject_challenge(challenge)
+    assert inline(bot, f"ch_{challenge.code}")["results"] == []
+
+
+def test_inline_never_shows_someone_elses_challenge(bot, people):
+    challenge = create(people[0])
+    assert inline(bot, f"ch_{challenge.code}", user=ANYA)["results"] == []
+    assert inline(bot, "", user=ANYA)["results"] == []
+
+
+def test_api_prepares_the_card_only_for_the_authors_open_challenge(api, client):
+    code = api.post("challenges", payload())[1]["challenge"]["code"]
+    guest = other_api(client, 91002)
+    with patch("market.telegram.api", return_value={"id": "prepared-1"}) as send:
+        status, data = api.post(f"challenges/{code}/share", {})
+        assert status == 200 and data == {"prepared_message_id": "prepared-1"}
+        (method,), kwargs = send.call_args
+        assert method == "savePreparedInlineMessage" and kwargs["allow_user_chats"] and kwargs["allow_group_chats"]
+        assert not kwargs["allow_channel_chats"] and kwargs["result"]["id"].startswith("ch")
+        assert guest.post(f"challenges/{code}/share", {})[0] == 400
+        guest.post(f"challenges/{code}/accept", {})
+        assert api.post(f"challenges/{code}/share", {})[0] == 400
+        assert other_api(client, 91003).post(f"challenges/{code}/share", {})[0] == 404
+    assert send.call_count == 1
+
+
+def test_api_says_when_telegram_is_down_so_the_app_falls_back_to_the_link(api):
+    from market.telegram import TelegramError
+    code = api.post("challenges", payload())[1]["challenge"]["code"]
+    with patch("market.telegram.api", side_effect=TelegramError("нет")):
+        assert api.post(f"challenges/{code}/share", {})[0] == 503
