@@ -49,10 +49,12 @@ def fee_rate() -> Decimal:
     return Decimal(settings.TRADE_FEE)
 
 
-def _record(trader: Trader, kind: str, amount: Decimal, question: Question | None = None) -> LedgerEntry:
+def _record(trader: Trader, kind: str, amount: Decimal, question: Question | None = None,
+            challenge=None) -> LedgerEntry:
     """Ledger line for a balance change already applied to `trader` (in memory or saved)."""
     return LedgerEntry.objects.create(
         trader=trader, kind=kind, amount=amount, balance_after=trader.balance, question=question,
+        challenge=challenge,
     )
 
 
@@ -615,6 +617,9 @@ def profit(trader: Trader) -> Decimal:
     # Daily bonuses are counted via DailyReward (it predates the ledger); the starter pack via START_BALANCE.
     other = trader.ledger.filter(kind__in=[LedgerEntry.Kind.INSURANCE, LedgerEntry.Kind.REFERRAL]).aggregate(
         total=Sum("amount"))["total"] or Decimal(0)
+    # 1-on-1 challenges stay out of the rating (spec E11), frozen stakes included.
+    other += trader.ledger.filter(kind__in=LedgerEntry.CHALLENGE_KINDS).aggregate(
+        total=Sum("amount"))["total"] or Decimal(0)
     locked = trader.created_questions.exclude(
         status__in=[Question.Status.RESOLVED, Question.Status.ANNULLED]).aggregate(total=Sum("subsidy"))["total"] or Decimal(0)
     return trader.balance + portfolio_value(trader) + locked - Decimal(settings.START_BALANCE) - daily - other
@@ -659,12 +664,17 @@ def grant_starter_pack(trader: Trader) -> LedgerEntry | None:
 
 
 def has_open_positions(trader: Trader) -> bool:
-    """Coins still at stake: shares in unsettled markets or the subsidy of an own unsettled market."""
+    """Coins still at stake: shares in unsettled markets, the subsidy of an own unsettled market, or a stake
+    frozen in an open challenge."""
     from django.db.models import Q
+    from .models import Challenge
     unsettled = [Question.Status.OPEN, Question.Status.CLOSED]
     return trader.positions.filter(
         Q(yes_shares__gt=0) | Q(no_shares__gt=0), question__status__in=unsettled,
-    ).exists() or trader.created_questions.filter(status__in=unsettled, subsidy__gt=0).exists()
+    ).exists() or trader.created_questions.filter(status__in=unsettled, subsidy__gt=0).exists() or (
+        Challenge.objects.filter(Q(author=trader) | Q(opponent=trader),
+                                 status__in=[Challenge.Status.OPEN, Challenge.Status.ACTIVE,
+                                             Challenge.Status.DISPUTED]).exists())
 
 
 @transaction.atomic
@@ -1230,6 +1240,337 @@ def cancel_unresolved(question: Question) -> Question:
     question.resolution_state = Question.Resolution.FINAL
     question.save(update_fields=["resolution_state"])
     return question
+
+
+# --- 1-on-1 challenges (spec E11) ----------------------------------------------------------------
+
+CHALLENGE_TITLE_MIN, CHALLENGE_TITLE_MAX = 10, 120
+CHALLENGE_CRITERIA_MIN, CHALLENGE_CRITERIA_MAX = 15, 2000
+CHALLENGE_REASON_MAX = 300
+
+
+def challenge_prize(stake: Decimal) -> Decimal:
+    """The winner's share of the pot, rounded down: rounding never prints coins."""
+    return (Decimal(stake) * 2 * (1 - Decimal(settings.CHALLENGE_FEE))).quantize(CENT, ROUND_FLOOR)
+
+
+def _moscow_midnight(now):
+    from datetime import datetime, time
+    from zoneinfo import ZoneInfo
+    msk = ZoneInfo("Europe/Moscow")
+    return datetime.combine(timezone.localtime(now, msk).date(), time.min, tzinfo=msk)
+
+
+def _lock_challenge(challenge):
+    """The challenge, then both people in a fixed order: two requests can't deadlock on the pair."""
+    from .models import Challenge
+    locked = Challenge.objects.select_for_update().get(pk=challenge.pk)
+    ids = {locked.author_id, *([locked.opponent_id] if locked.opponent_id else [])}
+    people = {t.pk: t for t in Trader.objects.select_for_update().filter(pk__in=ids).order_by("pk")}
+    return locked, people
+
+
+def _stake_error(stake: Decimal, limit: Decimal) -> str | None:
+    if stake < Decimal(settings.CHALLENGE_MIN_STAKE):
+        return f"Ставка — от {settings.CHALLENGE_MIN_STAKE} монет."
+    if stake > limit:
+        return f"Ставка не больше лимита сделки: сейчас это {_fmt(limit)}."
+    return None
+
+
+@transaction.atomic
+def create_challenge(trader: Trader, *, title: str, criteria: str, side: str, stake, resolves_at, request_key=None):
+    """The author's stake is frozen at once; the link goes to a friend. A repeat with the same key charges nothing."""
+    import secrets
+    from datetime import timedelta
+    from .models import Challenge
+    trader = Trader.objects.select_for_update().get(pk=trader.pk)
+    key = str(request_key or "").strip()[:64]
+    if key:
+        existing = Challenge.objects.filter(author=trader, request_key=key).first()
+        if existing is not None:
+            return existing
+    title, criteria = (title or "").strip(), (criteria or "").strip()
+    if not CHALLENGE_TITLE_MIN <= len(title) <= CHALLENGE_TITLE_MAX:
+        raise MarketError(f"Вопрос — от {CHALLENGE_TITLE_MIN} до {CHALLENGE_TITLE_MAX} символов.")
+    if not CHALLENGE_CRITERIA_MIN <= len(criteria) <= CHALLENGE_CRITERIA_MAX:
+        raise MarketError("Опишите, как определяем результат.")
+    if side not in ("yes", "no"):
+        raise MarketError("Выберите свою сторону: ДА или НЕТ.")
+    stake = _d(stake)
+    if stake != stake.quantize(CENT):
+        raise MarketError("Укажите ставку не более чем с двумя знаками после запятой.")
+    error = _stake_error(stake, trade_limit(trader))
+    if error:
+        raise MarketError(error)
+    now = timezone.now()
+    if resolves_at is None or timezone.is_naive(resolves_at):
+        raise MarketError("Укажите дату итога.")
+    if resolves_at < now + timedelta(hours=settings.CHALLENGE_MIN_HOURS):
+        raise MarketError(f"Дата итога — не раньше чем через {settings.CHALLENGE_MIN_HOURS} час.")
+    if resolves_at > now + timedelta(days=settings.CHALLENGE_MAX_DAYS):
+        raise MarketError(f"Дата итога — не позже чем через {settings.CHALLENGE_MAX_DAYS} дней.")
+    made = Challenge.objects.filter(author=trader, created_at__gte=_moscow_midnight(now)).count()
+    if made >= settings.CHALLENGES_PER_DAY:
+        raise MarketError(f"Не больше {settings.CHALLENGES_PER_DAY} новых вызовов в день.")
+    challenge = Challenge.objects.create(
+        code=secrets.token_urlsafe(9), author=trader, title=title, criteria=criteria, side=side, stake=stake,
+        resolves_at=resolves_at, expires_at=min(now + timedelta(hours=settings.CHALLENGE_ACCEPT_HOURS), resolves_at),
+        request_key=key, check_state="pending" if settings.PREMODERATION_ENABLED else "clear")
+    trader.balance -= stake
+    trader.save(update_fields=["balance"])
+    _record(trader, LedgerEntry.Kind.CHALLENGE_STAKE, -stake, challenge=challenge)
+    return challenge
+
+
+@transaction.atomic
+def accept_challenge(trader: Trader, challenge):
+    """The first one to accept gets the other side. A repeat by the same person charges nothing."""
+    from django.db.models import Q
+    from .models import Challenge
+    locked = Challenge.objects.select_for_update().get(pk=challenge.pk)
+    if locked.opponent_id == trader.pk:
+        return locked
+    if locked.author_id == trader.pk:
+        raise MarketError("Свой вызов принять нельзя.")
+    if locked.status != Challenge.Status.OPEN:
+        raise MarketError("Вызов уже приняли или он закрыт.")
+    now = timezone.now()
+    if locked.expires_at <= now:
+        raise MarketError("Время на принятие вызова вышло.")
+    ids = sorted([locked.author_id, trader.pk])
+    people = {t.pk: t for t in Trader.objects.select_for_update().filter(pk__in=ids).order_by("pk")}
+    me = people[trader.pk]
+    limit = trade_limit(me)
+    if locked.stake > limit:
+        raise MarketError(f"Ставка больше твоего лимита сделки: сейчас это {_fmt(limit)}.")
+    pair = Challenge.objects.filter(Q(author_id=ids[0], opponent_id=ids[1]) | Q(author_id=ids[1], opponent_id=ids[0]),
+                                    accepted_at__gte=_moscow_midnight(now)).count()
+    if pair >= settings.CHALLENGES_PER_PAIR_DAY:
+        raise MarketError(f"Не больше {settings.CHALLENGES_PER_PAIR_DAY} вызовов в день между одними и теми же людьми.")
+    me.balance -= locked.stake
+    me.save(update_fields=["balance"])
+    _record(me, LedgerEntry.Kind.CHALLENGE_STAKE, -locked.stake, challenge=locked)
+    locked.opponent, locked.status, locked.accepted_at = me, Challenge.Status.ACTIVE, now
+    locked.save(update_fields=["opponent", "status", "accepted_at"])
+    _after_commit("challenge_accepted", locked.pk, module="bot_challenges")
+    return locked
+
+
+def _close_refunded(challenge, people: dict, reason: str, *, notify: bool = True) -> None:
+    """Stakes back without a fee."""
+    from .models import Challenge
+    for trader in people.values():
+        trader.balance += challenge.stake
+        trader.save(update_fields=["balance"])
+        _record(trader, LedgerEntry.Kind.CHALLENGE_REFUND, challenge.stake, challenge=challenge)
+    challenge.status, challenge.outcome, challenge.closed_reason = Challenge.Status.CANCELLED, "cancel", reason
+    challenge.finished_at = timezone.now()
+    challenge.save(update_fields=["status", "outcome", "closed_reason", "finished_at"])
+    if notify:
+        _after_commit("challenge_closed", challenge.pk, module="bot_challenges")
+
+
+def _settle_challenge(challenge, people: dict, outcome: str, reason: str) -> None:
+    from .models import Challenge
+    winner = people[challenge.author_id if outcome == challenge.side else challenge.opponent_id]
+    prize = challenge_prize(challenge.stake)
+    winner.balance += prize
+    winner.save(update_fields=["balance"])
+    _record(winner, LedgerEntry.Kind.CHALLENGE_PAYOUT, prize, challenge=challenge)
+    challenge.status, challenge.outcome, challenge.closed_reason = Challenge.Status.FINISHED, outcome, reason
+    challenge.winner, challenge.payout = winner, prize
+    challenge.burned = challenge.stake * 2 - prize
+    challenge.finished_at = timezone.now()
+    challenge.save(update_fields=["status", "outcome", "closed_reason", "winner", "payout", "burned", "finished_at"])
+    _after_commit("challenge_closed", challenge.pk, module="bot_challenges")
+
+
+def _finish_by_answer(challenge, people: dict, answer: str, reason: str) -> None:
+    if answer == "cancel":
+        _close_refunded(challenge, people, reason)
+    else:
+        _settle_challenge(challenge, people, answer, reason)
+
+
+@transaction.atomic
+def cancel_challenge(trader: Trader, challenge):
+    """The author takes the challenge back until someone accepts it."""
+    from .models import Challenge
+    locked, people = _lock_challenge(challenge)
+    if locked.author_id != trader.pk:
+        raise MarketError("Отменить вызов может только его автор.")
+    if locked.status == Challenge.Status.CANCELLED and locked.closed_reason == "withdrawn":
+        return locked
+    if locked.status != Challenge.Status.OPEN:
+        raise MarketError("Вызов уже приняли — теперь его можно отменить только вместе.")
+    _close_refunded(locked, people, "withdrawn", notify=False)
+    return locked
+
+
+@transaction.atomic
+def answer_challenge(trader: Trader, challenge, answer: str):
+    """What ended up happening. Same answers settle at once; different ones open a dispute paid by the second."""
+    from datetime import timedelta
+    from .models import Challenge
+    if answer not in ("yes", "no", "cancel"):
+        raise MarketError("Выберите ДА, НЕТ или отмену.")
+    locked, people = _lock_challenge(challenge)
+    if trader.pk not in (locked.author_id, locked.opponent_id):
+        raise Challenge.DoesNotExist
+    mine, theirs = ("author_answer", "opponent_answer") if trader.pk == locked.author_id \
+        else ("opponent_answer", "author_answer")
+    if getattr(locked, mine) == answer:
+        return locked  # a double tap
+    if getattr(locked, mine):
+        raise MarketError("Твой ответ уже принят.")
+    if locked.status == Challenge.Status.DISPUTED:
+        raise MarketError("Вы ответили по-разному: спор решит модератор.")
+    if locked.status != Challenge.Status.ACTIVE:
+        raise MarketError("Этот вызов уже завершён.")
+    now = timezone.now()
+    if locked.resolves_at > now:
+        raise MarketError("Итог можно указать, когда наступит дата итога.")
+    rival = getattr(locked, theirs)
+    setattr(locked, mine, answer)
+    if not rival:
+        locked.answer_until = now + timedelta(hours=settings.CHALLENGE_ANSWER_HOURS)
+        locked.save(update_fields=[mine, "answer_until"])
+        _after_commit("challenge_rival_answered", locked.pk, trader.pk, module="bot_challenges")
+        return locked
+    if rival == answer:
+        locked.save(update_fields=[mine])
+        _finish_by_answer(locked, people, answer,
+                          "both_cancelled" if answer == "cancel" else "agreed")
+        return locked
+    cost = Decimal(settings.DISPUTE_COST)
+    me = people[trader.pk]
+    if me.balance < cost:
+        raise MarketError(f"Спор стоит {settings.DISPUTE_COST} монет — на балансе не хватает. "
+                          "Если не ответишь, встанет ответ соперника.")
+    me.balance -= cost
+    me.save(update_fields=["balance"])
+    _record(me, LedgerEntry.Kind.CHALLENGE_DISPUTE, -cost, challenge=locked)
+    locked.status, locked.disputed_by, locked.dispute_stake = Challenge.Status.DISPUTED, me, cost
+    locked.proof_until = now + timedelta(hours=settings.EVIDENCE_HOURS)
+    locked.save(update_fields=[mine, "status", "disputed_by", "dispute_stake", "proof_until"])
+    _after_commit("challenge_disputed", locked.pk, module="bot_challenges")
+    return locked
+
+
+@transaction.atomic
+def attach_challenge_proof(trader: Trader, challenge, *, proof=None, note: str = ""):
+    """Each of the two may send proof while the dispute waits for it."""
+    from .models import Challenge
+    locked = Challenge.objects.select_for_update().get(pk=challenge.pk)
+    if trader.pk not in (locked.author_id, locked.opponent_id):
+        raise Challenge.DoesNotExist
+    if locked.status != Challenge.Status.DISPUTED or not locked.proof_until or locked.proof_until <= timezone.now():
+        raise MarketError("Время на доказательство вышло — спор решат без него.")
+    side = "author" if trader.pk == locked.author_id else "opponent"
+    fields = []
+    if proof is not None:
+        setattr(locked, f"{side}_proof", proof)
+        fields.append(f"{side}_proof")
+    note = (note or "").strip()[:500]
+    if note:
+        setattr(locked, f"{side}_proof_note", note)
+        fields.append(f"{side}_proof_note")
+    if not fields:
+        raise MarketError("Пришлите фото, скриншот или ссылку.")
+    locked.save(update_fields=fields)
+    return locked
+
+
+@transaction.atomic
+def decide_challenge(challenge, outcome: str, *, actor: str):
+    """The moderator's final word. The dispute's stake comes back if the first answer didn't stand."""
+    from .models import Challenge
+    if outcome not in ("yes", "no", "cancel"):
+        raise MarketError("Решение: ДА, НЕТ или отмена.")
+    locked, people = _lock_challenge(challenge)
+    if locked.status != Challenge.Status.DISPUTED:
+        raise MarketError("По этому вызову нет открытого спора.")
+    first = locked.opponent_answer if locked.disputed_by_id == locked.author_id else locked.author_answer
+    if outcome != first:
+        disputer = people[locked.disputed_by_id]
+        disputer.balance += locked.dispute_stake
+        disputer.save(update_fields=["balance"])
+        _record(disputer, LedgerEntry.Kind.CHALLENGE_DISPUTE_BACK, locked.dispute_stake, challenge=locked)
+    locked.decided_by = actor[:80]
+    locked.save(update_fields=["decided_by"])
+    _finish_by_answer(locked, people, outcome, "moderator")
+    return locked
+
+
+@transaction.atomic
+def reject_challenge(challenge, *, reason: str = "rejected"):
+    """A forbidden topic: everything goes back, the link stops working. A finished challenge stays as it is."""
+    from .models import Challenge
+    locked, people = _lock_challenge(challenge)
+    Challenge.objects.filter(pk=locked.pk).update(check_state="rejected", check_job=None, check_retry_at=None)
+    locked.check_state = "rejected"
+    if locked.status in (Challenge.Status.FINISHED, Challenge.Status.CANCELLED):
+        return locked
+    if locked.status == Challenge.Status.DISPUTED and locked.dispute_stake > 0:
+        disputer = people[locked.disputed_by_id]
+        disputer.balance += locked.dispute_stake
+        disputer.save(update_fields=["balance"])
+        _record(disputer, LedgerEntry.Kind.CHALLENGE_DISPUTE_BACK, locked.dispute_stake, challenge=locked)
+    _close_refunded(locked, people, reason)
+    return locked
+
+
+@transaction.atomic
+def report_challenge(trader: Trader, challenge, reason: str = "") -> None:
+    """«Пожаловаться»: the moderator looks at it; nothing is hidden or refunded by itself."""
+    from .models import Challenge
+    locked = Challenge.objects.select_for_update().get(pk=challenge.pk)
+    if locked.check_state == "rejected":
+        return
+    locked.check_state = "review"
+    locked.complaint = (reason or "Жалоба без комментария").strip()[:CHALLENGE_REASON_MAX]
+    locked.check_job, locked.check_retry_at = None, None
+    locked.save(update_fields=["check_state", "complaint", "check_job", "check_retry_at"])
+
+
+@transaction.atomic
+def expire_challenge(challenge):
+    """Nobody accepted in time: the author's stake comes back."""
+    from .models import Challenge
+    locked, people = _lock_challenge(challenge)
+    if locked.status != Challenge.Status.OPEN or locked.expires_at > timezone.now():
+        raise MarketError("Вызов ещё открыт или уже закрыт.")
+    _close_refunded(locked, people, "expired")
+    return locked
+
+
+@transaction.atomic
+def settle_unanswered_challenge(challenge):
+    """One answered and the other stayed silent: the first answer stands."""
+    from .models import Challenge
+    locked, people = _lock_challenge(challenge)
+    if locked.status != Challenge.Status.ACTIVE or not locked.answer_until or locked.answer_until > timezone.now():
+        raise MarketError("Срок ответа ещё идёт.")
+    answers = [a for a in (locked.author_answer, locked.opponent_answer) if a]
+    if len(answers) != 1:
+        raise MarketError("Нет единственного ответа.")
+    _finish_by_answer(locked, people, answers[0], "timeout")
+    return locked
+
+
+@transaction.atomic
+def cancel_silent_challenge(challenge):
+    """Both silent long after the outcome date: stakes go back without a fee."""
+    from datetime import timedelta
+    from .models import Challenge
+    locked, people = _lock_challenge(challenge)
+    deadline = locked.resolves_at + timedelta(hours=settings.CHALLENGE_SILENCE_HOURS)
+    if (locked.status != Challenge.Status.ACTIVE or locked.author_answer or locked.opponent_answer
+            or deadline > timezone.now()):
+        raise MarketError("Вызов ещё ждёт ответов.")
+    _close_refunded(locked, people, "silent")
+    return locked
 
 
 # --- notifications and referral rewards (spec E6.3, E5) ----------------------------------------

@@ -16,7 +16,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .. import chats, services
 from ..access import visible_questions
 from ..miniapp_auth import api_view
-from ..models import FeedDismissal, Group, LedgerEntry, MarketComplaint, MarketSubscription, Position, Question, Trade, Trader
+from ..models import Challenge, FeedDismissal, Group, LedgerEntry, MarketComplaint, MarketSubscription, Position, Question, Trade, Trader
 from ..services import MarketError
 from . import serializers as s
 
@@ -56,6 +56,9 @@ def endpoint(*methods, create: bool = False):
                 return JsonResponse({"error": str(exc)}, status=503)
             except Question.DoesNotExist:
                 return JsonResponse({"error": "Рынок не найден."}, status=404)
+            except Challenge.DoesNotExist:
+                # Someone else's challenge looks like one that never existed (spec E11).
+                return JsonResponse({"error": "Вызов не найден."}, status=404)
             except Group.DoesNotExist:
                 # An unknown chat code and someone else's chat look the same (spec E8.2).
                 return JsonResponse({"error": "Чат не найден."}, status=404)

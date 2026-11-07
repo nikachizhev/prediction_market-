@@ -371,3 +371,62 @@ class ChatDisputeReviewAdmin(ReadOnlyLedgerAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         return [f.name for f in self.model._meta.fields if f.name != "messages"]
+
+
+from .models import Challenge  # noqa: E402 - kept with its block
+
+
+@admin.register(Challenge)
+class ChallengeAdmin(admin.ModelAdmin):
+    """Disputes and doubtful topics of 1-on-1 challenges (spec E11). Money moves only through the service."""
+    list_display = ("title", "status", "check_state", "stake", "author", "opponent", "resolves_at", "closed_reason")
+    list_filter = ("status", "check_state", "closed_reason")
+    search_fields = ("title", "code")
+    actions = ("decide_yes", "decide_no", "decide_cancel", "mark_clear", "reject")
+    fields = ("title", "criteria", "side", "stake", "status", "check_state", "check_reason", "complaint",
+              "author", "author_answer", "author_proof", "author_proof_note",
+              "opponent", "opponent_answer", "opponent_proof", "opponent_proof_note",
+              "disputed_by", "dispute_stake", "proof_until", "resolves_at", "expires_at",
+              "outcome", "winner", "payout", "burned", "closed_reason", "decided_by", "finished_at")
+    readonly_fields = fields
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def _decide(self, request, queryset, outcome):
+        done = 0
+        for challenge in queryset:
+            try:
+                services.decide_challenge(challenge, outcome, actor=f"django:{request.user.pk}")
+                done += 1
+            except services.MarketError as exc:
+                self.message_user(request, f"«{challenge.title}»: {exc}", messages.ERROR)
+        if done:
+            self.message_user(request, f"Споров решено: {done}.")
+
+    @admin.action(description="Спор: итог ДА", permissions=["change"])
+    def decide_yes(self, request, queryset):
+        self._decide(request, queryset, "yes")
+
+    @admin.action(description="Спор: итог НЕТ", permissions=["change"])
+    def decide_no(self, request, queryset):
+        self._decide(request, queryset, "no")
+
+    @admin.action(description="Спор: отменить с возвратом ставок", permissions=["change"])
+    def decide_cancel(self, request, queryset):
+        self._decide(request, queryset, "cancel")
+
+    @admin.action(description="Проверка: нарушений нет", permissions=["change"])
+    def mark_clear(self, request, queryset):
+        count = queryset.exclude(check_state="rejected").update(check_state="clear", check_job=None, check_retry_at=None)
+        self.message_user(request, f"Проверено: {count}.")
+
+    @admin.action(description="Проверка: снять вызов и вернуть монеты", permissions=["change"])
+    def reject(self, request, queryset):
+        for challenge in queryset:
+            services.reject_challenge(challenge)
+        self.message_user(request, "Вызовы сняты.")
+

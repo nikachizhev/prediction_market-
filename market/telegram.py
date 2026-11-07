@@ -119,8 +119,10 @@ def handle_update(update):
     if "callback_query" in update:
         callback = update["callback_query"]
         data = callback.get("data") or ""
-        from . import bot_chats, bot_draft, bot_markets, bot_notifications, chat_disputes
-        if bot_markets.owns(data):
+        from . import bot_challenges, bot_chats, bot_draft, bot_markets, bot_notifications, chat_disputes
+        if bot_challenges.owns(data):
+            bot_challenges.handle_callback(callback)
+        elif bot_markets.owns(data):
             bot_markets.handle_callback(callback)
         elif bot_draft.owns(data):
             bot_draft.handle_callback(callback)
@@ -142,6 +144,9 @@ def handle_update(update):
         return
     chat_id = chat["id"]
     if resolution_dialog.handle_message(message):
+        return
+    from . import bot_challenges
+    if bot_challenges.handle_message(message):
         return
     parts = message.get("text", "").split(maxsplit=1)
     command = parts[0].split("@")[0] if parts else ""

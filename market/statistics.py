@@ -218,7 +218,7 @@ def balance_profit_history(trader, period: str, now=None) -> list[dict]:
     balance_changes = [(at, after) for at, _, after, _, _, _ in lines[len(opening):]]
     profit_changes: dict = {}
     for at, amount, _, kind, question_id, resolved_at in lines:
-        if kind in LedgerEntry.BONUS_KINDS:
+        if kind in LedgerEntry.BONUS_KINDS or kind in LedgerEntry.CHALLENGE_KINDS:
             continue
         if question_id is not None:
             if resolved_at is None:

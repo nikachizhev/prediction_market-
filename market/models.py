@@ -1006,11 +1006,10 @@ class Challenge(models.Model):
     dispute_stake = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal(0))
     proof_until = models.DateTimeField(null=True, blank=True)
     proof_reminded_at = models.DateTimeField(null=True, blank=True)
-    author_proof_file_id = models.CharField(max_length=200, blank=True, default="")
-    author_proof_is_document = models.BooleanField(default=False)
+    # Kept here, not as a Telegram file_id: the moderator sees it in the admin.
+    author_proof = models.FileField(upload_to="evidence/challenges/%Y/%m/", blank=True)
     author_proof_note = models.CharField(max_length=500, blank=True, default="")
-    opponent_proof_file_id = models.CharField(max_length=200, blank=True, default="")
-    opponent_proof_is_document = models.BooleanField(default=False)
+    opponent_proof = models.FileField(upload_to="evidence/challenges/%Y/%m/", blank=True)
     opponent_proof_note = models.CharField(max_length=500, blank=True, default="")
     complaint = models.CharField("жалоба", max_length=300, blank=True, default="")
 

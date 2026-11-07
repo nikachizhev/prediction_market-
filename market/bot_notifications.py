@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 MSK = ZoneInfo("Europe/Moscow")
 KINDS = [kind for kind, _ in NOTIFY_KINDS]
 # Sent even over the daily cap: the outcome of a market and the payout.
-MANDATORY_KINDS = ("results",)
+MANDATORY_KINDS = ("results", "challenge")
 MAX_ATTEMPTS = 5
 
 # Market notices gated by the market's notify level (spec E6.3, phase 3d): kind -> levels that reach the bot.
@@ -39,7 +39,7 @@ LEVEL_GATES = {"moves": ("all",), "closing": ("all",), "results": ("all", "resul
 # mode mutes them. Today only `creator` (dispute opened, decision) goes through this outbox; `resolve` is
 # the inbox kind of «Чем закончилось?» and its reminders, which `bot_resolution` sends directly.
 # A resolution step queued here later must use one of these kinds.
-RESOLUTION_KINDS = ("creator", "resolve")
+RESOLUTION_KINDS = ("creator", "resolve", "challenge")
 # The quiet mode lets through only results with payouts and resolution steps; the rest stays in the inbox.
 QUIET_KINDS = ("results", *RESOLUTION_KINDS)
 # Notices that get the 🔕 button: the ones the market level can mute while the market is still running.
