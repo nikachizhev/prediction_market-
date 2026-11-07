@@ -237,6 +237,12 @@ class Question(models.Model):
     publication_job = models.UUIDField(null=True, editable=False)
     publication_attempts = models.PositiveSmallIntegerField(default=0, editable=False)
     publication_retry_at = models.DateTimeField(null=True, editable=False)
+    # Closed chat markets are visible at once (publication_state stays "approved") and checked in the
+    # background (spec E3, phase 3e). Empty for everything else.
+    background_check = models.CharField("фоновая проверка", max_length=10, blank=True, default="", db_index=True,
+                                        choices=[("pending", "Ждёт проверки"), ("checking", "Проверяется"),
+                                                 ("clear", "Нарушений нет"), ("review", "Нужен модератор"),
+                                                 ("error", "Проверка недоступна"), ("rejected", "Отклонён")])
 
     def save(self, *args, **kwargs):
         from django.db import transaction
@@ -393,6 +399,20 @@ class Question(models.Model):
     # `announced_at` — when the bot queued the announcement (results go only for announced markets).
     announce = models.BooleanField("объявить в чате", default=False)
     announced_at = models.DateTimeField("объявлен в чате", null=True, blank=True)
+    # Outcome from AI for public events (spec E4, phase 3e). `ai_check` — the creator kept «Итог проверит ИИ»;
+    # `ai_state`: "" not looked yet, checking, proposed (a sure answer), none (not found, failed or too late).
+    ai_check = models.BooleanField("итог проверит ИИ", default=False)
+    ai_source = models.CharField("источник для ИИ", max_length=120, blank=True, default="")
+    ai_state = models.CharField(max_length=10, blank=True, default="", db_index=True,
+                                choices=[("checking", "Ищет"), ("proposed", "Предложил"), ("none", "Не нашёл")])
+    ai_outcome = models.CharField(max_length=3, blank=True, default="", choices=[("yes", "ДА"), ("no", "НЕТ")])
+    ai_evidence_url = models.URLField("ссылка от ИИ", max_length=500, blank=True, default="")
+    ai_reason = models.CharField(max_length=300, blank=True, default="")
+    ai_attempts = models.PositiveSmallIntegerField(default=0)
+    ai_lease_until = models.DateTimeField(null=True, blank=True)
+    ai_checked_at = models.DateTimeField(null=True, blank=True)
+    # The creator stayed silent and AI's proposal became the stated outcome: there is no author (proposed_by).
+    proposed_by_ai = models.BooleanField("итог предложил ИИ", default=False)
     results_sent_at = models.DateTimeField(null=True, blank=True)
     conflicted_traders = models.ManyToManyField(
         Trader, blank=True, related_name="conflicted_questions", verbose_name="конфликт интересов"
@@ -564,14 +584,23 @@ class LedgerEntry(models.Model):
         PROPOSAL_BOND = "proposal_bond", "Залог за итог"
         PROPOSAL_BOND_REFUND = "proposal_refund", "Залог за итог вернули"
         PROPOSER_FEE = "proposer_fee", "Комиссия за итог"
+        CHALLENGE_STAKE = "challenge_stake", "Ставка в вызове"
+        CHALLENGE_PAYOUT = "challenge_payout", "Выигрыш в вызове"
+        CHALLENGE_REFUND = "challenge_refund", "Возврат ставки в вызове"
+        CHALLENGE_DISPUTE = "challenge_dispute", "Спор в вызове"
+        CHALLENGE_DISPUTE_BACK = "challenge_disp_back", "Спор в вызове признан"
 
     # Coins that appear from nothing; excluded from profit in the rating.
     BONUS_KINDS = (Kind.STARTER, Kind.DAILY, Kind.INSURANCE, Kind.REFERRAL)
+    # 1-on-1 challenges (spec E11) stay out of the rating and statistics: two people could pump each other.
+    CHALLENGE_KINDS = (Kind.CHALLENGE_STAKE, Kind.CHALLENGE_PAYOUT, Kind.CHALLENGE_REFUND,
+                       Kind.CHALLENGE_DISPUTE, Kind.CHALLENGE_DISPUTE_BACK)
 
     trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="ledger")
     kind = models.CharField(max_length=20, choices=Kind.choices)
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     balance_after = models.DecimalField(max_digits=14, decimal_places=2)
+    challenge = models.ForeignKey("Challenge", null=True, blank=True, on_delete=models.SET_NULL, related_name="ledger")
     question = models.ForeignKey(Question, null=True, blank=True, on_delete=models.SET_NULL, related_name="ledger")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -926,3 +955,86 @@ class BotJob(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=['status', 'available_at'], name='bot_job_ready_idx')]
+
+
+class Challenge(models.Model):
+    """A 1-on-1 bet between two people by a link (spec E11). Not a market: no price, no market maker,
+    no feed. All money moves through `market/services.py`."""
+
+    class Status(models.TextChoices):
+        OPEN = "open", "Ждёт соперника"
+        ACTIVE = "active", "Идёт"
+        DISPUTED = "disputed", "Спор у модератора"
+        FINISHED = "finished", "Завершён"
+        CANCELLED = "cancelled", "Отменён"
+
+    SIDES = [("yes", "ДА"), ("no", "НЕТ")]
+    ANSWERS = [("yes", "ДА"), ("no", "НЕТ"), ("cancel", "Отменить")]
+
+    code = models.CharField(max_length=24, unique=True)
+    author = models.ForeignKey(Trader, on_delete=models.PROTECT, related_name="challenges_made")
+    opponent = models.ForeignKey(Trader, null=True, blank=True, on_delete=models.PROTECT,
+                                 related_name="challenges_accepted")
+    title = models.CharField("вопрос", max_length=120)
+    criteria = models.TextField("как определяем результат", max_length=2000)
+    side = models.CharField("сторона автора", max_length=3, choices=SIDES)
+    stake = models.DecimalField("ставка каждого", max_digits=14, decimal_places=2)
+    resolves_at = models.DateTimeField("дата итога")
+    expires_at = models.DateTimeField("принять до")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN, db_index=True)
+    request_key = models.CharField(max_length=64, blank=True, default="")
+
+    # Forbidden topics are checked in the background, as for chat markets (premoderation.classify).
+    check_state = models.CharField(max_length=10, default="pending", db_index=True,
+                                   choices=[("pending", "Ждёт проверки"), ("checking", "Проверяется"),
+                                            ("clear", "Нарушений нет"), ("review", "Нужен модератор"),
+                                            ("error", "Проверка недоступна"), ("rejected", "Отклонён")])
+    check_reason = models.CharField(max_length=40, blank=True, default="")
+    check_job = models.UUIDField(null=True, blank=True, editable=False)
+    check_attempts = models.PositiveSmallIntegerField(default=0, editable=False)
+    check_retry_at = models.DateTimeField(null=True, blank=True, editable=False)
+
+    # What each of the two said; `answer_until` — the deadline for the second one to answer.
+    author_answer = models.CharField(max_length=6, blank=True, default="", choices=ANSWERS)
+    opponent_answer = models.CharField(max_length=6, blank=True, default="", choices=ANSWERS)
+    answer_until = models.DateTimeField(null=True, blank=True)
+    asked_at = models.DateTimeField(null=True, blank=True)
+
+    # Answers differ: the second one pays DISPUTE_COST, both have EVIDENCE_HOURS for proof (one reminder).
+    disputed_by = models.ForeignKey(Trader, null=True, blank=True, on_delete=models.PROTECT,
+                                    related_name="challenges_disputed")
+    dispute_stake = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal(0))
+    proof_until = models.DateTimeField(null=True, blank=True)
+    proof_reminded_at = models.DateTimeField(null=True, blank=True)
+    author_proof_file_id = models.CharField(max_length=200, blank=True, default="")
+    author_proof_is_document = models.BooleanField(default=False)
+    author_proof_note = models.CharField(max_length=500, blank=True, default="")
+    opponent_proof_file_id = models.CharField(max_length=200, blank=True, default="")
+    opponent_proof_is_document = models.BooleanField(default=False)
+    opponent_proof_note = models.CharField(max_length=500, blank=True, default="")
+    complaint = models.CharField("жалоба", max_length=300, blank=True, default="")
+
+    outcome = models.CharField(max_length=6, blank=True, default="", choices=ANSWERS)
+    winner = models.ForeignKey(Trader, null=True, blank=True, on_delete=models.PROTECT,
+                               related_name="challenges_won")
+    payout = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal(0))
+    burned = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal(0))
+    # agreed, timeout, moderator, both_cancelled, silent, expired, withdrawn, rejected
+    closed_reason = models.CharField(max_length=16, blank=True, default="")
+    decided_by = models.CharField(max_length=80, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "вызов 1 на 1"
+        verbose_name_plural = "вызовы 1 на 1"
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["author", "request_key"], condition=~Q(request_key=""),
+                                    name="one_challenge_per_request_key"),
+        ]
+        indexes = [models.Index(fields=["status", "resolves_at"], name="challenge_due_idx")]
+
+    def __str__(self) -> str:
+        return self.title

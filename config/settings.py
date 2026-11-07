@@ -128,6 +128,16 @@ CHAT_DAILY_POSTS = 5            # bot messages per chat per Moscow day
 CHAT_DISPUTE_HOURS = 48         # chat admins silent this long -> the dispute goes to the project team
 CHAT_ANNOUNCE_PARTICIPANTS = 3  # an unannounced chat market is announced once this many chat members bet (spec E8.4)
 CHAT_DRAFT_HOURS = 24           # a /market draft lives this long (spec E9.4)
+# 1-on-1 challenges (spec E11, phase 3e). The stake also obeys the trade limit (TRADE_LIMIT_SHARE, MAX_TRADE).
+CHALLENGE_MIN_STAKE = 10
+CHALLENGE_FEE = "0.02"          # of the common pot; burns entirely: there is no creator to share with
+CHALLENGES_PER_DAY = 3          # new challenges per author per Moscow day
+CHALLENGES_PER_PAIR_DAY = 2     # accepted per day between the same two people: keeps coins from being pumped
+CHALLENGE_ACCEPT_HOURS = 24     # to accept, or until the outcome date if earlier
+CHALLENGE_MIN_HOURS = 1         # the outcome date from now, at least...
+CHALLENGE_MAX_DAYS = 30         # ...and at most
+CHALLENGE_ANSWER_HOURS = 24     # for the second one to answer; silence means the first answer stands
+CHALLENGE_SILENCE_HOURS = 72    # both silent this long after the outcome date -> stakes go back
 
 # AI rules helper (spec E9.1): any OpenAI-compatible chat completions API, OpenRouter by default.
 # Without a key the helper is off and the creation wizard works as before.
@@ -167,6 +177,17 @@ PREMODERATION_MODEL = os.environ.get("PREMODERATION_MODEL", LLM_MODEL)
 PREMODERATION_API_KEY = os.environ.get("PREMODERATION_API_KEY", LLM_API_KEY)
 PREMODERATION_URL = os.environ.get("PREMODERATION_URL", LLM_BASE_URL)
 PREMODERATION_LINK_HOSTS = {"github.com", "api.github.com", "docs.python.org"}
+
+# Outcome from AI for public events (spec E4, phase 3e). Off until a model with web search is chosen.
+AI_RESOLVE_ENABLED = os.environ.get("AI_RESOLVE_ENABLED", "0") == "1"
+AI_RESOLVE_MODEL = os.environ.get("AI_RESOLVE_MODEL", "")
+AI_RESOLVE_API_KEY = os.environ.get("AI_RESOLVE_API_KEY", LLM_API_KEY)
+AI_RESOLVE_URL = os.environ.get("AI_RESOLVE_URL", LLM_BASE_URL)
+AI_RESOLVE_TIMEOUT = 60         # seconds per request; web search is slow
+AI_RESOLVE_ATTEMPTS = 2         # then the creator gets the usual question
+AI_RESOLVE_WAIT_MINUTES = 10    # the creator's question never waits for AI longer than this
+AI_RESOLVE_DAILY_LIMIT = 50     # requests per Moscow day, for all markets
+AI_RESOLVE_MIN_CONFIDENCE = 0.95  # as in premoderation
 
 # Opt-in internal monitoring; never expose without a bearer token.
 METRICS_ENABLED = os.environ.get("METRICS_ENABLED", "0") == "1"

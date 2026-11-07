@@ -295,3 +295,87 @@ interface MarketDraftView {                        // рынок из сообщ
 - Объявление в чате: `Question.announce` (галочка, из сообщения) и `Question.announced_at` (когда бот поставил объявление в очередь; итог пишем только по объявленным). Ответ на исходное сообщение — `question.chat_draft.source_message_id` → `reply_parameters` в `ChatPost.payload`.
 - Итог участника: `Question.proposed_by` (кто указал итог), `Question.proposal_bond`; запрос доказательства при споре — `evidence_requested_at`, `evidence_reminded_at`; вопрос участникам — `participants_asked_at`. Проводки: `proposal_bond`, `proposal_refund`, `proposer_fee`.
 - Параметры — `config/settings.py`: `PARTICIPANT_PROPOSAL_HOURS`, `PROPOSAL_BOND`, `EVIDENCE_HOURS`, `CHAT_ANNOUNCE_PARTICIPANTS`, `CHAT_DRAFT_HOURS`.
+
+## Фаза 3e (контракт, 07.11.2026)
+
+Рынки чата без ожидания проверки (спека E3), итог от ИИ (E4), вызов 1 на 1 (E11). Старые поля не меняются.
+
+```ts
+// POST /api/assist — новое поле ответа.
+interface AssistResult {
+  public_source?: string | null; // чем проверить итог публично: название источника без ссылки; null — событие локальное
+}
+
+// POST /api/markets — новые поля. Только общая лента и ДА/НЕТ, иначе не учитываются.
+interface CreateMarketData {
+  ai_check?: boolean;  // «Итог проверит ИИ»
+  ai_source?: string;  // до 120 символов, без ссылок
+}
+
+// Карточка рынка: market.resolution (тип Resolution)
+interface Resolution {
+  by_ai?: boolean;     // итог предложил ИИ, потому что создатель промолчал; ссылка — в note
+}
+
+// Карточка рынка
+interface MarketDetail {
+  ai_check?: boolean;  // ждём предложения ИИ; видно только создателю
+  ai_source?: string;  // видно только создателю
+}
+
+// Репутация создателя: author
+interface MarketAuthor {
+  resolved_by_ai?: number;
+}
+
+type ChallengeStatus = "open" | "active" | "disputed" | "finished" | "cancelled";
+type ChallengeRole = "author" | "opponent" | "guest"; // guest — открыл ссылку, ещё не принял
+
+interface Challenge {
+  code: string;
+  title: string;
+  criteria: string;
+  role: ChallengeRole;
+  my_side: "yes" | "no";    // у гостя — сторона, которая ему достанется
+  stake: string;            // ставка каждого
+  pot: string;              // общий банк, 2 × stake
+  prize: string;            // сколько получит победитель: банк минус 2%
+  resolves_at: string;
+  expires_at: string;       // принять до
+  status: ChallengeStatus;
+  author_name: string;
+  opponent_name: string | null;
+  link: string;             // t.me/<бот>/<приложение>?startapp=ch_<код>; только автору, пока вызов открыт
+  can_accept: boolean;
+  can_cancel: boolean;      // автор, пока вызов никто не принял
+  can_answer: boolean;      // наступила дата итога, ответа ещё нет
+  my_answer: "yes" | "no" | "cancel" | null;
+  rival_answer: "yes" | "no" | "cancel" | null;  // виден, когда я ответил или когда соперник ждёт моего ответа
+  answer_until: string | null;
+  dispute_cost: string;     // сколько стоит ответить иначе, чем соперник
+  proof_until: string | null;
+  outcome: "yes" | "no" | "cancel" | null;
+  result: "won" | "lost" | "refunded" | null;
+  payout: string | null;    // что я получил
+  closed_reason: string | null; // agreed, timeout, moderator, both_cancelled, silent, expired, withdrawn, rejected
+}
+```
+
+| Метод | Путь | Тело | Ответ |
+| --- | --- | --- | --- |
+| GET | `/api/challenges` | — | `{ challenges: Challenge[] }` — только мои, новые сверху |
+| POST | `/api/challenges` | `{ title, criteria, side, stake, resolves_at, request_key }` | `{ challenge, balance }`; повтор с тем же `request_key` не списывает второй раз |
+| GET | `/api/challenges/{code}` | — | `{ challenge, balance }`; 404, если вызов принят другими, отменён или отклонён |
+| POST | `/api/challenges/{code}/accept` | — | `{ challenge, balance }`; повтор принявшего не списывает второй раз |
+| POST | `/api/challenges/{code}/cancel` | — | `{ challenge, balance }` |
+| POST | `/api/challenges/{code}/answer` | `{ answer: "yes" \| "no" \| "cancel" }` | `{ challenge, balance }` |
+| POST | `/api/challenges/{code}/complaint` | `{ reason? }` | `{ ok: true }` |
+
+Ошибки правил — 400 с текстом, как у сделок. Чужой вызов — 404, как чужой приватный рынок.
+
+### Бот (для бэкенда)
+
+- Callback-данные: `chal:…` — `market/bot_challenges.py`; `aiok:<id>` и `aino:<id>` — ответ создателя на предложение ИИ (`market/bot_resolution_dialog.py`).
+- Проводки вызова — `LedgerEntry.CHALLENGE_KINDS`, поле `LedgerEntry.challenge`. Они не входят в рейтинг и статистику.
+- Рынок чата: `publication_state="approved"` сразу, состояние проверки — `Question.background_check`.
+- Параметры — `config/settings.py`: `CHALLENGE_*`, `AI_RESOLVE_*`.
