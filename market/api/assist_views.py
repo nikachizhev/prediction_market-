@@ -72,6 +72,7 @@ def assist(request):
     finish(event, result="ok", category=answer["category"], refined=answer["question"] is not None)
     log.info("AI helper: ok")
     return {"question": answer["question"], "why": answer["why"], "options": answer["options"],
+            "public_source": answer["public_source"],
             "criteria": answer["criteria"], "category": answer["category"],
             "closes_at": s.iso(answer["closes_at"]), "resolves_at": s.iso(answer["resolves_at"]),
             "left": helper.left(trader)}

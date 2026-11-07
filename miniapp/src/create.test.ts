@@ -360,6 +360,16 @@ describe('AI helper suggestion', () => {
     expect(undone.options).toBeUndefined();
   });
 
+  it('keeps «Итог проверит ИИ» only for a public YES/NO market with a source', () => {
+    const d = applyAssist(draft(), result({ public_source: 'протокол матча на сайте лиги' }));
+    expect(d.aiCheck).toBe(true);
+    expect(createPayload(d)?.ai_source).toBe('протокол матча на сайте лиги');
+    expect(createPayload({ ...d, aiCheck: false })?.ai_check).toBeUndefined();
+    expect(createPayload({ ...d, chat: 'k7Q2' })?.ai_check).toBeUndefined();
+    expect(createPayload({ ...d, mode: 'multiple', options: ['Аня', 'Боря'] })?.ai_check).toBeUndefined();
+    expect(applyAssist(draft(), result({ public_source: null })).aiCheck).toBe(false);
+  });
+
   it('never replaces options the creator typed', () => {
     const own = draft({ mode: 'multiple', options: ['Мой вариант', ''] });
     const d = applyAssist(own, result({ options: ['Аня', 'Боря'] }));
@@ -584,6 +594,8 @@ describe('stored drafts', () => {
       line: '',
       announce: false,
       draftCode: null,
+      aiCheck: false,
+      aiSource: null,
     });
   });
 

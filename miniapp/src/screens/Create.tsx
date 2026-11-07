@@ -38,6 +38,7 @@ import { Skeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
 import {
   acceptSuggestion,
+  aiCheckAvailable,
   applyAssist,
   applyTemplate,
   ASSIST_DAILY_LIMIT,
@@ -727,6 +728,31 @@ export function CreateScreen() {
     </>
   );
 
+  // «Итог проверит ИИ» (spec E4). Text outside the mockups, by the spec's steps.
+  const aiCheckBlock = !aiCheckAvailable(draft) ? null : (
+    <label className="create-check">
+      <input
+        type="checkbox"
+        checked={draft.aiCheck}
+        onChange={(e) => {
+          tg.HapticFeedback.selection();
+          update({ aiCheck: e.target.checked });
+        }}
+      />
+      <span className="create-check-box" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 12.5l4.5 4.5L19 7.5" />
+        </svg>
+      </span>
+      <span className="create-check-text">
+        <span className="create-check-label">Итог проверит ИИ</span>
+        <span className="sub small">
+          Источник: {draft.aiSource}. В дату итога ИИ предложит ответ со ссылкой, а ты подтвердишь его одним нажатием.
+        </span>
+      </span>
+    </label>
+  );
+
   // «Объявить в чате» (spec E8.4): a market made from a chat message is announced by the server anyway.
   const announceBlock = !draft.chat ? null : draft.draftCode ? (
     <p className="sub small create-announce-note">Бот объявит рынок в чате ответом на исходное сообщение.</p>
@@ -870,6 +896,7 @@ export function CreateScreen() {
             {similarBlock}
             {costBlock}
             {announceBlock}
+            {aiCheckBlock}
             <p className="sub small">Перед публикацией вопрос, правила и варианты ответа проверяет внешняя ИИ-модель. Спорные вопросы рассматривает модератор. До одобрения вопрос не виден участникам; монеты создания зарезервированы и вернутся при отказе.</p>
             {rulesBlock}
           </>
@@ -1417,6 +1444,7 @@ export function CreateScreen() {
             </div>
             {costBlock}
             {announceBlock}
+            {aiCheckBlock}
             {rulesBlock}
           </>
         )}

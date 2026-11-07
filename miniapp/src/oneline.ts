@@ -103,6 +103,8 @@ export function onelineDraft(draft: CreateDraft, result: AssistResult, now: Date
       ? { closeDate: closes.date, closeTime: closes.time, resultDate: resolves.date, resultTime: resolves.time }
       : {}),
     ...(options ? { mode: 'multiple' as const, options } : {}),
+    aiCheck: !!result.public_source && !draft.chat && !options,
+    aiSource: result.public_source ?? null,
     assist: 'oneline',
   };
 }

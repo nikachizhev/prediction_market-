@@ -791,7 +791,13 @@ function ReviewSection({
         <span className={`mk-outcome ${tone}`}>{proposed === 'cancel' ? 'Отменить рынок' : outcomeLabel(proposed)}</span>
       )}
       <Evidence url={rv.evidence} />
-      {r.note && <p className="mk-text">{r.note}</p>}
+      {rv.link ? (
+        <a className="mk-text" href={rv.link} target="_blank" rel="noopener noreferrer">
+          Источник
+        </a>
+      ) : (
+        r.note && <p className="mk-text">{r.note}</p>
+      )}
       <p className="mk-text sub small">
         {disputed
           ? 'Итог оспорили — решение примет модератор, оно окончательное.'
@@ -852,7 +858,12 @@ function ResolvedSection({ market }: { market: MarketDetail }) {
             <span className={result.profit >= 0 ? 'is-up' : 'is-down'}>({formatSigned(Math.round(result.profit), 0)})</span>
           </span>
         )}
-        {rv.byParticipant && <span className="sub small mk-by-participant">{rv.source}</span>}
+        {(rv.byParticipant || rv.byAi) && <span className="sub small mk-by-participant">{rv.source}</span>}
+        {rv.link && (
+          <a className="sub small" href={rv.link} target="_blank" rel="noopener noreferrer">
+            Источник
+          </a>
+        )}
       </div>
       <Evidence url={rv.evidence} compact />
     </section>

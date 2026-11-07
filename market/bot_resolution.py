@@ -146,6 +146,26 @@ def ask_creator(question: Question) -> None:
     telegram.send(creator.telegram_chat_id, text, reply_markup=outcome_keyboard(question))
 
 
+def ask_creator_ai(question: Question) -> None:
+    """AI found the outcome (spec E4, phase 3e): the creator confirms it in one tap."""
+    creator = question.creator
+    if not creator:
+        return
+    _resolve_notice(question, f"resolve-ask:{question.pk}")
+    if not creator.telegram_chat_id:
+        return
+    label = "ДА" if question.ai_outcome == "yes" else "НЕТ"
+    # Text outside the spec's wording, by its steps.
+    reason = f"\n{question.ai_reason}" if question.ai_reason else ""
+    text = (f"Приём прогнозов на твоём рынке закрыт:\n«{question.title}»\nИИ считает: {label}.{reason}\n"
+            f"Источник: {question.ai_evidence_url}\n"
+            f"Не ответишь за {settings.PARTICIPANT_PROPOSAL_HOURS} часа — этот итог получат участники, "
+            "и они смогут его оспорить.")
+    telegram.send(creator.telegram_chat_id, text, disable_web_page_preview=True, reply_markup={"inline_keyboard": [
+        [{"text": "Верно", "callback_data": f"aiok:{question.pk}"},
+         {"text": "Итог другой", "callback_data": f"aino:{question.pk}"}]]})
+
+
 def remind_creator(question: Question, number: int) -> None:
     creator = question.creator
     if not creator:
@@ -265,6 +285,9 @@ def participant_outcome_decided(question_id: int, decision: str, upheld: bool) -
     """A dispute over a participant's outcome is decided: the creator learns they keep the subsidy."""
     from .bot_notifications import _chat_dispute_stage, enqueue, market_button
     question = Question.objects.select_related("creator", "group").get(pk=question_id)
+    if question.proposed_by_ai and upheld:
+        from .events import log_event
+        log_event(question.creator, "ai_resolve", {"market": question.pk, "result": "dispute_upheld"})
     if not question.creator:
         return
     if decision == "cancel":
@@ -274,7 +297,10 @@ def participant_outcome_decided(question_id: int, decision: str, upheld: bool) -
     else:
         verdict = f"итог {'ДА' if decision == 'yes' else 'НЕТ'}"
     # Text outside the spec.
-    if upheld:
+    if question.proposed_by_ai:
+        text = (f"«{question.title}» — спор {'признан' if upheld else 'отклонён'}: {verdict}. Итог предлагал ИИ, "
+                "поэтому твоя репутация не пострадала, монеты за создание рынка возвращаются как обычно.")
+    elif upheld:
         text = (f"«{question.title}» — спор признан: {verdict}. Итог предлагал участник, "
                 "монеты за создание рынка возвращаются как обычно.")
     else:

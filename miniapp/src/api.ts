@@ -62,6 +62,8 @@ export interface Resolution {
   can_dispute: boolean;
   /** The result was proposed by a participant, not the author (phase 3d); missing on an older server. */
   by_participant?: boolean;
+  /** The creator stayed silent and AI proposed the outcome; the link is in `note` (phase 3e). */
+  by_ai?: boolean;
 }
 
 export interface SubmarketCard extends MarketCard {
@@ -152,6 +154,7 @@ export interface MarketDetail extends MarketCard {
     disputes_lost: number;
     /** Markets of the author resolved by participants (phase 3d); missing on an older server. */
     resolved_by_participants?: number;
+    resolved_by_ai?: number;
   };
   is_creator: boolean;
   can_trade: boolean;
@@ -367,6 +370,8 @@ export interface AssistResult {
   left: number;
   /** For «кто из…» (phase 3d): 2–10 answer options; null or missing — a ДА/НЕТ market. */
   options?: string[] | null;
+  /** Phase 3e: what proves the outcome publicly, a name without a link; null — a local event. */
+  public_source?: string | null;
 }
 
 /** Forbidden topic: nothing is filled in. */
@@ -439,6 +444,9 @@ export interface CreateMarketData {
   announce?: boolean;
   /** Code of the chat draft the market is made from (phase 3d, spec E9.4). */
   draft?: string;
+  /** «Итог проверит ИИ» (phase 3e, spec E4): only a public YES/NO market. */
+  ai_check?: boolean;
+  ai_source?: string;
   /** The chat price on the button; if it has moved the server refuses with 409 and charges nothing. */
   expected_cost?: number;
 }

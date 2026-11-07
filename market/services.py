@@ -714,7 +714,8 @@ def check_market_fields(*, title: str, criteria: str, category: str, closes_at, 
 @transaction.atomic
 def create_market(trader: Trader, *, title: str, criteria: str, category: str, closes_at, resolves_at,
                   request_key=None, group=None, options: list[str] | None = None,
-                  announce: bool = False, expected_cost: int | None = None) -> Question:
+                  announce: bool = False, expected_cost: int | None = None,
+                  ai_check: bool = False, ai_source: str = "") -> Question:
     """User-created YES/NO or multi-option market: the creator pays the market maker's subsidy.
 
     With `request_key` the call is idempotent: a repeat by the same creator returns the market
@@ -724,6 +725,7 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
     and the price and depth follow the chat's rules and stay fixed in the market.
     `announce` (chat markets only, spec E8.4): the bot announces the market in the chat.
     `expected_cost`: the price the creator saw; if the chat's price has moved, PriceChanged and no charge.
+    `ai_check`, `ai_source`: «Итог проверит ИИ» (spec E4): only a public YES/NO market, otherwise ignored.
     """
     from datetime import timedelta
     from uuid import UUID
@@ -782,6 +784,10 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
         b = chats.depth(cost_coins, len(cleaned_options))
         if b < 1:
             raise MarketError("Для такой цены рынка слишком много вариантов.")
+    ai_source = (ai_source or "").strip()
+    use_ai = bool(ai_check and ai_source) and group is None and not cleaned_options
+    if use_ai and (len(ai_source) > 120 or "://" in ai_source):
+        raise MarketError("Источник — коротким названием, без ссылки.")
     cost = Decimal(cost_coins)
     if expected_cost is not None and expected_cost != cost_coins:
         raise PriceChanged(cost_coins)
@@ -793,6 +799,7 @@ def create_market(trader: Trader, *, title: str, criteria: str, category: str, c
             b=b, creator=trader, category=category, resolves_at=resolves_at, subsidy=cost,
             request_key=request_key, group_id=group.pk if group is not None else None,
             options=cleaned_options, announce=bool(announce and group is not None),
+            ai_check=use_ai, ai_source=ai_source if use_ai else "",
         )
     except IntegrityError:
         # Another trader raced us with the same key; never reveal their market.
@@ -868,13 +875,20 @@ def _participant(trader: Trader, question: Question) -> bool:
 
 
 def outcome_author_id(question: Question) -> int | None:
-    """Who stated the outcome: `proposed_by`, or the creator for outcomes stated before phase 3d."""
+    """Who stated the outcome: `proposed_by`, the creator for outcomes stated before phase 3d, nobody for AI's."""
+    if question.proposed_by_ai:
+        return None
     return question.proposed_by_id or question.creator_id
 
 
 def by_participant(question: Question) -> bool:
     """The outcome was stated by a participant because the creator stayed silent (phase 3d)."""
     return bool(question.proposed_by_id) and question.proposed_by_id != question.creator_id
+
+
+def not_by_creator(question: Question) -> bool:
+    """The creator stayed silent and someone else's outcome stands in: they aren't to blame if it's wrong."""
+    return by_participant(question) or question.proposed_by_ai
 
 
 def has_evidence(question: Question) -> bool:
@@ -915,7 +929,7 @@ def _outcomes_map(subs: list[Question], submarket_outcomes, error: str) -> dict[
     return outcomes
 
 
-def _state_outcome(question: Question, subs: list[Question], author: Trader, outcome: str,
+def _state_outcome(question: Question, subs: list[Question], author: Trader | None, outcome: str,
                    outcomes_map: dict[int, str], *, bond: Decimal = Decimal(0), evidence=None,
                    evidence_file_id: str = "", note: str = "") -> None:
     """Record the stated outcome on the market and its options; a 24-hour dispute window opens."""
@@ -1019,6 +1033,28 @@ def propose_by_participant(trader: Trader, question: Question, outcome: str, *,
 
 
 @transaction.atomic
+def propose_by_ai(question: Question) -> Question:
+    """AI's proposal becomes the stated outcome because the creator stayed silent (spec E4, phase 3e).
+
+    No bond and no share of fees: the creator's share burns, the subsidy comes back as usual.
+    """
+    question, subs = _lock_root(question)
+    if question.resolution_state or question.status not in (Question.Status.OPEN, Question.Status.CLOSED):
+        raise MarketError("Итог этого рынка уже указан.")
+    if question.accepting_entries:
+        raise MarketError("Приём прогнозов ещё идёт — итог можно указать после его окончания.")
+    if subs or question.group_id or question.ai_state != "proposed" or question.ai_outcome not in ("yes", "no"):
+        raise MarketError("У этого рынка нет предложения ИИ.")
+    since = participant_proposal_from(question)
+    if since is None or timezone.now() < since:
+        raise MarketError("Создатель ещё может указать итог сам.")
+    _state_outcome(question, [], None, question.ai_outcome, {}, note=question.ai_evidence_url)
+    question.proposed_by_ai = True
+    question.save(update_fields=["proposed_by_ai"])
+    return question
+
+
+@transaction.atomic
 def open_dispute(trader: Trader, question: Question, reason: str = ""):
     """A participant challenges the stated outcome; the stake comes back if the dispute is upheld.
 
@@ -1032,7 +1068,7 @@ def open_dispute(trader: Trader, question: Question, reason: str = ""):
         raise MarketError("Оспорить можно только итог в окне спора.")
     if question.dispute_until is None or question.dispute_until <= timezone.now():
         raise MarketError("Окно спора закрыто.")
-    creator_vs_participant = trader.pk == question.creator_id and by_participant(question)
+    creator_vs_participant = trader.pk == question.creator_id and not_by_creator(question)
     if not creator_vs_participant and (trader.pk == question.creator_id or not _participant(trader, question)):
         raise MarketError("Оспорить итог может только участник рынка.")
     if trader.pk == outcome_author_id(question):
@@ -1101,7 +1137,7 @@ def _apply(question: Question, decision: str, *, creator_at_fault: bool, outcome
     subs = list(question.submarkets.select_for_update().order_by("id"))
     participant_id = question.proposed_by_id if by_participant(question) else None
     fee_to_id = participant_id if outcome_stands else None
-    burn_fee = participant_id is not None and not outcome_stands
+    burn_fee = question.proposed_by_ai or (participant_id is not None and not outcome_stands)
     if decision == "cancel":
         question = annul(question, refund_subsidy=not creator_at_fault)
     elif subs:
@@ -1147,7 +1183,7 @@ def moderator_decide(question: Question, decision: str, *,
     question, subs = _lock_root(question)
     if question.resolution_state != Question.Resolution.DISPUTED:
         raise MarketError("По этому рынку нет открытого спора.")
-    participant = by_participant(question)
+    participant = not_by_creator(question)
     if decision == "cancel" and not participant:
         question = cancel_moderated(question)
         _after_commit("moderator_decided", question.pk, decision, True)

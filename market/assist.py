@@ -30,6 +30,7 @@ CRITERIA_MIN = 15                 # as in the wizard: shorter rules keep «Да�
 SOURCE_MAX = 1000                 # a chat message (/market) is cut to this before it goes to the model
 OPTIONS_MIN, OPTIONS_MAX, OPTION_MAX = 2, 10, 80   # as `services.create_market` checks options
 WHY_MAX = 160
+SOURCE_NAME_MAX = 120             # Question.ai_source
 TEMPERATURE = 0.2
 MAX_TOKENS = 700
 
@@ -48,7 +49,7 @@ _PROMPT = """Ты помогаешь составить правила рынк�
 На входе JSON: question — вопрос создателя или текст сообщения из чата, category — выбранная им категория или null, today — сегодняшняя дата по Москве.
 
 Ответь одним JSON-объектом, без пояснений и без markdown:
-{"forbidden": null, "question": null, "why": null, "options": null, "criteria": "...", "category": "...", "closes_at": "ГГГГ-ММ-ДДTЧЧ:ММ", "resolves_at": "ГГГГ-ММ-ДДTЧЧ:ММ"}
+{"forbidden": null, "question": null, "why": null, "options": null, "public_source": null, "criteria": "...", "category": "...", "closes_at": "ГГГГ-ММ-ДДTЧЧ:ММ", "resolves_at": "ГГГГ-ММ-ДДTЧЧ:ММ"}
 
 forbidden — запрещённая тема, иначе null:
 - "health" — здоровье, болезнь, травма или смерть конкретного человека;
@@ -63,6 +64,8 @@ question — уточнённая формулировка или null. Уточ
 why — если question не null, одна короткая фраза, зачем уточнили, например «Без срока итог не определить — добавили дату.» или «„В понедельник“ поймут по-разному — добавили дату.». Иначе null.
 
 options — только для вопроса «кто из…», «какой…», «кто первым…», где возможных ответов несколько: список от 2 до 10 разных коротких вариантов, каждый до 80 символов, без нумерации. Варианты бери из текста или из общеизвестного списка (команды в матче, номинанты премии) — не выдумывай. Если назвать варианты нельзя, сформулируй вопрос на ДА или НЕТ и верни null. Для обычного вопроса ДА/НЕТ — null.
+
+public_source — если итог можно проверить в открытых источниках (спорт, релиз, официальное объявление), короткое название источника без ссылки, например «протокол матча на сайте лиги». Если событие локальное (зачётка, пары в группе, чьё-то опоздание) — null.
 
 criteria — как определяем результат: строки через \\n, ровно в таком виде:
 ДА — если …
@@ -276,6 +279,9 @@ def check(data: dict, title: str, category: str | None, now: datetime) -> dict:
     if why and len(why) > WHY_MAX:
         why = why[:WHY_MAX - 1].rstrip() + "…"
     options = _options(data.get("options"))
+    public_source = _text(data.get("public_source"))
+    if public_source and (len(public_source) > SOURCE_NAME_MAX or "://" in public_source or "www." in public_source):
+        public_source = None
 
     criteria = data.get("criteria")
     if not isinstance(criteria, str):
@@ -295,7 +301,8 @@ def check(data: dict, title: str, category: str | None, now: datetime) -> dict:
                             closes_at=closes_at, resolves_at=resolves_at, now=now)
     except MarketError:
         raise Failed("dates") from None
-    return {"question": question, "why": why, "options": options, "criteria": criteria, "category": slug,
+    return {"question": question, "why": why, "options": options, "public_source": public_source,
+            "criteria": criteria, "category": slug,
             "closes_at": closes_at.astimezone(MSK), "resolves_at": resolves_at.astimezone(MSK)}
 
 

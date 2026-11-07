@@ -26,7 +26,7 @@ def public_state(question: Question, trader: Trader) -> dict | None:
     root = question.parent or question
     participant = services.by_participant(root)
     if trader.pk == root.creator_id:
-        may_dispute = participant  # the creator may challenge a participant's outcome
+        may_dispute = services.not_by_creator(root)  # the creator may challenge a participant's or AI's outcome
     else:
         may_dispute = Trade.objects.filter(trader=trader).filter(Q(question=root) | Q(question__parent=root)).exists()
     return {
@@ -40,6 +40,7 @@ def public_state(question: Question, trader: Trader) -> dict | None:
                         and may_dispute
                         and not Dispute.objects.filter(question=root, trader=trader).exists()),
         "by_participant": participant,
+        "by_ai": root.proposed_by_ai,
     }
 
 
@@ -72,7 +73,8 @@ def user_markets():
 
 def tick(now=None) -> dict:
     now = now or timezone.now()
-    done = {"closed": 0, "asked": 0, "participants_asked": 0, "reminded": 0, "cancelled": 0, "finalized": 0,
+    from . import ai_resolution
+    done = {"closed": 0, "asked": 0, "ai_stated": 0, "participants_asked": 0, "reminded": 0, "cancelled": 0, "finalized": 0,
             "evidence_reminded": 0, "results": 0,
             "moves": 0, "closing": 0, "sent": 0, "skipped": 0, "failed": 0, "postponed": 0}
     bot = _bot()
@@ -83,7 +85,10 @@ def tick(now=None) -> dict:
 
     waiting = user_markets().filter(status=Question.Status.CLOSED, resolution_state="")
     for q in waiting.filter(asked_at__isnull=True, resolves_at__lte=now):
-        if _safe(bot.ask_creator, q):
+        if ai_resolution.waiting_for_ai(q, now):
+            continue
+        ask = getattr(bot, "ask_creator_ai", bot.ask_creator) if q.ai_state == "proposed" else bot.ask_creator
+        if _safe(ask, q):
             Question.objects.filter(pk=q.pk).update(asked_at=now)
             done["asked"] += 1
 
@@ -96,6 +101,14 @@ def tick(now=None) -> dict:
             continue
 
     since = now - timedelta(hours=settings.PARTICIPANT_PROPOSAL_HOURS)
+    # A silent creator: AI's proposal goes into the dispute window; participants are asked only without one.
+    for q in waiting.filter(ai_state="proposed", asked_at__isnull=False, resolves_at__lte=since):
+        try:
+            ai_resolution.state_silent_outcome(q)
+            done["ai_stated"] += 1
+        except services.MarketError:
+            continue
+
     for q in waiting.filter(participants_asked_at__isnull=True, resolves_at__lte=since):
         if _safe(bot.ask_participants, q):
             Question.objects.filter(pk=q.pk).update(participants_asked_at=now)
