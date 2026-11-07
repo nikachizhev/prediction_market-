@@ -593,7 +593,7 @@ export function mountScene(canvas: HTMLCanvasElement, o: SceneOptions): SceneHan
   let visible = true;
   let stopped = false;
   let slowFrames = 0;
-  let spin: { prop: WheelProp; to: number; ms: number; from: number; slice: number; done?: () => void } | null = null;
+  let spin: { prop: WheelProp; base: number; to: number; ms: number; from: number; slice: number; done?: () => void } | null = null;
   // Sparks off the rim and coins of a win: plain physics in scene pixels per second.
   type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; coin: boolean };
   let particles: Particle[] = [];
@@ -624,7 +624,8 @@ export function mountScene(canvas: HTMLCanvasElement, o: SceneOptions): SceneHan
     if (spin) {
       const k = Math.min(1, (now - spin.from) / spin.ms);
       const before = spin.prop.angle;
-      spin.prop.angle = spinCurve(k, spin.to);
+      // From wherever the wheel stands now: a second spin does not jump back to zero first.
+      spin.prop.angle = spin.base + spinCurve(k, spin.to - spin.base);
       const speed = dt > 0 ? Math.abs(spin.prop.angle - before) / dt : 0;
       spin.prop.heat = Math.max(spin.prop.heat ?? 0, Math.min(1, speed / 1400));
       const slice = sliceIndexAt(sharesOf(spin.prop), spin.prop.angle);
@@ -736,7 +737,10 @@ export function mountScene(canvas: HTMLCanvasElement, o: SceneOptions): SceneHan
         done?.();
         return;
       }
-      spin = { prop, to: degrees, ms, from: performance.now(), done, slice: sliceIndexAt(sharesOf(prop), prop.angle) };
+      // The same position, within one turn, so `degrees` (several turns ahead) stays ahead of it.
+      const base = ((prop.angle % 360) + 360) % 360;
+      prop.angle = base;
+      spin = { prop, base, to: degrees, ms, from: performance.now(), done, slice: sliceIndexAt(sharesOf(prop), base) };
     },
     celebrate(level) {
       const wheel = wheelOf();

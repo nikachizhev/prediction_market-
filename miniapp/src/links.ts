@@ -32,6 +32,12 @@ export function chatFromStartParam(startParam: string | null | undefined): strin
   return m ? m[1] : null;
 }
 
+/** `wheel_demo` or `wheel_demo_<prize>`: the wheel's demo for trying the animation; null for anything else. */
+export function wheelDemoFromStartParam(startParam: string | null | undefined): { prize: string | null } | null {
+  const m = /^wheel_demo(?:_(\d{1,6}))?$/.exec(startParam ?? '');
+  return m ? { prize: m[1] ?? null } : null;
+}
+
 /** Challenge code from a start_param `ch_<code>` (spec E11); null for anything else. */
 export function challengeFromStartParam(startParam: string | null | undefined): string | null {
   const m = /^ch_([A-Za-z0-9_-]{1,64})$/.exec(startParam ?? '');

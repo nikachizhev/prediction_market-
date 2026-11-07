@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WheelPrize } from './api';
-import { cardView, celebrationLevel, chanceLabel, slicesOf, stopAngle, winPhrase } from './wheel';
+import { cardView, celebrationLevel, chanceLabel, pickDemoPrize, slicesOf, stopAngle, winPhrase } from './wheel';
 
 const PRIZES: WheelPrize[] = [
   { prize: '5', chance: 0.6 },
@@ -64,3 +64,17 @@ describe('the win', () => {
     expect(winPhrase(-1)).toBe('Капля удачи');
   });
 });
+
+describe('the demo', () => {
+  it('gives the prize asked for in the link', () => {
+    expect(pickDemoPrize(PRIZES, '100')).toBe('100');
+    expect(pickDemoPrize(PRIZES, '100.00')).toBe('100');
+  });
+
+  it('falls back to the odds for an unknown or missing prize', () => {
+    expect(pickDemoPrize(PRIZES, null, () => 0)).toBe('5');
+    expect(pickDemoPrize(PRIZES, '7', () => 0.7)).toBe('10');
+    expect(pickDemoPrize(PRIZES, null, () => 0.999)).toBe('100');
+  });
+});
+
