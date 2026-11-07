@@ -4,6 +4,7 @@ import re
 from datetime import timedelta
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.conf import settings
 from . import moderation, moderation_bot as bot, premoderation as gate
@@ -21,7 +22,7 @@ REASONS = {
 
 
 def queue():
-    return Question.objects.filter(parent__isnull=True, publication_state__in=('review', 'error')).order_by('created_at', 'pk')
+    return Question.objects.filter(gate.waiting_for_moderator(), parent__isnull=True).order_by('created_at', 'pk')
 
 
 def show_queue(chat_id, page=0, *, message_id=None):
@@ -43,8 +44,8 @@ def show_queue(chat_id, page=0, *, message_id=None):
 def reviewed_version(pk, decision_id=None):
     q = Question.objects.get(pk=pk, parent__isnull=True)
     decision = q.publication_decisions.order_by('-pk').first()
-    if (q.publication_state not in ('review', 'error') or not decision
-            or decision.decision != q.publication_state
+    if (gate.check_state(q) not in gate.WAITING or not decision
+            or decision.decision != gate.check_state(q)
             or decision_id is not None and decision.pk != decision_id
             or gate.digest(gate.snapshot(q)) != decision.content_hash):
         raise MarketError('Текст или состояние изменились. Откройте очередь заново.')
@@ -152,8 +153,9 @@ def flush_notifications(limit=10):
     ids = moderation.admin_ids()
     fingerprint = hashlib.sha256(settings.MODERATION_BOT_TOKEN.encode()).hexdigest()
     for admin_id in ids:
-        missing = PublicationDecision.objects.filter(decision__in=('review', 'error'),
-            question__parent__isnull=True, question__publication_state__in=('review', 'error')).exclude(
+        missing = PublicationDecision.objects.filter(
+            Q(question__publication_state__in=gate.WAITING) | Q(question__background_check__in=gate.WAITING),
+            decision__in=gate.WAITING, question__parent__isnull=True).exclude(
             pk__in=PublicationDelivery.objects.filter(admin_id=admin_id, token_fingerprint=fingerprint).values('decision_id')).order_by('pk')[:100]
         for decision in missing:
             PublicationDelivery.objects.get_or_create(decision=decision, admin_id=admin_id, token_fingerprint=fingerprint)
