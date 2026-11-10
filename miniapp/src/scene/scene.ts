@@ -53,6 +53,8 @@ export interface WheelProp {
   kick?: number;
   /** How hot the wheel glows while it spins, 0..1. */
   heat?: number;
+  /** Just the wheel: no stand, plinth or ember glow behind it (the calm look). */
+  plain?: boolean;
 }
 
 export interface PodiumPlace {
@@ -94,6 +96,11 @@ export interface SceneOptions {
   onTooSlow?: () => void;
   /** A slice edge passed the pointer while the wheel spins: a light haptic tick. */
   onTick?: () => void;
+  /**
+   * The calm look: drawn sharp at this many canvas pixels per scene pixel, with no dithering, and props
+   * without the hall's stands and glows. Omitted: the oracle hall's pixel art.
+   */
+  crisp?: number;
 }
 
 export interface SceneHandle {
@@ -363,17 +370,19 @@ function labelSize(share: number, r: number): number | null {
 
 function drawWheel(g: Ctx, s: WheelProp, t: number): void {
   const { x, y, r } = s;
-  g.fillStyle = '#1b0b12';
-  g.beginPath();
-  g.moveTo(x - 8, y);
-  g.lineTo(x + 8, y);
-  g.lineTo(x + 30, y + r + 40);
-  g.lineTo(x - 30, y + r + 40);
-  g.closePath();
-  g.fill();
-  plinth(g, x, y + r + 40, 40);
   const heat = s.heat ?? 0;
-  glow(g, x, y, r * (1.9 + heat * 0.5), EMBER, 0.34 + Math.sin(t) * 0.04 + heat * 0.3);
+  if (!s.plain) {
+    g.fillStyle = '#1b0b12';
+    g.beginPath();
+    g.moveTo(x - 8, y);
+    g.lineTo(x + 8, y);
+    g.lineTo(x + 30, y + r + 40);
+    g.lineTo(x - 30, y + r + 40);
+    g.closePath();
+    g.fill();
+    plinth(g, x, y + r + 40, 40);
+    glow(g, x, y, r * (1.9 + heat * 0.5), EMBER, 0.34 + Math.sin(t) * 0.04 + heat * 0.3);
+  }
   g.save();
   g.translate(x, y);
   g.rotate((s.angle * Math.PI) / 180);
@@ -492,7 +501,7 @@ function drawWheel(g: Ctx, s: WheelProp, t: number): void {
   g.closePath();
   g.fill();
   g.restore();
-  glow(g, x, y - r - 4, 16 + heat * 8, AMBER, 0.55 + heat * 0.3);
+  if (!s.plain) glow(g, x, y - r - 4, 16 + heat * 8, AMBER, 0.55 + heat * 0.3);
 }
 
 function drawPodium(g: Ctx, s: PodiumProp, t: number): void {
@@ -616,9 +625,10 @@ function dither(g: Ctx, w: number, h: number): void {
 export function mountScene(canvas: HTMLCanvasElement, o: SceneOptions): SceneHandle {
   const w = o.width;
   const h = o.height;
-  canvas.width = w;
-  canvas.height = h;
-  const g = canvas.getContext('2d', { willReadFrequently: true });
+  const scale = o.crisp ?? 1;
+  canvas.width = Math.round(w * scale);
+  canvas.height = Math.round(h * scale);
+  const g = canvas.getContext('2d', { willReadFrequently: !o.crisp });
   if (!g) return { stop() {}, update() {}, spinWheel(_d, _m, done) { done?.(); }, celebrate() {} };
   const cones = o.cones ?? [{ x: w / 2, color: AMBER, a: 0.55, w: w * 0.47, len: 0.72 }];
   const back = o.transparent ? null : hall(w, h, cones);
@@ -656,6 +666,7 @@ export function mountScene(canvas: HTMLCanvasElement, o: SceneOptions): SceneHan
 
   const draw = (now: number) => {
     const t = (now - start) / 1000;
+    g.setTransform(scale, 0, 0, scale, 0, 0);
     if (o.transparent) g.clearRect(0, 0, w, h);
     if (back) g.drawImage(back, 0, 0);
     const ax = (t * 3) % 256;
@@ -740,7 +751,7 @@ export function mountScene(canvas: HTMLCanvasElement, o: SceneOptions): SceneHan
       }
     });
     if (shade) g.drawImage(shade, 0, 0);
-    dither(g, w, h);
+    if (!o.crisp) dither(g, w, h);
   };
 
   const loop = (now: number) => {

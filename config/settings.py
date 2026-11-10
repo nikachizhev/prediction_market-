@@ -142,6 +142,8 @@ CHALLENGE_SILENCE_HOURS = 72    # both silent this long after the outcome date -
 # (prize, weight): the slices on the wheel are drawn by these weights; the average prize is about 11 coins.
 WHEEL_PRIZES = ((5, 60), (10, 25), (25, 10), (50, 4), (100, 1))
 WHEEL_MIN_TRADE = 10
+# Off since 10.11.2026 (not part of the product for now): the API answers 404, the app hides the wheel.
+WHEEL_ENABLED = os.environ.get("WHEEL_ENABLED", "0") == "1"
 
 # AI rules helper (spec E9.1): any OpenAI-compatible chat completions API, OpenRouter by default.
 # Without a key the helper is off and the creation wizard works as before.

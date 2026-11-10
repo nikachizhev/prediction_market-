@@ -1368,9 +1368,9 @@ h1 {
   font-weight: 500;
 }
 
-/* ---- «Зал оракула» (docs/mockups/oracle): the app's look over the screens' own layout ---- */
+/* ---- «Зал оракула» (docs/mockups/oracle): kept for themed channels, on only with data-look='oracle' ---- */
 
-:root {
+:root[data-look='oracle'] {
   --accent: #ff4a32;
   --accent-ink: #12060a;
   /* Text and figures: a plain sans reads best over a living scene (feedback 08.11.2026). */
@@ -1380,11 +1380,11 @@ h1 {
   --radius-control: 4px;
 }
 
-body {
+[data-look='oracle'] body {
   background: var(--bg);
 }
 
-.backdrop {
+[data-look='oracle'] .backdrop {
   position: fixed;
   inset: 0;
   z-index: 0;
@@ -1394,16 +1394,16 @@ body {
   pointer-events: none;
 }
 
-.app {
+[data-look='oracle'] .app {
   position: relative;
 }
 
-.app > :not(.backdrop) {
+[data-look='oracle'] .app > :not(.backdrop) {
   position: relative;
   z-index: 1;
 }
 
-.orb-hero {
+[data-look='oracle'] .orb-hero {
   display: block;
   width: 100%;
   max-width: 390px;
@@ -1413,95 +1413,95 @@ body {
   image-rendering: pixelated;
 }
 
-.card {
+[data-look='oracle'] .card {
   border: 1px solid var(--line);
 }
 
 /* Titles and big figures: the old serif of a book of prophecies. */
-.screen-title,
-.mine-title,
-.rating-title,
-.mk-title,
-.ch-title,
-.ch-head,
-.onboarding-title,
-.create-ask-title,
-.created-title,
-.first-market-title,
-.profile-name {
+[data-look='oracle'] .screen-title,
+[data-look='oracle'] .mine-title,
+[data-look='oracle'] .rating-title,
+[data-look='oracle'] .mk-title,
+[data-look='oracle'] .ch-title,
+[data-look='oracle'] .ch-head,
+[data-look='oracle'] .onboarding-title,
+[data-look='oracle'] .create-ask-title,
+[data-look='oracle'] .created-title,
+[data-look='oracle'] .first-market-title,
+[data-look='oracle'] .profile-name {
   font-family: var(--font-display);
   font-weight: 700;
   letter-spacing: 0;
   font-variant-numeric: lining-nums;
 }
 
-.screen-title,
-.mine-title,
-.rating-title {
+[data-look='oracle'] .screen-title,
+[data-look='oracle'] .mine-title,
+[data-look='oracle'] .rating-title {
   font-size: 36px;
   line-height: 1.05;
 }
 
-.mk-title,
-.ch-title,
-.onboarding-title,
-.create-ask-title {
+[data-look='oracle'] .mk-title,
+[data-look='oracle'] .ch-title,
+[data-look='oracle'] .onboarding-title,
+[data-look='oracle'] .create-ask-title {
   font-size: 30px;
   line-height: 1.1;
 }
 
-.first-market-title,
-.created-title,
-.profile-name {
+[data-look='oracle'] .first-market-title,
+[data-look='oracle'] .created-title,
+[data-look='oracle'] .profile-name {
   font-size: 26px;
   line-height: 1.15;
 }
 
-.mk-pct,
-.market-pct,
-.first-market-pct,
-.chat-market-pct,
-.mk-multi-opt-pct,
-.mk-outcome,
-.welcome-amount,
-.stake-value,
-.ch-result-value,
-.ch-side-value,
-.profile-balance-value,
-.profile-stat-value {
+[data-look='oracle'] .mk-pct,
+[data-look='oracle'] .market-pct,
+[data-look='oracle'] .first-market-pct,
+[data-look='oracle'] .chat-market-pct,
+[data-look='oracle'] .mk-multi-opt-pct,
+[data-look='oracle'] .mk-outcome,
+[data-look='oracle'] .welcome-amount,
+[data-look='oracle'] .stake-value,
+[data-look='oracle'] .ch-result-value,
+[data-look='oracle'] .ch-side-value,
+[data-look='oracle'] .profile-balance-value,
+[data-look='oracle'] .profile-stat-value {
   font-family: var(--font);
   font-variant-numeric: tabular-nums lining-nums;
 }
 
-.button-primary {
+[data-look='oracle'] .button-primary {
   border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-ink);
 }
 
-.button-primary.is-ink {
+[data-look='oracle'] .button-primary.is-ink {
   background: var(--accent);
   color: var(--accent-ink);
 }
 
-.tabbar {
+[data-look='oracle'] .tabbar {
   backdrop-filter: none;
 }
 
 /* The hall shows through wherever a hint lies straight on it: text must stay readable over any light. */
-.app-main,
-.ch {
+[data-look='oracle'] .app-main,
+[data-look='oracle'] .ch {
   text-shadow: 0 0 6px rgba(3, 2, 8, 0.95);
 }
 
-.card,
-.input,
-input,
-textarea,
-button {
+[data-look='oracle'] .card,
+[data-look='oracle'] .input,
+[data-look='oracle'] input,
+[data-look='oracle'] textarea,
+[data-look='oracle'] button {
   text-shadow: none;
 }
 
-.mine-tab {
+[data-look='oracle'] .mine-tab {
   font-size: 12px;
 }

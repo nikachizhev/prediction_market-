@@ -9,11 +9,15 @@ import { formatMoney } from '../format';
 import { mountScene, type SceneHandle } from '../scene/scene';
 import { useSession } from '../session';
 import { tg } from '../telegram';
+import { look } from '../look';
 import { cardView, celebrationLevel, chanceLabel, pickDemoPrize, slicesOf, stopAngle, winPhrase } from '../wheel';
 import './wheel.css';
 
 const WIDTH = 195;
-const HEIGHT = 250;
+/** The calm look shows just the wheel; the oracle hall stands it on a plinth. */
+const hall = look === 'oracle';
+const HEIGHT = hall ? 250 : 196;
+const WHEEL_Y = hall ? 104 : 98;
 
 function prefersStill(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -104,7 +108,8 @@ export function WheelScreen() {
       height: HEIGHT,
       transparent: true,
       still: prefersStill(),
-      props: [{ type: 'wheel', x: WIDTH / 2, y: 104, r: 78, angle, slices: slicesOf(state.prizes) }],
+      crisp: hall ? undefined : Math.min(3, Math.max(2, window.devicePixelRatio || 2)),
+      props: [{ type: 'wheel', x: WIDTH / 2, y: WHEEL_Y, r: 78, angle, slices: slicesOf(state.prizes), plain: !hall }],
       onTick: () => {
         // A light tick for each slice edge, but not a buzz when the wheel is at full speed.
         const now = performance.now();
@@ -173,7 +178,7 @@ export function WheelScreen() {
     <div className="screen wheel">
       <h1 className="screen-title">Колесо дня</h1>
       {demo && <p className="wheel-demo">Демо: монеты не начисляются, крутить можно сколько угодно</p>}
-      <canvas ref={canvas} className="wheel-hero" aria-hidden="true" />
+      <canvas ref={canvas} className={`wheel-hero ${hall ? '' : 'is-calm'}`} aria-hidden="true" />
 
       <div className="wheel-action" aria-live="polite">
         {phase === 'done' && prize !== null && (
