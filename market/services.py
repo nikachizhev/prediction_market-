@@ -626,15 +626,49 @@ def profit(trader: Trader) -> Decimal:
     return trader.balance + portfolio_value(trader) + locked - Decimal(settings.START_BALANCE) - daily - other
 
 
+def daily_bonus_for(streak_day: int) -> Decimal:
+    """The daily bonus on the given day of a run (spec E12.1): the table in settings, its last value repeats."""
+    table = settings.DAILY_BONUS_STREAK
+    return Decimal(table[min(max(streak_day, 1), len(table)) - 1])
+
+
+def daily_streak(trader: Trader, day) -> int:
+    """Consecutive Moscow days with a daily-bonus record, ending on `day`; 0 if there is none that day.
+
+    The starter-pack day has a zero record (`skip_daily_reward_today`), so it is the first day of the run.
+    """
+    from datetime import timedelta
+    from .models import DailyReward
+    streak = 0
+    days = DailyReward.objects.filter(trader=trader, day__lte=day).order_by("-day").values_list("day", flat=True)
+    for recorded in days[:1000]:
+        if recorded != day - timedelta(days=streak):
+            break
+        streak += 1
+    return streak
+
+
+def daily_streak_state(trader: Trader) -> dict:
+    """{'days': the run including today (or the live run ending yesterday), 'tomorrow': the next day's bonus}."""
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+    today = timezone.localdate(timezone=ZoneInfo("Europe/Moscow"))
+    days = daily_streak(trader, today) or daily_streak(trader, today - timedelta(days=1))
+    return {"days": days, "tomorrow": daily_bonus_for(days + 1)}
+
+
 @transaction.atomic
 def claim_daily_reward(trader):
+    """The first open of the day (Moscow): a bonus that grows with the run of consecutive days (spec E12.1)."""
+    from datetime import timedelta
     from zoneinfo import ZoneInfo
     from django.utils import timezone
     from .models import DailyReward
     trader = Trader.objects.select_for_update().get(pk=trader.pk)
     day = timezone.localdate(timezone=ZoneInfo("Europe/Moscow"))
+    streak_day = daily_streak(trader, day - timedelta(days=1)) + 1
     reward, created = DailyReward.objects.get_or_create(
-        trader=trader, day=day, defaults={"coins": Decimal(settings.DAILY_BONUS)})
+        trader=trader, day=day, defaults={"coins": daily_bonus_for(streak_day)})
     if created:
         _credit(trader, reward.coins, LedgerEntry.Kind.DAILY)
     return reward if created else None

@@ -430,3 +430,27 @@ class ChallengeAdmin(admin.ModelAdmin):
             services.reject_challenge(challenge)
         self.message_user(request, "Вызовы сняты.")
 
+
+
+from .models import Badge, WeeklyTop  # noqa: E402 - kept with its block
+
+
+@admin.register(WeeklyTop)
+class WeeklyTopAdmin(admin.ModelAdmin):
+    """«Доска почёта» (spec E12.3): frozen snapshots, read-only."""
+    list_display = ("week_start", "place", "trader", "profit", "resolved", "notified_at")
+    list_filter = ("week_start",)
+    list_select_related = ("trader",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Badge)
+class BadgeAdmin(admin.ModelAdmin):
+    list_display = ("trader", "kind", "silent", "awarded_at")
+    list_filter = ("kind", "silent")
+    list_select_related = ("trader",)

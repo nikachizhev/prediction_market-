@@ -383,9 +383,67 @@ interface Challenge {
 - Параметры — `config/settings.py`: `CHALLENGE_*`, `AI_RESOLVE_*`.
 
 
-## Фаза 3f (контракт, 08.11.2026)
+## Фаза 3f (контракт, 08.11.2026, дополнен 10.11.2026)
 
-Колесо дня (спека E12.2). Остальные награды фазы допишут свои задачи. С 10.11.2026 колеса в продукте нет: адреса ниже не подключены и отвечают 404, контракт оставлен на случай возврата.
+Награды и возвращение (спека E12). Старые поля не меняются. Монеты дают только серия дней и колесо; оба — бонусы, в прибыль не входят. Основа — ветка `e12-rewards-base` (миграция 0042: `Badge`, `WeeklyTop`; `WheelSpin` — 0041).
+
+```ts
+type NotifyKind = "results" | "moves" | "closing" | "referral" | "creator" | "badges";
+// badges — новый значок; обычный переключатель в профиле, тихий режим его глушит
+
+interface Streak {                                 // серия дней (E12.1)
+  days: number;        // дней подряд с бонусом дня, считая сегодня; день стартового пакета — первый
+  tomorrow: Money;     // бонус за следующий день серии (20, 25, … 50; дальше 50)
+}
+
+interface Grant {                                  // POST /api/session
+  kind: "starter" | "daily" | "insurance";
+  amount: Money;
+  streak?: number;     // только у daily: какой это день серии
+  tomorrow?: Money;    // только у daily: сколько будет завтра
+}
+
+type Frame = "gold" | "silver" | "bronze";         // рамка топ-3 прошлой недели (E12.3), держится неделю
+type BadgeKind = "first" | "prophet" | "against" | "judge" | "leader" | "duel" | "optimist";
+
+interface BadgeView {
+  kind: BadgeKind;
+  title: string;       // «Первая кровь», «Пророк», …
+  hint: string;        // за что; у неполученного — подсказка с прогрессом: «3 из 5 верных подряд»
+  earned: boolean;
+  awarded_at: string | null;
+}
+
+interface HonorPlace { place: 1 | 2 | 3; display_name: string; photo_url: string | null; profit: Money; is_me: boolean }
+
+interface Me {                                     // + к фазе 3e
+  streak: Streak;
+  frame: Frame | null;
+  badges: BadgeKind[];                             // полученные, в порядке получения
+}
+```
+
+| Метод | Путь | Тело | Ответ |
+| --- | --- | --- | --- |
+| GET | `/api/rating` | как раньше | + `frame: Frame \| null` у каждой строки и у `me`; + `honor: { week_start: string, places: HonorPlace[] }` — «Топ-3 прошлой недели», `places: []`, пока снимка нет или никто не набрал `HONOR_MIN_RESOLVED` (3) разрешённых прогнозов. Рейтинги чатов рамок и блока не дают |
+| GET | `/api/markets/{id}` | — | `author` + `frame: Frame \| null`; + `can_brag: boolean` — рынок завершён, я выиграл, рынок не из чата |
+| GET | `/api/profile` | — | + `badges: BadgeView[]` (все семь, с подсказками); + `streak: Streak` |
+| GET | `/api/traders/{id}` | — | у чужого профиля — только полученные: `badges: BadgeView[]` с `earned: true`; `frame` |
+| POST | `/api/markets/{id}/brag` | — | `{ prepared_message_id }` для `WebApp.shareMessage` — «Угадал с шансом 12%, +340 монет», вопрос и кнопка с моей реферальной ссылкой; не выиграл или рынок чата — 400; Telegram недоступен — 503 (клиент открывает `t.me/share` с той же ссылкой) |
+
+Серия дней — в `POST /api/session` (`granted`) и в `Me.streak`; текст тоста: «Бонус дня: +25 монет · 2 дня подряд, завтра +30», на первом дне серии — без «подряд». Значок — запись во «Входящих» (`kind: "badges"`, фильтр «Мои») и сообщение бота. Место на доске — сообщение бота троим после 09:00 (`kind: "honor"`, переключателя нет, тихий режим глушит), во «Входящих» тоже.
+
+### Бот и бэкенд
+
+- Серия: `services.claim_daily_reward` считает дни подряд по `DailyReward` (нулевая запись дня стартового пакета — первый день), бонус — `DAILY_BONUS_STREAK` в настройках; `services.daily_streak_state(trader)` отдаёт `Streak`.
+- Доска: `WeeklyTop` — снимок (неделя, место, участник, прибыль, число разрешённых прогнозов); уникальны место в неделе и участник в неделе. Снимок делает воркер в понедельник (T47), `notified_at` — когда поставлено сообщение.
+- Значки: `Badge` — один на человека и вид (`one_badge_per_kind`); `question` — рынок, которым значок закрыт (другим не показывается); `silent` — выдан за прошлое при запуске, без сообщений. Правила — T48 (`market/badges.py`), пороги — `BADGE_*` в настройках.
+- Колесо: `WheelSpin`, проводка `wheel` в `LedgerEntry.BONUS_KINDS`, `WHEEL_PRIZES`, `WHEEL_MIN_TRADE`, `WHEEL_ENABLED`.
+- Рассылка (T51): команда сервера, отказ «Не присылать» хранится у участника.
+
+### Колесо дня (E12.2)
+
+С 10.11.2026 колеса в продукте нет: адреса ниже не подключены и отвечают 404, контракт оставлен на случай возврата.
 
 ```ts
 interface WheelPrize {

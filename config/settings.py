@@ -87,7 +87,10 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Economy (spec E5). The only place these numbers live; screens read them from the API.
 START_BALANCE = 1000            # starter pack, once per Telegram ID
-DAILY_BONUS = 20                # first open of the day (Moscow date)
+# First open of the day (Moscow date). Spec E12.1: the bonus grows with the run of consecutive days;
+# past the end of the table the last value repeats, a missed day starts the run over.
+DAILY_BONUS_STREAK = (20, 25, 30, 35, 40, 45, 50)
+DAILY_BONUS = DAILY_BONUS_STREAK[0]  # the first day of a run; legacy name
 INSURANCE_AMOUNT = 200          # once a week if balance < threshold and no open positions
 INSURANCE_THRESHOLD = 50
 INSURANCE_PERIOD_DAYS = 7
@@ -144,6 +147,18 @@ WHEEL_PRIZES = ((5, 60), (10, 25), (25, 10), (50, 4), (100, 1))
 WHEEL_MIN_TRADE = 10
 # Off since 10.11.2026 (not part of the product for now): no API routes, no screen; the service refuses to spin.
 WHEEL_ENABLED = os.environ.get("WHEEL_ENABLED", "0") == "1"
+# «Доска почёта» (spec E12.3): the top-3 of the week by profit is frozen on Monday after 00:00 Moscow and
+# keeps a frame for the week; a place needs at least this many resolved predictions in that week. No coins.
+HONOR_TOP = 3
+HONOR_MIN_RESOLVED = 3
+# Badges (spec E12.4): given once, no coins; cancelled markets count neither way.
+BADGE_PROPHET_STREAK = 5        # «Пророк»: correct predictions in a row
+BADGE_OPTIMIST_STREAK = 5       # «Оптимист»: wrong predictions in a row
+BADGE_AGAINST_PROB = "0.20"     # «Против толпы»: bought a side priced below this...
+BADGE_AGAINST_MIN_TRADE = 10    # ...for at least this many coins, and it won
+BADGE_JUDGE_MARKETS = 10        # «Честный судья»: own markets resolved without an upheld dispute
+BADGE_LEADER_PARTICIPANTS = 10  # «Заводила»: participants in one own market
+BADGE_DUELIST_WINS = 5          # «Дуэлянт»: 1-on-1 challenges won
 
 # AI rules helper (spec E9.1): any OpenAI-compatible chat completions API, OpenRouter by default.
 # Without a key the helper is off and the creation wizard works as before.

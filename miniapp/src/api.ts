@@ -45,6 +45,8 @@ export interface Me {
   assist?: AssistState;
   /** Quiet mode (phase 3d): the bot sends only results with payouts and resolution steps; missing on an older server. */
   notify_quiet?: boolean;
+  /** Run of daily bonuses (phase 3f); missing on an older server. */
+  streak?: Streak;
 }
 
 /**
@@ -207,6 +209,18 @@ export interface LedgerEntry {
 export interface Grant {
   kind: 'starter' | 'daily' | 'insurance';
   amount: Money;
+  /** Daily bonus only (phase 3f): which day of the run this is; missing on an older server. */
+  streak?: number;
+  /** Daily bonus only (phase 3f): tomorrow's bonus; missing on an older server. */
+  tomorrow?: Money;
+}
+
+/** Run of daily bonuses (phase 3f, spec E12.1). */
+export interface Streak {
+  /** Days in a row with the daily bonus, today included; the starter-pack day is the first. */
+  days: number;
+  /** The bonus for the next day of the run. */
+  tomorrow: Money;
 }
 
 export interface Session {
