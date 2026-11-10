@@ -53,6 +53,7 @@ docker compose up -d --wait
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Параметры PostgreSQL |
 | `POSTGRES_HOST`, `POSTGRES_PORT` | По умолчанию `127.0.0.1:5432` |
 | `SITE_URL` | Адрес сайта в письмах и Telegram-ссылках |
+| `LEGACY_SITE_ENABLED` | `1` включает старый серверный сайт (регистрация по почте, вход по паролю, страницы `/q/…`), `/abmock/` и `/sources/`. По умолчанию включён при `DJANGO_DEBUG=1` и выключен при `0` |
 | `GITHUB_TOKEN` | Необязательный токен GitHub API |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` | Токен и имя бота без `@` |
 | `TELEGRAM_APP_NAME` | Short name Mini App из BotFather (`t.me/<бот>/<app>`), по умолчанию `app` |
@@ -134,6 +135,8 @@ sudo -u pm /opt/prediction_market/venv/bin/python /opt/prediction_market/app/man
 ```
 
 `setup-server.sh` сам создаёт `.env` со случайными `DJANGO_SECRET_KEY` и паролем Postgres. В BotFather для Mini App указывается `https://<host>/app/`.
+
+На сервере (`DJANGO_DEBUG=0`) работают только Mini App (`/app/`), API (`/api/`), админка и медиа: вход — только через Telegram. Старый сайт из разделов ниже там закрыт и отвечает 404, адрес `/` ведёт в бота. Вернуть его можно строкой `LEGACY_SITE_ENABLED=1` в `.env` сервера.
 
 Обновление: запушьте изменения в `main`, затем выполните (из Windows — в PowerShell, там тоже есть `ssh`):
 

@@ -75,6 +75,7 @@ docker compose up -d --wait                                  # PostgreSQL
 ## Сервер (прод)
 
 - `root@91.108.241.25`, вход по SSH-ключу. Сайт и Mini App: `https://91-108-241-25.sslip.io` (`/app/` — Mini App), TLS даёт Caddy (`deploy/Caddyfile`).
+- Старый сайт на проде закрыт (10.11.2026): при `DJANGO_DEBUG=0` маршруты `market/urls.py`, `/abmock/` и `/sources/` не подключаются и отвечают 404, `/` ведёт в бота. Флаг — `LEGACY_SITE_ENABLED` (`config/settings.py`, `config/urls.py`); локально и в тестах старый сайт включён.
 - Код — `/opt/prediction_market/app`, ветка **`main`**, владелец пользователь `pm`; venv — `/opt/prediction_market/venv`; `.env` сервера лежит там же и в git не попадает.
 - Сервисы systemd (`deploy/systemd/`): `pm-db` (PostgreSQL в docker compose), `pm-web` (gunicorn), `pm-worker` (`run_worker`), `pm-bot` (`run_telegram_bot`, long polling).
 - **Обновить прод** (после пуша в `main`): `ssh root@91.108.241.25 bash /opt/prediction_market/app/deploy/update.sh` — pull, `npm ci` + сборка Mini App, зависимости, миграции, collectstatic, рестарт всех сервисов.

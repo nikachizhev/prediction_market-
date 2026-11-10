@@ -71,6 +71,10 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+# The old server-rendered site (e-mail registration, password login, trading pages), the A/B mock and sources.
+# The product signs people in through Telegram only (spec E1), so outside DEBUG the old routes are closed
+# unless LEGACY_SITE_ENABLED=1; see config/urls.py.
+LEGACY_SITE_ENABLED = os.environ.get("LEGACY_SITE_ENABLED", "1" if DEBUG else "0") == "1"
 LOGIN_URL = "market:login"
 LOGIN_REDIRECT_URL = "market:welcome"
 LOGOUT_REDIRECT_URL = "market:markets"
