@@ -7,3 +7,5 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 LLM_API_KEY = ""
 PREMODERATION_ENABLED = False
 PREMODERATION_API_KEY = ""
+# The old site keeps its tests until it is removed; config/urls.py reads this at import.
+LEGACY_SITE_ENABLED = True
