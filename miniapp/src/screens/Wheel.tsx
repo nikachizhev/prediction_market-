@@ -1,4 +1,5 @@
 // «Колесо дня» (spec E12.2, docs/mockups/oracle/ArtWheel.dc.html): the card in the feed and the wheel itself.
+// Not mounted anywhere since 10.11.2026: the wheel is out of the product for now, the code waits here.
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError, api, type WheelState } from '../api';
