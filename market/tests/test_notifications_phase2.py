@@ -156,7 +156,8 @@ def test_move_threshold(prob, expected):
 
 def test_move_once_per_day_with_position():
     anya = make("Аня", chat=1)
-    q = market(title="Снег до 1 декабря", deadline=NOON + timedelta(days=5))
+    # Open for real now: buy() checks the deadline against the clock, not against NOON.
+    q = market(title="Снег до 1 декабря", deadline=max(NOON, timezone.now()) + timedelta(days=5))
     services.buy(anya, q, "no", 120)
     Trade.objects.filter(trader=anya).update(created_at=NOON - timedelta(hours=30))
     trade(q, make("Борис"), 0.64, NOON - timedelta(hours=1))
