@@ -6,7 +6,7 @@ import { BalancePill } from './components/BalancePill';
 import { TabBar } from './components/TabBar';
 import { useToast } from './components/Toast';
 import { grantMessage } from './grants';
-import { challengeFromStartParam, chatFromStartParam, draftFromStartParam, marketFromStartParam, wheelDemoFromStartParam } from './links';
+import { challengeFromStartParam, chatFromStartParam, draftFromStartParam, marketFromStartParam } from './links';
 import { Onboarding } from './screens/Onboarding';
 import { Placeholder } from './screens/Placeholder';
 import { useSession } from './session';
@@ -16,7 +16,6 @@ import {
   CreateScreen,
   CreatedScreen,
   NewChallengeScreen,
-  WheelScreen,
   FeedScreen,
   MarketScreen,
   MineScreen,
@@ -97,11 +96,6 @@ function useMarketDeepLink(ready: boolean) {
       navigate(`/chat/${encodeURIComponent(chat)}`);
       return;
     }
-    const wheelDemo = wheelDemoFromStartParam(tg.startParam);
-    if (wheelDemo !== null) {
-      navigate(`/wheel?demo=1${wheelDemo.prize ? `&prize=${wheelDemo.prize}` : ''}`);
-      return;
-    }
     const challenge = challengeFromStartParam(tg.startParam);
     if (challenge !== null) {
       navigate(`/challenge/${encodeURIComponent(challenge)}`);
@@ -162,7 +156,6 @@ export const router = createBrowserRouter(
         { path: '/notifications', element: <NotificationsScreen /> },
         { path: '/chat/:code', element: <ChatScreen /> },
         { path: '/challenge/new', element: <NewChallengeScreen /> },
-        { path: '/wheel', element: <WheelScreen /> },
         { path: '/challenge/:code', element: <ChallengeScreen /> },
         { path: '*', element: <NotFoundScreen /> },
       ],

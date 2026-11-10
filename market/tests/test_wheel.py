@@ -5,7 +5,6 @@ from datetime import timedelta
 from decimal import Decimal as D
 from random import Random
 from threading import Barrier
-from unittest.mock import patch
 
 import pytest
 from django.db import close_old_connections, connection
@@ -13,7 +12,7 @@ from django.test import override_settings
 from django.utils import timezone
 
 from market import rating, services
-from market.models import Event, LedgerEntry, Trader, WheelSpin
+from market.models import LedgerEntry, Trader, WheelSpin
 from market.services import MarketError
 from market.tests.test_bot_resolution_dialog import make, people  # noqa: F401
 
@@ -117,32 +116,24 @@ def api(client, settings):
     return person
 
 
-def test_api_shows_the_table_and_spins_once(api, people, market):
-    trader = Trader.objects.get(telegram_chat_id=93001)
-    code, state = api.get("wheel")
-    assert code == 200 and state["unlocked"] is False and state["spun"] is None
-    assert [float(p["prize"]) for p in state["prizes"]] == [5, 10, 25, 50, 100]
-    assert abs(sum(p["chance"] for p in state["prizes"]) - 1) < 1e-9
-    assert api.post("wheel/spin")[0] == 400
-    services.buy(trader, market, "no", D(15))
-    with patch("market.services._pick_prize", return_value=D(25)):
-        code, first = api.post("wheel/spin")
-        assert code == 200 and float(first["prize"]) == 25 and float(first["wheel"]["spun"]) == 25
-        code, again = api.post("wheel/spin")
-    assert float(again["prize"]) == 25 and again["balance"] == first["balance"]
-    assert Event.objects.filter(name="wheel_spin").count() == 2
-
-
-def test_off_by_default_hides_the_wheel_and_credits_nothing(api, people, market, settings):
-    settings.WHEEL_ENABLED = False
+def test_no_way_in_through_the_api_even_when_switched_on(api, client, people, market):
+    # 10.11.2026: the wheel is out of the product, the API has no routes for it at all.
     trader = Trader.objects.get(telegram_chat_id=93001)
     services.buy(trader, market, "no", D(15))
     before = balance(trader)
-    assert api.get("wheel")[0] == 404
-    assert api.post("wheel/spin")[0] == 404
-    with pytest.raises(MarketError):
-        services.spin_wheel(trader)
+    assert client.get("/api/wheel").status_code == 404
+    assert client.post("/api/wheel/spin").status_code == 404
     assert balance(trader) == before and not WheelSpin.objects.exists()
+
+
+def test_off_by_default_the_service_credits_nothing(people, market, settings):
+    settings.WHEEL_ENABLED = False
+    anya = people[1]
+    services.buy(anya, market, "yes", D(20))
+    before = balance(anya)
+    with pytest.raises(MarketError):
+        services.spin_wheel(anya)
+    assert balance(anya) == before and not WheelSpin.objects.exists()
 
 
 # --- PostgreSQL --------------------------------------------------------------------------------------

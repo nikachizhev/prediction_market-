@@ -1,4 +1,7 @@
-"""«Колесо дня» (spec E12.2; docs/api.md «Фаза 3f»). The server picks the prize; the app only shows it."""
+"""«Колесо дня» (spec E12.2; docs/api.md «Фаза 3f»). The server picks the prize; the app only shows it.
+
+Not routed since 10.11.2026 (market/api/urls.py): the wheel is out of the product for now.
+"""
 from __future__ import annotations
 
 from django.conf import settings
