@@ -30,7 +30,7 @@ def test_day_changes_at_moscow_midnight():
         assert claim_daily_reward(trader)
         assert claim_daily_reward(trader) is None
     trader.refresh_from_db()
-    assert trader.balance == 1040
+    assert trader.balance == 1045  # the second day in a row brings 25 (spec E12.1)
 
 
 @pytest.mark.django_db

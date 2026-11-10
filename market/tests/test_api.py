@@ -116,7 +116,8 @@ def test_daily_bonus_on_next_day(anya):
     t = trader(1001)
     t.daily_rewards.update(day=timezone.localdate() - timedelta(days=1))
     _, data = anya.post("session")
-    assert data["granted"] == [{"kind": "daily", "amount": "20.00"}]
+    # The starter day was the first of the run, so this is day 2 (spec E12.1).
+    assert data["granted"] == [{"kind": "daily", "amount": "25.00", "streak": 2, "tomorrow": "30.00"}]
 
 
 def test_referral_via_start_param(client, anya):

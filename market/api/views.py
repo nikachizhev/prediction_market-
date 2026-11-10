@@ -162,7 +162,9 @@ def session(request):
         services.skip_daily_reward_today(trader)
     reward = services.claim_daily_reward(trader)
     if reward:
-        granted.append({"kind": "daily", "amount": s.money(reward.coins)})
+        streak = services.daily_streak_state(trader)
+        granted.append({"kind": "daily", "amount": s.money(reward.coins), "streak": streak["days"],
+                        "tomorrow": s.money(streak["tomorrow"])})
     insurance = services.claim_insurance(trader)
     if insurance:
         granted.append({"kind": "insurance", "amount": s.money(insurance.amount)})

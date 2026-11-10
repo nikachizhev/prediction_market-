@@ -9,7 +9,7 @@ from django.conf import settings
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
-from .. import assist, notify_levels
+from .. import assist, notify_levels, services
 from ..bot_notifications import group_of, notify_settings, quiet_mode
 from ..models import CATEGORIES, MarketSubscription, Position, Question, Trade, Trader
 from ..notifications import visible_notifications
@@ -70,7 +70,14 @@ def me(trader: Trader) -> dict:
         "notify_quiet": quiet_mode(trader),
         "unread_notifications": visible_notifications(trader).filter(read_at__isnull=True).count(),
         "assist": assist.state(trader),
+        "streak": streak(trader),
     }
+
+
+def streak(trader: Trader) -> dict:
+    """Run of daily bonuses (spec E12.1): days so far and what tomorrow brings."""
+    state = services.daily_streak_state(trader)
+    return {"days": state["days"], "tomorrow": money(state["tomorrow"])}
 
 
 def notice(item) -> dict:

@@ -194,6 +194,7 @@ NOTIFY_KINDS = [
     ("closing", "Скоро конец приёма прогнозов"),
     ("referral", "Награды за друзей"),
     ("creator", "Мои рынки"),
+    ("badges", "Значки"),
 ]
 
 
@@ -1053,3 +1054,56 @@ class WheelSpin(models.Model):
         verbose_name_plural = "вращения колеса"
         constraints = [models.UniqueConstraint(fields=["trader", "day"], name="one_wheel_spin_per_day")]
 
+
+class WeeklyTop(models.Model):
+    """«Доска почёта» (spec E12.3): the top-3 of a week by profit, frozen on Monday and never recomputed.
+
+    `week_start` is the Monday (Moscow) of the ranked week; the frame shows through the week after it.
+    """
+
+    week_start = models.DateField()
+    place = models.PositiveSmallIntegerField()
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="honor_places")
+    profit = models.DecimalField(max_digits=14, decimal_places=2)
+    resolved = models.PositiveSmallIntegerField(default=0)
+    notified_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "место на доске почёта"
+        verbose_name_plural = "доска почёта"
+        ordering = ["-week_start", "place"]
+        constraints = [
+            models.UniqueConstraint(fields=["week_start", "place"], name="one_honor_place_per_week"),
+            models.UniqueConstraint(fields=["week_start", "trader"], name="one_honor_trader_per_week"),
+        ]
+
+
+class Badge(models.Model):
+    """A badge (spec E12.4): given once per kind, never for coins. Keys match docs/mockups/oracle/ArtBadges."""
+
+    class Kind(models.TextChoices):
+        FIRST = "first", "Первая кровь"
+        PROPHET = "prophet", "Пророк"
+        AGAINST = "against", "Против толпы"
+        JUDGE = "judge", "Честный судья"
+        LEADER = "leader", "Заводила"
+        DUEL = "duel", "Дуэлянт"
+        OPTIMIST = "optimist", "Оптимист"
+
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE, related_name="badges")
+    kind = models.CharField(max_length=12, choices=Kind.choices)
+    # The market that completed the badge, when there is one; never shown to others (it would reveal a side).
+    question = models.ForeignKey(Question, null=True, blank=True, on_delete=models.SET_NULL, related_name="badges")
+    # Given for the past at launch: no inbox entry and no bot message (spec E12.4).
+    silent = models.BooleanField(default=False)
+    awarded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "значок"
+        verbose_name_plural = "значки"
+        ordering = ["awarded_at", "id"]
+        constraints = [models.UniqueConstraint(fields=["trader", "kind"], name="one_badge_per_kind")]
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()} — {self.trader}"
