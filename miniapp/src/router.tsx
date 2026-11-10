@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createBrowserRouter, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Backdrop } from './components/Backdrop';
+import { look } from './look';
 import { BalancePill } from './components/BalancePill';
 import { TabBar } from './components/TabBar';
 import { useToast } from './components/Toast';
@@ -55,7 +56,7 @@ function Layout() {
   if (onboarding) {
     return (
       <div className="app">
-        <Backdrop />
+        {look === 'oracle' && <Backdrop />}
         <Onboarding />
       </div>
     );
@@ -63,7 +64,7 @@ function Layout() {
 
   return (
     <div className="app">
-      <Backdrop />
+      {look === 'oracle' && <Backdrop />}
       <SessionGate>
         <main className="app-main">
           <Outlet />

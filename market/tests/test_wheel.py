@@ -20,6 +20,12 @@ from market.tests.test_bot_resolution_dialog import make, people  # noqa: F401
 pytestmark = pytest.mark.django_db
 
 
+@pytest.fixture(autouse=True)
+def wheel_on(settings):
+    # The wheel is off by default (10.11.2026); these tests are about how it works when on.
+    settings.WHEEL_ENABLED = True
+
+
 @pytest.fixture
 def market(people):
     creator = people[0]
@@ -125,6 +131,18 @@ def test_api_shows_the_table_and_spins_once(api, people, market):
         code, again = api.post("wheel/spin")
     assert float(again["prize"]) == 25 and again["balance"] == first["balance"]
     assert Event.objects.filter(name="wheel_spin").count() == 2
+
+
+def test_off_by_default_hides_the_wheel_and_credits_nothing(api, people, market, settings):
+    settings.WHEEL_ENABLED = False
+    trader = Trader.objects.get(telegram_chat_id=93001)
+    services.buy(trader, market, "no", D(15))
+    before = balance(trader)
+    assert api.get("wheel")[0] == 404
+    assert api.post("wheel/spin")[0] == 404
+    with pytest.raises(MarketError):
+        services.spin_wheel(trader)
+    assert balance(trader) == before and not WheelSpin.objects.exists()
 
 
 # --- PostgreSQL --------------------------------------------------------------------------------------

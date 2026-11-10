@@ -1614,6 +1614,8 @@ def spin_wheel(trader: Trader, *, rng=None):
     """One spin a day: a repeat returns the same spin and credits nothing. The prize is a bonus, not profit."""
     from django.db import IntegrityError
     from .models import WheelSpin
+    if not settings.WHEEL_ENABLED:
+        raise MarketError("Колесо дня сейчас выключено.")
     trader = Trader.objects.select_for_update().get(pk=trader.pk)
     day = _wheel_day()
     spin = WheelSpin.objects.filter(trader=trader, day=day).first()

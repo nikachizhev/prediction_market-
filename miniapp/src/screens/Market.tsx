@@ -10,6 +10,7 @@ import { LiveLine } from '../components/LiveLine';
 import { useSell } from '../components/SellSheet';
 import { Skeleton } from '../components/Skeleton';
 import { ProbabilityOrb } from '../components/ProbabilityOrb';
+import { look } from '../look';
 import { useToast } from '../components/Toast';
 import { useTradeSheet } from '../components/TradeSheet';
 import { formatCompact, formatDayMonth, formatEnds, formatMoney, formatPercent, formatSigned } from '../format';
@@ -501,7 +502,7 @@ export function MarketScreen() {
           </>
         ) : (
           <>
-          <ProbabilityOrb prob={m.prob} />
+          {look === 'oracle' && <ProbabilityOrb prob={m.prob} />}
           <ChartSection
             prob={m.prob}
             change24h={m.change_24h}
@@ -999,7 +1000,7 @@ function ChartSection({
   );
 }
 
-const MULTI_CHART_COLORS = ['#FFB03B', '#8DB7FF', '#FF6A52'];
+const MULTI_CHART_COLORS = look === 'oracle' ? ['#FFB03B', '#8DB7FF', '#FF6A52'] : ['#2563EB', '#F59E0B', '#EA580C'];
 
 function MultiChartSection({
   submarkets,

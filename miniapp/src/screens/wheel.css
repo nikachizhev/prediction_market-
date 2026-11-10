@@ -12,7 +12,7 @@
   flex-direction: row;
   align-items: center;
   gap: 12px;
-  border-color: rgba(255, 176, 59, 0.6);
+  border-color: var(--gold);
 }
 
 .wheel-card.is-spun {
@@ -29,7 +29,7 @@
 }
 
 .wheel-card-title {
-  font-family: var(--font-display);
+  font-family: var(--font-display, var(--font));
   font-size: 22px;
   font-weight: 700;
   line-height: 1.1;
@@ -41,8 +41,8 @@
   align-items: center;
   padding: 0 16px;
   border-radius: var(--radius-control);
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--accent, var(--yes-fill));
+  color: var(--accent-ink, #ffffff);
   font-weight: 600;
 }
 
@@ -61,6 +61,11 @@
   aspect-ratio: 195 / 250;
   margin: 0 auto;
   image-rendering: pixelated;
+}
+
+.wheel-hero.is-calm {
+  aspect-ratio: 195 / 196;
+  image-rendering: auto;
 }
 
 .wheel-action {
@@ -90,7 +95,7 @@
 }
 
 .wheel-phrase {
-  font-family: var(--font-display);
+  font-family: var(--font-display, var(--font));
   font-size: 26px;
   font-weight: 700;
   color: var(--gold);
